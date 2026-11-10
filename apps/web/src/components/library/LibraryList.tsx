@@ -1,6 +1,7 @@
 import { MODULE_CATEGORIES, type ModuleCategory, type ModuleId, type ModuleLibraryEntry, type Session } from '@roleplay/shared';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLocale } from '../../i18n';
 import { relationOf } from '../../lib/modules';
 import { Icon } from '../Icon';
 import { ModuleGlyph } from '../ModuleGlyph';
@@ -29,6 +30,7 @@ interface LibraryListProps {
 /** Search, filters and the list of modules, each with its mark, name, line, kind and whether it is subscribed. */
 export function LibraryList({ entries, shown, subscribed, filter, onFilter, selected, onSelect, session }: LibraryListProps) {
   const { t } = useTranslation();
+  const locale = useLocale();
   const id = useId();
   const filtered = filter.query.trim() !== '' || filter.onlySubscribed || filter.category !== null;
 
@@ -104,10 +106,12 @@ export function LibraryList({ entries, shown, subscribed, filter, onFilter, sele
                     aria-current={isSelected ? 'true' : undefined}
                     onClick={() => onSelect(entry.id)}
                   >
-                    <ModuleGlyph id={entry.id} />
+                    <ModuleGlyph id={entry.id} category={entry.category} glyph={entry.plugin?.glyph} />
                     <span className="library-item__body">
                       <span className="library-item__top">
-                        <span className="library-item__name">{t(`modules.names.${entry.id}`)}</span>
+                        <span className="library-item__name">
+                          {entry.plugin ? entry.plugin.name[locale] : t(`modules.names.${entry.id}`)}
+                        </span>
                         {isSubscribed && (
                           <span className="library-item__state">
                             <Icon name="check" size={13} />
@@ -115,7 +119,9 @@ export function LibraryList({ entries, shown, subscribed, filter, onFilter, sele
                           </span>
                         )}
                       </span>
-                      <span className="library-item__tagline">{t(`modules.taglines.${entry.id}`)}</span>
+                      <span className="library-item__tagline">
+                        {entry.plugin ? entry.plugin.tagline[locale] : t(`modules.taglines.${entry.id}`)}
+                      </span>
                       <span className="library-item__meta">
                         {t(`modules.categories.${entry.category}`)}
                         {relation === 'on' && <span className="library-item__here"> · {t('library.onHere')}</span>}

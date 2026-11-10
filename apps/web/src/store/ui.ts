@@ -7,7 +7,18 @@ export type DrawerKind = 'sessions' | 'world';
  * The world panel's views kept by play modules. Each is listed only while its
  * module has something to show, in a row of its own above the world's tabs.
  */
-export const MODULE_VIEWS = ['combat', 'clocks', 'calendar', 'bonds', 'sandbox'] as const;
+export const MODULE_VIEWS = [
+  'combat',
+  'clocks',
+  'calendar',
+  'bonds',
+  'sandbox',
+  'market',
+  'clues',
+  'travel',
+  'deck',
+  'reputation',
+] as const;
 export type ModuleView = (typeof MODULE_VIEWS)[number];
 /** The world's own tabs: always there. */
 export const WORLD_TABS = ['characters', 'inventory', 'quests', 'places', 'lore'] as const;

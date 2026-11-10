@@ -16,6 +16,11 @@ export const MODULE_GLYPH: Record<ModuleId, string> = {
   calendar: '▦',
   bonds: '♡',
   sandbox: '⚑',
+  market: '⚖',
+  clues: '◈',
+  travel: '⟡',
+  deck: '❖',
+  reputation: '♛',
 };
 
 /** The modules a story has. Old saves are migrated by the server, but a missing list must not crash the UI. */
@@ -25,7 +30,9 @@ export function modulesOf(session: Session): ModuleId[] {
 
 /** `current` with one module switched on or off, in the fixed module order. */
 export function withModule(current: readonly ModuleId[], id: ModuleId, on: boolean): ModuleId[] {
-  return MODULE_IDS.filter((module) => (module === id ? on : current.includes(module)));
+  const extra = current.filter((item) => !MODULE_IDS.includes(item));
+  const all = extra.includes(id) || MODULE_IDS.includes(id) ? [...MODULE_IDS, ...extra] : [...MODULE_IDS, ...extra, id];
+  return all.filter((module) => (module === id ? on : current.includes(module)));
 }
 
 /**
@@ -48,7 +55,7 @@ export function relationOf(session: Session, id: ModuleId, subscribed: readonly 
 /** Whether a module has kept anything in this world. The oracle never does. */
 export function hasModuleState(world: WorldState, id: ModuleId): boolean {
   const states: Partial<Record<ModuleId, unknown>> = world.modules ?? {};
-  return states[id] !== undefined;
+  return states[id] !== undefined || world.modules?.custom?.[id] !== undefined;
 }
 
 /** The modules a story is actually played with: those it has that the player subscribes to. */

@@ -4,11 +4,11 @@ import {
   IMAGE_QUALITIES,
   LOCALES,
   MODEL_LIST_TARGETS,
-  MODULE_IDS,
   PROVIDER_KINDS,
   type CreateSessionRequest,
   type ErrorResponse,
   type ModelListResponse,
+  type ModuleId,
   type ModuleLibraryResponse,
   type TurnEvent,
   type TurnRequest,
@@ -20,7 +20,16 @@ import { streamSSE } from 'hono/streaming';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { runTurn, validateTurn } from './engine/gameMaster';
-import { listLibrary, normalizeModules } from './engine/modules';
+import {
+  allModuleIds,
+  listLibrary,
+  listPlugins,
+  normalizeModules,
+  pluginManifestSchema,
+  PluginStore,
+  registerPlugin,
+  unregisterPlugin,
+} from './engine/modules';
 import { AppError, toAppError } from './errors';
 import { createPainter } from './images';
 import type { Painter } from './images/types';
@@ -37,6 +46,7 @@ export interface AppDeps {
   sessions: SessionStore;
   settings: SettingsStore;
   images: ImageStore;
+  plugins?: PluginStore;
   /** Folder of the built web app; omit to serve the API only. */
   webDist?: string;
   /** Overridable for tests. */
@@ -44,7 +54,10 @@ export interface AppDeps {
   createPainter?: (settings: ResolvedSettings) => Painter | null;
 }
 
-const modules = z.array(z.enum(MODULE_IDS)).max(MODULE_IDS.length);
+const moduleIdSchema = z
+  .string()
+  .refine((value): value is ModuleId => allModuleIds().includes(value as ModuleId), 'Unknown module id.');
+const modules = z.array(moduleIdSchema).max(64);
 
 const createSessionSchema = z.object({
   language: z.enum(LOCALES),
@@ -168,6 +181,25 @@ export function createApp(deps: AppDeps): Hono {
   app.get('/api/modules', async (c) => {
     const body: ModuleLibraryResponse = { modules: listLibrary((await settings.get()).subscribedModules) };
     return c.json(body);
+  });
+
+  app.get('/api/plugins', (c) => c.json({ plugins: listPlugins() }));
+
+  app.post('/api/plugins', async (c) => {
+    const manifest = await readBody(c, pluginManifestSchema);
+    const compiled = deps.plugins ? await deps.plugins.save(manifest) : registerPlugin(manifest);
+    registerPlugin(compiled);
+    const modules = listLibrary((await settings.get()).subscribedModules);
+    return c.json({ plugin: compiled.manifest, modules }, 201);
+  });
+
+  app.delete('/api/plugins/:id', async (c) => {
+    const id = c.req.param('id');
+    const removedMem = unregisterPlugin(id);
+    const removedDisk = deps.plugins ? await deps.plugins.remove(id) : false;
+    if (!removedMem && !removedDisk) throw new AppError('not_found', `No plugin with id "${id}".`);
+    const modules = listLibrary((await settings.get()).subscribedModules);
+    return c.json({ ok: true, modules });
   });
 
   app.get('/api/sessions', async (c) => c.json(await sessions.list()));

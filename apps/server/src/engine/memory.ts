@@ -108,5 +108,11 @@ export function gameMasterView(
     }),
   );
   const states = Object.fromEntries(Object.entries(world.modules).filter(([id]) => modules.includes(id as ModuleId)));
+  if (world.modules.custom) {
+    const custom = Object.fromEntries(
+      Object.entries(world.modules.custom).filter(([id]) => modules.includes(id as ModuleId)),
+    );
+    if (Object.keys(custom).length > 0) states.custom = custom;
+  }
   return { ...world, characters, modules: states };
 }

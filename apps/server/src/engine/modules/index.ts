@@ -1,17 +1,32 @@
-import { MODULE_CATEGORY, MODULE_IDS, type Locale, type ModuleId, type ModuleLibraryEntry, type Session } from '@roleplay/shared';
+import {
+  MODULE_CATEGORY,
+  MODULE_IDS,
+  type Locale,
+  type ModuleId,
+  type ModuleLibraryEntry,
+  type PluginManifest,
+  type Session,
+} from '@roleplay/shared';
 import { toJsonSchema } from '../toolKit';
 import { bondsModule } from './bonds';
 import { calendarModule } from './calendar';
 import { clocksModule } from './clocks';
+import { cluesModule } from './clues';
 import { combatModule } from './combat';
+import { deckModule } from './deck';
 import { diceModule } from './dice';
+import { marketModule } from './market';
 import { oracleModule } from './oracle';
+import { compilePluginManifest, type CompiledPlugin } from './plugins';
+import { reputationModule } from './reputation';
 import { sandboxModule } from './sandbox';
+import { travelModule } from './travel';
 import type { GameModule } from './types';
 
 export type { GameModule } from './types';
+export { compilePluginManifest, PluginStore, pluginManifestSchema, type CompiledPlugin } from './plugins';
 
-const MODULES: Record<ModuleId, GameModule> = {
+const BUILTIN_MODULES: Record<ModuleId, GameModule> = {
   dice: diceModule,
   combat: combatModule,
   oracle: oracleModule,
@@ -19,11 +34,58 @@ const MODULES: Record<ModuleId, GameModule> = {
   calendar: calendarModule,
   bonds: bondsModule,
   sandbox: sandboxModule,
+  market: marketModule,
+  clues: cluesModule,
+  travel: travelModule,
+  deck: deckModule,
+  reputation: reputationModule,
 };
+
+/** User-installed external plugins, keyed by plugin id. */
+const externalPlugins = new Map<string, CompiledPlugin>();
+
+/** Registers or replaces an external plugin in the active module registry. */
+export function registerPlugin(rawOrCompiled: unknown | CompiledPlugin): CompiledPlugin {
+  const compiled =
+    rawOrCompiled && typeof rawOrCompiled === 'object' && 'module' in rawOrCompiled && 'manifest' in rawOrCompiled
+      ? (rawOrCompiled as CompiledPlugin)
+      : compilePluginManifest(rawOrCompiled);
+  externalPlugins.set(compiled.manifest.id, compiled);
+  return compiled;
+}
+
+/** Removes an external plugin from the active module registry. */
+export function unregisterPlugin(id: string): boolean {
+  return externalPlugins.delete(id);
+}
+
+/** Clears all external plugins from the registry. */
+export function clearPlugins(): void {
+  externalPlugins.clear();
+}
+
+/** Lists all currently registered external plugin manifests. */
+export function listPlugins(): PluginManifest[] {
+  return [...externalPlugins.values()].map((entry) => entry.manifest);
+}
+
+/** All known module ids in fixed order: built-in modules first, then sorted external plugins. */
+export function allModuleIds(): ModuleId[] {
+  if (externalPlugins.size === 0) return [...MODULE_IDS];
+  const extra = [...externalPlugins.keys()].sort() as ModuleId[];
+  return [...MODULE_IDS, ...extra];
+}
+
+function lookupModule(id: ModuleId): GameModule | undefined {
+  return (BUILTIN_MODULES as Record<string, GameModule | undefined>)[id] ?? externalPlugins.get(id)?.module;
+}
 
 /** The modules with these ids, in one fixed order whatever order they are asked for in. */
 export function getModules(ids: readonly ModuleId[]): GameModule[] {
-  return MODULE_IDS.filter((id) => ids.includes(id)).map((id) => MODULES[id]);
+  return allModuleIds()
+    .filter((id) => ids.includes(id))
+    .map((id) => lookupModule(id))
+    .filter((mod): mod is GameModule => mod !== undefined);
 }
 
 /** A set of modules as a short string: the key prompts and tool lists are cached under. */
@@ -35,7 +97,7 @@ export function modulesKey(ids: readonly ModuleId[]): string {
 
 /** Ids in the fixed order, without repeats or strangers. */
 export function normalizeModules(ids: readonly string[]): ModuleId[] {
-  return MODULE_IDS.filter((id) => ids.includes(id));
+  return allModuleIds().filter((id) => ids.includes(id));
 }
 
 /**
@@ -44,7 +106,7 @@ export function normalizeModules(ids: readonly string[]): ModuleId[] {
  * a module nobody subscribed to is never offered, whatever a save says.
  */
 export function playableModules(session: Session, subscribed: readonly ModuleId[]): ModuleId[] {
-  return MODULE_IDS.filter((id) => session.modules.includes(id) && subscribed.includes(id));
+  return allModuleIds().filter((id) => session.modules.includes(id) && subscribed.includes(id));
 }
 
 /**
@@ -58,7 +120,12 @@ export function settleModules(session: Session, offered: readonly ModuleId[], ch
   session.modulesAuto = false;
   const { modules: states } = session.world;
   const kept = getModules(offered)
-    .filter((module) => (module.id in states && states[module.id as keyof typeof states] !== undefined) || (chosen ? chosen.includes(module.id) : module.keptWhenUnused))
+    .filter(
+      (module) =>
+        (module.id in states && states[module.id as keyof typeof states] !== undefined) ||
+        states.custom?.[module.id] !== undefined ||
+        (chosen ? chosen.includes(module.id) : module.keptWhenUnused),
+    )
     .map((module) => module.id);
   // A module the story lists but the player was not subscribed to was never on offer: it is not the game master's to drop.
   const notOffered = session.modules.filter((id) => !offered.includes(id));
@@ -84,17 +151,24 @@ function promptCost(module: GameModule, locale: Locale): number {
 
 /** Every module as the library lists it. */
 export function listLibrary(subscribed: readonly ModuleId[]): ModuleLibraryEntry[] {
-  return MODULE_IDS.map((id) => {
-    const module = MODULES[id];
-    return {
-      id,
-      category: MODULE_CATEGORY[id],
-      subscribed: subscribed.includes(id),
-      tools: module.tools.map(({ spec }) => spec.name),
-      keepsRecords: module.record !== undefined,
-      reachesCharacters: module.actor !== undefined || module.shownToCharacter !== undefined,
-      hasPanel: module.hasPanel,
-      promptTokens: { en: promptCost(module, 'en'), zh: promptCost(module, 'zh') },
-    };
+  return allModuleIds().flatMap((id) => {
+    const builtin = (BUILTIN_MODULES as Record<string, GameModule | undefined>)[id];
+    const external = externalPlugins.get(id);
+    const module = builtin ?? external?.module;
+    if (!module) return [];
+    const category = builtin ? MODULE_CATEGORY[id] : (external?.category ?? 'rules');
+    return [
+      {
+        id,
+        category,
+        subscribed: subscribed.includes(id),
+        tools: module.tools.map(({ spec }) => spec.name),
+        keepsRecords: module.record !== undefined,
+        reachesCharacters: module.actor !== undefined || module.shownToCharacter !== undefined,
+        hasPanel: module.hasPanel,
+        promptTokens: { en: promptCost(module, 'en'), zh: promptCost(module, 'zh') },
+        ...(external ? { plugin: external.meta } : {}),
+      },
+    ];
   });
 }

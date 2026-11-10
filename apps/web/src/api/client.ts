@@ -2,7 +2,9 @@ import type {
   CreateSessionRequest,
   ModelListResponse,
   ModelListTarget,
+  ModuleLibraryEntry,
   ModuleLibraryResponse,
+  PluginManifest,
   PublicSettings,
   Session,
   SessionSummary,
@@ -46,6 +48,15 @@ export const api = {
     request<ModelListResponse>(`/api/settings/models?target=${encodeURIComponent(target)}`),
   /** Every module there is; subscribing is a settings update (`subscribedModules`). */
   getModules: () => request<ModuleLibraryResponse>('/api/modules'),
+  installPlugin: (manifest: unknown) =>
+    request<{ plugin: PluginManifest; modules: ModuleLibraryEntry[] }>('/api/plugins', {
+      method: 'POST',
+      body: manifest,
+    }),
+  removePlugin: (id: string) =>
+    request<{ ok: true; modules: ModuleLibraryEntry[] }>(`/api/plugins/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
 
   listSessions: () => request<SessionSummary[]>('/api/sessions'),
   createSession: (create: CreateSessionRequest) =>

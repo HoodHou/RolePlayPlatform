@@ -13,7 +13,17 @@ import { Icon } from '../Icon';
 import { ModuleGlyph } from '../ModuleGlyph';
 
 /** The tools the library has a line for; a tool a newer server adds is listed by name alone. */
-const KNOWN_TOOLS = ['check', 'roll_dice', 'fight', 'ask_fate', 'pass_time', 'simulate'] as const;
+const KNOWN_TOOLS = [
+  'check',
+  'roll_dice',
+  'fight',
+  'ask_fate',
+  'pass_time',
+  'simulate',
+  'trade',
+  'journey',
+  'draw',
+] as const;
 type KnownTool = (typeof KNOWN_TOOLS)[number];
 const isKnownTool = (name: string): name is KnownTool => (KNOWN_TOOLS as readonly string[]).includes(name);
 
@@ -103,12 +113,14 @@ interface ModuleDetailProps {
  */
 export function ModuleDetail({ entry, subscribed, largestCost, session, headingRef }: ModuleDetailProps) {
   const { t } = useTranslation();
-  const uiTag = languageTag(useLocale());
+  const locale = useLocale();
+  const uiTag = languageTag(locale);
   const setSubscribed = useLibrary((s) => s.setSubscribed);
   const id = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<UiError | null>(null);
   const module = entry.id;
+  const plugin = entry.plugin;
   const isSubscribed = subscribed.includes(module);
   const view = (MODULE_VIEWS as readonly string[]).includes(module) ? (module as ModuleView) : null;
 
@@ -136,10 +148,10 @@ export function ModuleDetail({ entry, subscribed, largestCost, session, headingR
   return (
     <article className="module-detail" aria-labelledby={`${id}-name`}>
       <header className="module-detail__head">
-        <ModuleGlyph id={module} size="large" />
+        <ModuleGlyph id={module} category={entry.category} glyph={plugin?.glyph} size="large" />
         <div className="module-detail__heading">
           <h3 id={`${id}-name`} ref={headingRef} tabIndex={-1} className="module-detail__name">
-            {t(`modules.names.${module}`)}
+            {plugin ? plugin.name[locale] : t(`modules.names.${module}`)}
           </h3>
           <p className="module-detail__tags">
             <span className="tag">{t(`modules.categories.${entry.category}`)}</span>
@@ -152,7 +164,9 @@ export function ModuleDetail({ entry, subscribed, largestCost, session, headingR
               <span className="tag">{t('library.notSubscribed')}</span>
             )}
           </p>
-          <p className="module-detail__tagline">{t(`modules.taglines.${module}`)}</p>
+          <p className="module-detail__tagline">
+            {plugin ? plugin.tagline[locale] : t(`modules.taglines.${module}`)}
+          </p>
         </div>
       </header>
 
@@ -184,8 +198,10 @@ export function ModuleDetail({ entry, subscribed, largestCost, session, headingR
         <h4 id={`${id}-purpose`} className="eyebrow">
           {t('library.sections.purpose')}
         </h4>
-        <p className="module-detail__text">{t(`library.about.${module}.purpose`)}</p>
-        <p className="module-detail__text">{t(`library.about.${module}.effect`)}</p>
+        <p className="module-detail__text">
+          {plugin ? plugin.description[locale] : t(`library.about.${module}.purpose`)}
+        </p>
+        {!plugin && <p className="module-detail__text">{t(`library.about.${module}.effect`)}</p>}
       </section>
 
       <section className="module-detail__section" aria-labelledby={`${id}-gives`}>
@@ -201,7 +217,11 @@ export function ModuleDetail({ entry, subscribed, largestCost, session, headingR
                   {entry.tools.map((tool) => (
                     <li key={tool}>
                       <code className="module-tools__name">{tool}</code>
-                      {isKnownTool(tool) && <span className="module-tools__desc">{t(`library.tools.${tool}`)}</span>}
+                      {plugin?.tools[tool] ? (
+                        <span className="module-tools__desc">{plugin.tools[tool].description[locale]}</span>
+                      ) : (
+                        isKnownTool(tool) && <span className="module-tools__desc">{t(`library.tools.${tool}`)}</span>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -212,7 +232,11 @@ export function ModuleDetail({ entry, subscribed, largestCost, session, headingR
           </div>
           <div className="module-facts__row">
             <dt>{t('library.gives.record')}</dt>
-            <dd>{t(`library.about.${module}.record`)}</dd>
+            <dd>
+              {plugin
+                ? (plugin.recordDescription?.[locale] ?? t('library.gives.noTools'))
+                : t(`library.about.${module}.record`)}
+            </dd>
           </div>
           <div className="module-facts__row">
             <dt>{t('library.gives.characters')}</dt>
@@ -220,25 +244,27 @@ export function ModuleDetail({ entry, subscribed, largestCost, session, headingR
               <span className={entry.reachesCharacters ? 'tag tag--accent' : 'tag'}>
                 {entry.reachesCharacters ? t('library.gives.reaches') : t('library.gives.reachesNot')}
               </span>{' '}
-              {t(`library.about.${module}.characters`)}
+              {!plugin && t(`library.about.${module}.characters`)}
             </dd>
           </div>
         </dl>
       </section>
 
-      <section className="module-detail__section" aria-labelledby={`${id}-sees`}>
-        <h4 id={`${id}-sees`} className="eyebrow">
-          {t('library.sections.sees')}
-        </h4>
-        {entry.hasPanel && view && (
-          <p className="module-detail__tags">
-            <span className="tag">
-              {t('library.sees.panel')} · {t(`world.tabs.${view}`)}
-            </span>
-          </p>
-        )}
-        <p className="module-detail__text">{t(`library.about.${module}.sees`)}</p>
-      </section>
+      {!plugin && (
+        <section className="module-detail__section" aria-labelledby={`${id}-sees`}>
+          <h4 id={`${id}-sees`} className="eyebrow">
+            {t('library.sections.sees')}
+          </h4>
+          {entry.hasPanel && view && (
+            <p className="module-detail__tags">
+              <span className="tag">
+                {t('library.sees.panel')} · {t(`world.tabs.${view}`)}
+              </span>
+            </p>
+          )}
+          <p className="module-detail__text">{t(`library.about.${module}.sees`)}</p>
+        </section>
+      )}
 
       <section className="module-detail__section" aria-labelledby={`${id}-cost`}>
         <h4 id={`${id}-cost`} className="eyebrow">

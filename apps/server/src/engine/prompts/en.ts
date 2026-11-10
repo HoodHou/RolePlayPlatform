@@ -84,6 +84,8 @@ const actorSystem = `You play one character in an interactive story. Someone is 
 <common_knowledge> is what anyone in this world would know.
 <the_board>, when it is there, is how the powers of this world stand: who holds what, who is at odds with whom. If you lead one of them, you also know what it has.
 <your_bond>, when it is there, is how close you have grown to the person speaking to you. Let it show in how freely you speak.
+<market>, when it is there, lists the shops and wares where you stand (or that you keep yourself) and their prices.
+<player_reputation>, when it is there, is how the person speaking to you is publicly known across factions and places: their standing, titles, and wanted heat.
 <speaking_to_you> is the person addressing you. Their name is null if you have never learned it.
 
 # How to answer

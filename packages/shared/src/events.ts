@@ -2,12 +2,18 @@ import type {
   AttackOutcome,
   CheckDifficulty,
   CheckOutcome,
+  ClueKind,
   CombatSide,
+  DeductionStatus,
   DiceSystem,
   FateAnswer,
   FateOdds,
   FateTwist,
+  HaggleOutcome,
+  JourneyOutcome,
+  RouteHazard,
   Stance,
+  TravelPace,
 } from './modules';
 
 /**
@@ -217,6 +223,97 @@ export type WorldEvent =
       rounds: number;
       /** How it ended, in the story language. Empty when the fight was simply cut short by another one beginning. */
       outcome: string;
+    }
+  // --- market module ---
+  | {
+      type: 'shop_opened';
+      id: string;
+      name: string;
+    }
+  | {
+      type: 'trade_settled';
+      side: 'buy' | 'sell';
+      shopId: string;
+      shopName: string;
+      itemId: string;
+      itemName: string;
+      quantity: number;
+      unitPrice: number;
+      totalPrice: number;
+      currency: string;
+      balance: number | null;
+      haggled: boolean;
+      haggleRoll: number | null;
+      haggleOutcome: HaggleOutcome | null;
+    }
+  // --- clues module (hidden clues are never announced) ---
+  | {
+      type: 'clue_found';
+      id: string;
+      title: string;
+      kind: ClueKind;
+      source: string;
+    }
+  | {
+      type: 'deduction_made';
+      id: string;
+      title: string;
+      status: DeductionStatus;
+    }
+  // --- travel module ---
+  | {
+      type: 'route_discovered';
+      id: string;
+      name: string;
+      fromName: string;
+      toName: string;
+      hazard: RouteHazard;
+    }
+  | {
+      type: 'journey_made';
+      routeId: string | null;
+      routeName: string;
+      fromId: string;
+      fromName: string;
+      toId: string;
+      toName: string;
+      pace: TravelPace;
+      hours: number;
+      hazard: RouteHazard;
+      roll: number;
+      outcome: JourneyOutcome;
+      arrived: boolean;
+    }
+  // --- deck module ---
+  | {
+      type: 'card_drawn';
+      deckId: string;
+      deckName: string;
+      cards: { id: string; name: string; reversed: boolean; meaning: string }[];
+      remaining: number;
+      reason: string;
+    }
+  | {
+      type: 'table_rolled';
+      tableId: string;
+      tableName: string;
+      entryId: string;
+      label: string;
+      description: string;
+      roll: number;
+      totalWeight: number;
+      reason: string;
+    }
+  // --- reputation module ---
+  | {
+      type: 'reputation_changed';
+      id: string;
+      name: string;
+      from: number;
+      to: number;
+      title: string;
+      heat: number;
+      reason: string;
     };
 
 export const BATTLE_MARGINS = ['narrow', 'clear', 'decisive'] as const;

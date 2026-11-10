@@ -54,12 +54,14 @@ export function ModuleLibrary() {
         // Everything the library says about a module, so "time" finds the calendar and "health" the combat tracker.
         const haystack = [
           entry.id,
-          t(`modules.names.${entry.id}`),
-          t(`modules.taglines.${entry.id}`),
-          t(`modules.descriptions.${entry.id}`),
+          entry.plugin ? `${entry.plugin.name.en} ${entry.plugin.name.zh}` : t(`modules.names.${entry.id}`),
+          entry.plugin ? `${entry.plugin.tagline.en} ${entry.plugin.tagline.zh}` : t(`modules.taglines.${entry.id}`),
+          entry.plugin
+            ? `${entry.plugin.description.en} ${entry.plugin.description.zh}`
+            : t(`modules.descriptions.${entry.id}`),
           t(`modules.categories.${entry.category}`),
-          t(`library.about.${entry.id}.purpose`),
-          t(`library.about.${entry.id}.effect`),
+          entry.plugin ? '' : t(`library.about.${entry.id}.purpose`),
+          entry.plugin ? '' : t(`library.about.${entry.id}.effect`),
           ...entry.tools,
         ]
           .join(' ')
@@ -156,7 +158,9 @@ export function ModuleLibrary() {
               {t('library.title')}
             </h2>
             {subscriptions && (
-              <p className="library__count">{t('library.count', { count: subscriptions.length, total: MODULE_IDS.length })}</p>
+              <p className="library__count">
+                {t('library.count', { count: subscriptions.length, total: entries?.length ?? MODULE_IDS.length })}
+              </p>
             )}
           </div>
           <button type="button" className="icon-btn" aria-label={t('common.close')} onClick={close}>

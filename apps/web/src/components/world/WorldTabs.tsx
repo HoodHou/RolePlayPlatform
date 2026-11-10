@@ -13,13 +13,18 @@ import { BondsTab } from './BondsTab';
 import { CalendarTab } from './CalendarTab';
 import { CharactersTab } from './CharactersTab';
 import { ClocksTab } from './ClocksTab';
+import { CluesTab, visibleClues } from './CluesTab';
 import { CombatTab } from './CombatTab';
+import { DeckTab } from './DeckTab';
 import { InventoryTab } from './InventoryTab';
 import { LoreTab } from './LoreTab';
+import { MarketTab } from './MarketTab';
 import { ModuleNote } from './ModuleNote';
 import { PlacesTab } from './PlacesTab';
 import { QuestsTab } from './QuestsTab';
+import { ReputationTab } from './ReputationTab';
 import { SandboxTab } from './SandboxTab';
+import { TravelTab, visibleRoutes } from './TravelTab';
 
 /** Whether a module view has anything to show. A hidden clock alone does not count unless secrets are shown. */
 function hasView(view: ModuleView, world: WorldState, showSecrets: boolean): boolean {
@@ -34,6 +39,20 @@ function hasView(view: ModuleView, world: WorldState, showSecrets: boolean): boo
       return bondsOf(world).length > 0;
     case 'sandbox':
       return boardOf(world) !== undefined;
+    case 'market':
+      return Object.keys(world.modules?.market?.shops ?? {}).length > 0;
+    case 'clues': {
+      const { clues, deductions } = visibleClues(world, showSecrets);
+      return clues.length > 0 || deductions.length > 0;
+    }
+    case 'travel':
+      return visibleRoutes(world, showSecrets).length > 0;
+    case 'deck': {
+      const deck = world.modules?.deck;
+      return deck !== undefined && (Object.keys(deck.decks).length > 0 || Object.keys(deck.tables).length > 0);
+    }
+    case 'reputation':
+      return Object.keys(world.modules?.reputation?.standings ?? {}).length > 0;
   }
 }
 
@@ -51,6 +70,18 @@ function countFor(tab: WorldTab, world: WorldState, showSecrets: boolean): numbe
     }
     case 'bonds':
       return bondsOf(world).length;
+    case 'market':
+      return Object.keys(world.modules?.market?.shops ?? {}).length;
+    case 'clues':
+      return visibleClues(world, showSecrets).clues.length;
+    case 'travel':
+      return visibleRoutes(world, showSecrets).length;
+    case 'deck': {
+      const deck = world.modules?.deck;
+      return deck ? Object.keys(deck.decks).length + Object.keys(deck.tables).length : 0;
+    }
+    case 'reputation':
+      return Object.keys(world.modules?.reputation?.standings ?? {}).length;
     case 'characters':
       return npcsOf(world).length;
     case 'inventory':
@@ -194,6 +225,13 @@ export function WorldTabs({ session, subscriptions, lang }: WorldTabsProps) {
         {selected === 'calendar' && calendar && <CalendarTab calendar={calendar} lang={lang} />}
         {selected === 'bonds' && <BondsTab world={world} lang={lang} />}
         {selected === 'sandbox' && board && <SandboxTab board={board} world={world} lang={lang} />}
+        {selected === 'market' && world.modules?.market && (
+          <MarketTab market={world.modules.market} world={world} lang={lang} />
+        )}
+        {selected === 'clues' && <CluesTab world={world} lang={lang} />}
+        {selected === 'travel' && <TravelTab world={world} lang={lang} />}
+        {selected === 'deck' && world.modules?.deck && <DeckTab deck={world.modules.deck} lang={lang} />}
+        {selected === 'reputation' && <ReputationTab world={world} lang={lang} />}
         {selected === 'characters' && <CharactersTab world={world} lang={lang} />}
         {selected === 'inventory' && <InventoryTab world={world} lang={lang} />}
         {selected === 'quests' && <QuestsTab world={world} lang={lang} />}

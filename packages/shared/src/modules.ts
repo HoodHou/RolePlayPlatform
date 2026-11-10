@@ -13,7 +13,20 @@
  * tools, its part of `record` and its instructions are all left out of the
  * request.
  */
-export const MODULE_IDS = ['dice', 'combat', 'oracle', 'clocks', 'calendar', 'bonds', 'sandbox'] as const;
+export const MODULE_IDS = [
+  'dice',
+  'combat',
+  'oracle',
+  'clocks',
+  'calendar',
+  'bonds',
+  'sandbox',
+  'market',
+  'clues',
+  'travel',
+  'deck',
+  'reputation',
+] as const;
 export type ModuleId = (typeof MODULE_IDS)[number];
 
 /** What a module is for, as the library groups them. */
@@ -28,10 +41,30 @@ export const MODULE_CATEGORY: Record<ModuleId, ModuleCategory> = {
   calendar: 'world',
   bonds: 'characters',
   sandbox: 'world',
+  market: 'world',
+  clues: 'story',
+  travel: 'world',
+  deck: 'rules',
+  reputation: 'characters',
 };
 
 /** What a fresh install is subscribed to: dice, which every story had before there was a library. */
 export const DEFAULT_SUBSCRIPTIONS: ModuleId[] = ['dice'];
+
+export interface LocalizedText {
+  en: string;
+  zh: string;
+}
+
+/** UI metadata carried by an externally installed plugin module. */
+export interface PluginLibraryMeta {
+  glyph: string;
+  name: LocalizedText;
+  tagline: LocalizedText;
+  description: LocalizedText;
+  tools: Record<string, { signature: string; description: LocalizedText }>;
+  recordDescription?: LocalizedText;
+}
 
 /** One module as the library lists it. Its name and description are worded by the UI, per language. */
 export interface ModuleLibraryEntry {
@@ -55,6 +88,8 @@ export interface ModuleLibraryEntry {
    * estimate, for comparing modules: real counts depend on the model.
    */
   promptTokens: Record<'en' | 'zh', number>;
+  /** Present only for user-installed external plugins. */
+  plugin?: PluginLibraryMeta;
 }
 
 // --- dice: rolls and skill checks, for tabletop-style play -------------------------
@@ -343,6 +378,268 @@ export interface CombatState {
   outcome: string;
 }
 
+// --- market: shops, wares, coin, and haggling ---------------------------------------
+
+export const HAGGLE_OUTCOMES = ['deal', 'fair', 'refused'] as const;
+export type HaggleOutcome = (typeof HAGGLE_OUTCOMES)[number];
+
+export interface MarketWare {
+  id: string;
+  name: string;
+  description: string;
+  /** Unit price in the world's currency. */
+  price: number;
+  /** Units left in stock, or null when the shop does not run out. */
+  stock: number | null;
+}
+
+export interface MarketShop {
+  id: string;
+  name: string;
+  description: string;
+  /** Location id where this shop stands, or null for a travelling peddler. */
+  locationId: string | null;
+  /** Character id of the merchant who keeps it, when they are in the cast. */
+  keeperId: string | null;
+  wares: Record<string, MarketWare>;
+}
+
+export interface MarketState {
+  /** Display name of the currency in the setting ("银两", "Crowns", "Credits"). */
+  currency: string;
+  /** Name of the stat on the player's sheet that holds their balance, when mirrored there. */
+  currencyStat: string | null;
+  shops: Record<string, MarketShop>;
+}
+
+// --- clues: evidence, links, and deductions on an investigation board --------------
+
+export const CLUE_KINDS = ['evidence', 'testimony', 'observation', 'document'] as const;
+export type ClueKind = (typeof CLUE_KINDS)[number];
+
+export const DEDUCTION_STATUSES = ['open', 'confirmed', 'disproven'] as const;
+export type DeductionStatus = (typeof DEDUCTION_STATUSES)[number];
+
+export interface Clue {
+  id: string;
+  title: string;
+  description: string;
+  kind: ClueKind;
+  /** Where or from whom it was found, in the story language. */
+  source: string;
+  /** Ids of other clues connected to this one on the board (bidirectional). */
+  links: string[];
+  /** Known to the game master only until discovered by the player. */
+  hidden: boolean;
+}
+
+export interface Deduction {
+  id: string;
+  /** The hypothesis or question being weighed. */
+  title: string;
+  /** Reasoning or conclusion drawn from the clues. */
+  conclusion: string;
+  /** Ids of clues that bear on this deduction. */
+  clueIds: string[];
+  status: DeductionStatus;
+}
+
+export interface CluesState {
+  clues: Record<string, Clue>;
+  deductions: Record<string, Deduction>;
+}
+
+// --- travel: routes between places, road hazards, and journeys ---------------------
+
+export const ROUTE_HAZARDS = ['safe', 'watchful', 'perilous', 'deadly'] as const;
+export type RouteHazard = (typeof ROUTE_HAZARDS)[number];
+
+export const TRAVEL_PACES = ['cautious', 'normal', 'forced'] as const;
+export type TravelPace = (typeof TRAVEL_PACES)[number];
+
+export const JOURNEY_OUTCOMES = ['clear', 'discovery', 'omen', 'hazard', 'ambush'] as const;
+export type JourneyOutcome = (typeof JOURNEY_OUTCOMES)[number];
+
+export interface TravelRoute {
+  id: string;
+  name: string;
+  description: string;
+  /** The two location ids the route connects. */
+  fromId: string;
+  toId: string;
+  /** Travel time at a normal pace, in hours. */
+  hours: number;
+  /** Free label: "mountain pass", "river", "古道". */
+  terrain: string;
+  hazard: RouteHazard;
+  /** Known to the player; false for a secret path until found. */
+  discovered: boolean;
+  /** Impassable until cleared (flooded bridge, sealed gate). */
+  blocked: boolean;
+}
+
+export interface TravelState {
+  routes: Record<string, TravelRoute>;
+  /** Total hours spent on the road across the story. */
+  hoursTravelled: number;
+}
+
+// --- deck: card draws without replacement and weighted random tables ---------------
+
+export interface DeckCard {
+  id: string;
+  name: string;
+  /** Meaning when drawn upright (or its sole meaning when reversals are not used). */
+  upright: string;
+  /** Meaning when drawn reversed; empty when the deck does not use reversals. */
+  reversed: string;
+}
+
+export interface DrawnCard {
+  id: string;
+  name: string;
+  reversed: boolean;
+  meaning: string;
+  turn: number;
+  reason: string;
+}
+
+export interface CardDeck {
+  id: string;
+  name: string;
+  description: string;
+  /** Whether drawn cards can come up reversed (50% chance). */
+  reversals: boolean;
+  /** Cards still in the draw pile, in order. */
+  remaining: DeckCard[];
+  /** Cards already drawn, in the order they were drawn. */
+  drawn: DrawnCard[];
+}
+
+export interface RandomTableEntry {
+  id: string;
+  label: string;
+  description: string;
+  /** Relative weight (1 or more). */
+  weight: number;
+}
+
+export interface RandomTable {
+  id: string;
+  name: string;
+  description: string;
+  entries: RandomTableEntry[];
+}
+
+export interface DeckState {
+  decks: Record<string, CardDeck>;
+  tables: Record<string, RandomTable>;
+}
+
+// --- reputation: standing, titles, and heat with groups and places -----------------
+
+export const REPUTATION_RANGE = { min: -100, max: 100 } as const;
+export const HEAT_RANGE = { min: 0, max: 10 } as const;
+export const REPUTATION_HISTORY = 6;
+
+export const REPUTATION_TIERS = ['hunted', 'reviled', 'distrusted', 'neutral', 'respected', 'revered'] as const;
+export type ReputationTier = (typeof REPUTATION_TIERS)[number];
+
+/** The public standing tier a reputation score stands for. */
+export function reputationTier(score: number): ReputationTier {
+  if (score <= -60) return 'hunted';
+  if (score <= -25) return 'reviled';
+  if (score <= -10) return 'distrusted';
+  if (score < 25) return 'neutral';
+  if (score < 65) return 'respected';
+  return 'revered';
+}
+
+export interface ReputationStanding {
+  id: string;
+  name: string;
+  description: string;
+  /** `REPUTATION_RANGE.min` to `REPUTATION_RANGE.max`; 0 is unremarked. */
+  score: number;
+  /** Public epithet or rank held among this group ("Sworn Friend", "钦犯"). Empty when none. */
+  title: string;
+  /** Wanted or heat level with this group, 0 (none) to `HEAT_RANGE.max`. */
+  heat: number;
+  /** Recent shifts in standing, oldest first. */
+  history: { turn: number; change: number; reason: string }[];
+}
+
+export interface ReputationState {
+  standings: Record<string, ReputationStanding>;
+}
+
+// --- external plugin manifests and state -------------------------------------------
+
+export interface PluginFieldSpec {
+  key: string;
+  label: LocalizedText;
+  type: 'string' | 'number' | 'boolean';
+  description?: string;
+  min?: number;
+  max?: number;
+}
+
+export interface PluginToolSpec {
+  name: string;
+  description: string;
+  /** How the server resolves a call to this tool. */
+  kind: 'roll' | 'table' | 'counter';
+  /** For `roll`: default dice notation (e.g. "2d6", "1d100"). */
+  dice?: string;
+  /** For `roll`: target number to meet (or roll under when `rollUnder` is true). */
+  target?: number;
+  rollUnder?: boolean;
+  /** For `table`: weighted outcomes the server picks from at random. */
+  entries?: { label: string; description?: string; weight?: number }[];
+  /** For `counter`: key of a numeric field in the plugin's state to adjust. */
+  counterKey?: string;
+  /** Display signature in the library UI, e.g. "cast_spell(power, risk?)". */
+  signature?: string;
+  /** Description in the library UI. */
+  uiDescription?: LocalizedText;
+}
+
+export interface PluginManifest {
+  /** Unique module id (lowercase letters, digits, underscores, e.g. "alchemy" or "sanity"). */
+  id: string;
+  category: ModuleCategory;
+  glyph?: string;
+  name: LocalizedText;
+  tagline: LocalizedText;
+  description: LocalizedText;
+  /** Instructions added to the game master's system prompt when this module is active. */
+  guide: LocalizedText;
+  /** Whether the GM keeps this module on opening when it did not explicitly list modules. */
+  keptWhenUnused?: boolean;
+  /** Whether to expose this plugin's state to characters in `talk` turns. */
+  reachesCharacters?: boolean;
+  /** Optional record schema for `record.<id>`: lets the GM track entries/meters in `world.modules.custom[id]`. */
+  record?: {
+    description: string;
+    uiDescription?: LocalizedText;
+    fields: PluginFieldSpec[];
+  };
+  /** Optional server-executed tools provided by this plugin. */
+  tools?: PluginToolSpec[];
+}
+
+export interface CustomModuleEntry {
+  id: string;
+  name: string;
+  values: Record<string, string | number | boolean>;
+}
+
+export interface CustomModuleState {
+  id: string;
+  name: string;
+  entries: Record<string, CustomModuleEntry>;
+}
+
 /**
  * Each module's state, present once the game master has set that module up.
  * The oracle keeps none.
@@ -354,4 +651,10 @@ export interface ModuleStates {
   calendar?: CalendarState;
   bonds?: BondsState;
   sandbox?: SandboxState;
+  market?: MarketState;
+  clues?: CluesState;
+  travel?: TravelState;
+  deck?: DeckState;
+  reputation?: ReputationState;
+  custom?: Record<string, CustomModuleState>;
 }

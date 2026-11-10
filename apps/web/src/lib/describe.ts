@@ -1,4 +1,4 @@
-import { bondStage, HOURS_PER_DAY, type Stance, type WorldEvent } from '@roleplay/shared';
+import { bondStage, HOURS_PER_DAY, reputationTier, type Stance, type WorldEvent } from '@roleplay/shared';
 import type { TFunction } from 'i18next';
 import { isKnownErrorCode, type UiError } from '../api/errors';
 import { formatSpan, formatWhen, partOfDay } from './calendar';
@@ -265,6 +265,88 @@ export function describeEvent(t: TFunction, event: WorldEvent, context: Describe
       const outcome = event.outcome.trim();
       if (!outcome) return { glyph: MODULE_GLYPH.combat, tone: 'neutral', text: t('events.combat_brokeOff', { count: event.rounds }) };
       return { glyph: MODULE_GLYPH.combat, tone: 'notice', text: t('events.combat_ended', { count: event.rounds, outcome }) };
+    }
+    case 'shop_opened':
+      return { glyph: MODULE_GLYPH.market, tone: 'neutral', text: t('events.shop_opened', { name: event.name }) };
+    case 'trade_settled': {
+      const key = event.side === 'buy' ? 'trade_bought' : 'trade_sold';
+      const tone: EventTone = event.haggleOutcome === 'deal' ? 'good' : 'neutral';
+      return {
+        glyph: MODULE_GLYPH.market,
+        tone,
+        text: t(`events.${key}`, {
+          item: event.itemName,
+          quantity: event.quantity,
+          total: event.totalPrice,
+          currency: event.currency,
+          shop: event.shopName,
+        }),
+      };
+    }
+    case 'clue_found':
+      return {
+        glyph: MODULE_GLYPH.clues,
+        tone: 'notice',
+        text: event.source
+          ? t('events.clue_found_source', { title: event.title, source: event.source })
+          : t('events.clue_found', { title: event.title }),
+      };
+    case 'deduction_made':
+      return {
+        glyph: MODULE_GLYPH.clues,
+        tone: event.status === 'confirmed' ? 'good' : event.status === 'disproven' ? 'bad' : 'notice',
+        text: t(`events.deduction_made.${event.status}`, { title: event.title }),
+      };
+    case 'route_discovered':
+      return {
+        glyph: MODULE_GLYPH.travel,
+        tone: 'neutral',
+        text: t('events.route_discovered', { name: event.name, from: event.fromName, to: event.toName }),
+      };
+    case 'journey_made':
+      return {
+        glyph: MODULE_GLYPH.travel,
+        tone: event.outcome === 'ambush' || event.outcome === 'hazard' ? 'bad' : event.outcome === 'discovery' ? 'good' : 'neutral',
+        text: event.arrived
+          ? t('events.journey_arrived', {
+              from: event.fromName,
+              to: event.toName,
+              hours: event.hours,
+              outcome: t(`world.travel.outcome.${event.outcome}`),
+            })
+          : t('events.journey_ambushed', {
+              from: event.fromName,
+              to: event.toName,
+              hours: event.hours,
+            }),
+      };
+    case 'card_drawn': {
+      const names = event.cards
+        .map((c) => (c.reversed ? `${c.name} (${t('world.deck.reversed')})` : c.name))
+        .join(t('common.listSeparator'));
+      return {
+        glyph: MODULE_GLYPH.deck,
+        tone: 'notice',
+        text: t('events.card_drawn', { deck: event.deckName, cards: names, reason: event.reason }),
+      };
+    }
+    case 'table_rolled':
+      return {
+        glyph: MODULE_GLYPH.deck,
+        tone: 'neutral',
+        text: t('events.table_rolled', { table: event.tableName, label: event.label, reason: event.reason }),
+      };
+    case 'reputation_changed': {
+      const delta = event.to - event.from;
+      const change = formatSigned(delta, locale);
+      const tier = t(`world.reputation.tier.${reputationTier(event.to)}`);
+      return {
+        glyph: MODULE_GLYPH.reputation,
+        tone: delta > 0 ? 'good' : delta < 0 ? 'bad' : 'notice',
+        text: event.title
+          ? t('events.reputation_changed_title', { name: event.name, change, tier, title: event.title })
+          : t('events.reputation_changed', { name: event.name, change, tier }),
+      };
     }
     default:
       return null;
