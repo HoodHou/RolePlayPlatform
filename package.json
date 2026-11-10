@@ -12,6 +12,7 @@
     "dev": "concurrently -k -n server,web -c blue,magenta \"npm run dev -w @roleplay/server\" \"npm run dev -w @roleplay/web\"",
     "build": "npm run build -w @roleplay/web",
     "start": "npm run start -w @roleplay/server",
+    "launch": "node scripts/launch.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present"
   },

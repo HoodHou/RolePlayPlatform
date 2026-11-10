@@ -4,6 +4,7 @@ AI-driven role-play platform. The model (the "game master") simulates the world;
 
 ## Commands
 
+- `run.bat` / `./run.sh` — for players: installs if needed, builds, starts the server on :8787 and opens the browser (`scripts/launch.mjs`; `dev` and `--no-open` are passed through)
 - `npm run dev` — server (:8787, `tsx watch`) + web (:5173, Vite, proxies `/api`)
 - `npm test` — server tests (`node:test` via tsx; no network, no API key)
 - `npm run typecheck` — all workspaces

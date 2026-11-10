@@ -16,6 +16,10 @@ English and Chinese are both first-class: the interface, the game master's instr
 
 Requires Node.js 20.12 or newer.
 
+**The short way:** double-click `run.bat` on Windows, or run `./run.sh` on macOS and Linux. It installs dependencies on the first run, builds the web UI, starts the server and opens http://localhost:8787 in your browser. Run it again while the app is up and it just opens the page.
+
+To work on the code, use development mode instead (reloads on change, at http://localhost:5173):
+
 ```bash
 npm install
 ```
@@ -24,7 +28,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173. With no API key configured the app starts in **demo mode**: a scripted game master plays a short fixed story, placeholder pictures included, so you can see everything work.
+With no API key configured the app starts in **demo mode**: a scripted game master plays a short fixed story, placeholder pictures included, so you can see everything work.
 
 To play with a real model, open **Settings** and use **Quick setup**: one click selects Claude, OpenAI, Google Gemini or a custom API with sensible defaults, and the only thing left is to paste a key. Or put a key in `.env` (copy `.env.example`):
 
@@ -38,6 +42,7 @@ To play with a real model, open **Settings** and use **Quick setup**: one click 
 
 | Command | What it does |
 | --- | --- |
+| `run.bat` / `./run.sh` | One step: installs dependencies, builds, starts the server (:8787) and opens the browser. Add `dev` for development mode, `--no-open` to leave the browser alone |
 | `npm run dev` | Server on :8787 and web app on :5173, both reloading on change |
 | `npm run build` then `npm start` | Builds the web app and serves everything from the server on :8787 |
 | `npm test` | Engine and provider tests (no network, no key) |
