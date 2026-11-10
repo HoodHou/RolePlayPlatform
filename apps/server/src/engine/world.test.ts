@@ -136,8 +136,9 @@ test('one record call builds a whole world, in dependency order whatever order i
     suggestions: ['Look around'],
     scene: { location_id: 'loc_inn', time: 'Dusk' },
     characters: [
-      { id: 'pc', name: 'Ash', is_player: true, stats: [{ name: 'HP', value: 20, max: 20 }] },
-      { id: 'npc_mara', name: 'Mara', role: 'Innkeeper', location_id: 'loc_inn' },
+      // The player is wrongly placed on the road, and Mara is given no place at all.
+      { id: 'pc', name: 'Ash', is_player: true, location_id: 'loc_road', stats: [{ name: 'HP', value: 20, max: 20 }] },
+      { id: 'npc_mara', name: 'Mara', role: 'Innkeeper' },
     ],
     items: [{ id: 'coin', name: 'Coin', quantity: 5 }],
     quests: [{ id: 'q', title: 'Find him' }],
@@ -150,13 +151,15 @@ test('one record call builds a whole world, in dependency order whatever order i
   assert.equal(world.title, 'Lantern Road');
   assert.equal(world.artStyle, 'watercolour');
   assert.equal(world.scene.locationId, 'loc_inn');
+  // The player is where the scene is, and someone introduced without a place is in the scene too.
   assert.equal(world.characters.pc?.locationId, 'loc_inn');
+  assert.equal(world.characters.npc_mara?.locationId, 'loc_inn');
   assert.equal(world.items.coin?.ownerId, 'pc');
   assert.deepEqual(world.locations.loc_road?.connections, ['loc_inn']);
   assert.deepEqual(world.suggestions, ['Look around']);
   assert.deepEqual(
     outcome.events.map((event) => event.type),
-    ['world_named', 'location_added', 'location_added', 'character_added', 'item_gained', 'quest_started', 'scene_changed'],
+    ['world_named', 'location_added', 'location_added', 'scene_changed', 'character_added', 'item_gained', 'quest_started'],
   );
 });
 

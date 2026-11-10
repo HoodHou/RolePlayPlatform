@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { RequestError, toUiError, type UiError } from '../api/errors';
 import { streamTurn } from '../api/turns';
 import { storage } from '../lib/storage';
+import { canTalkTo } from '../lib/world';
 import { applyTurnEvent, isLocalMessage, LOCAL_ID_PREFIX } from './applyTurnEvent';
 
 const SESSION_KEY = 'rp.session';
@@ -16,7 +17,7 @@ export interface RunningTurn {
   controller: AbortController;
   /** world.turn when the turn began; tells afterwards whether the server kept the action. */
   startTurn: number;
-  /** Narration ids still streaming. */
+  /** Narration and dialogue ids still streaming. */
   streaming: readonly string[];
 }
 
@@ -38,6 +39,11 @@ interface GameState {
   failure: TurnFailure | null;
   /** Unsent composer text per session. */
   drafts: Record<string, string>;
+  /**
+   * The character the player is speaking to in the open session, or null to act.
+   * Survives across turns; cleared when they leave the scene or the session changes.
+   */
+  talkingTo: string | null;
 
   init: () => Promise<void>;
   refreshSessions: () => Promise<void>;
@@ -45,6 +51,10 @@ interface GameState {
   createGame: (request: CreateSessionRequest) => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
   sendAction: (text: string) => void;
+  /** Says `text` to the character in `talkingTo`. */
+  sendTalk: (text: string) => void;
+  startTalking: (characterId: string) => void;
+  stopTalking: () => void;
   beginStory: () => void;
   retry: () => void;
   stop: () => void;
@@ -55,9 +65,24 @@ interface GameState {
 let initialized = false;
 let localSeq = 0;
 
-function optimisticAction(text: string, turn: number): PlayerMessage {
+/** The client's copy of what the player said or did, shown until the server echoes its own. */
+function optimisticPlayerMessage(request: TurnRequest, turn: number): PlayerMessage | null {
+  if (request.kind === 'start') return null;
   localSeq += 1;
-  return { kind: 'player', id: `${LOCAL_ID_PREFIX}${localSeq}`, text, turn, createdAt: new Date().toISOString() };
+  const message: PlayerMessage = {
+    kind: 'player',
+    id: `${LOCAL_ID_PREFIX}${localSeq}`,
+    text: request.text,
+    turn,
+    createdAt: new Date().toISOString(),
+  };
+  if (request.kind === 'talk') message.to = request.characterId;
+  return message;
+}
+
+/** Keeps the conversation partner only while they can still be spoken to. */
+function stillTalkingTo(characterId: string | null, session: Session): string | null {
+  return characterId !== null && canTalkTo(session.world, characterId) ? characterId : null;
 }
 
 function toSummary(session: Session): SessionSummary {
@@ -98,16 +123,18 @@ export const useGame = create<GameState>()((set, get) => {
       const session = await api.getSession(sessionId);
       const state = get();
       // Another session or a new turn may have started while this was in flight.
-      if (state.current?.id === sessionId && state.turn === null) set({ current: session });
+      if (state.current?.id === sessionId && state.turn === null) {
+        set({ current: session, talkingTo: stillTalkingTo(state.talkingTo, session) });
+      }
       return session;
     } catch {
       return null;
     }
   }
 
-  /** Puts an action the server did not keep back into the composer, unless the player has typed something new. */
+  /** Puts words the server did not keep back into the composer, unless the player has typed something new. */
   function restoreDraft(turn: RunningTurn, reloaded: Session | null): void {
-    if (turn.request.kind !== 'action') return;
+    if (turn.request.kind === 'start') return;
     const text = turn.request.text;
     const kept =
       reloaded?.messages.some((m) => m.kind === 'player' && m.turn > turn.startTurn && m.text === text) ?? false;
@@ -137,10 +164,8 @@ export const useGame = create<GameState>()((set, get) => {
       startTurn: current.world.turn,
       streaming: [],
     };
-    const messages =
-      request.kind === 'action'
-        ? [...current.messages, optimisticAction(request.text, current.world.turn + 1)]
-        : current.messages;
+    const optimistic = optimisticPlayerMessage(request, current.world.turn + 1);
+    const messages = optimistic ? [...current.messages, optimistic] : current.messages;
     set({ current: { ...current, messages }, turn, failure: null });
 
     const isLive = () => get().turn?.controller === controller;
@@ -158,7 +183,11 @@ export const useGame = create<GameState>()((set, get) => {
         const state = get();
         if (!state.current || !state.turn) return;
         const next = applyTurnEvent({ session: state.current, streaming: state.turn.streaming }, event);
-        set({ current: next.session, turn: { ...state.turn, streaming: next.streaming } });
+        set({
+          current: next.session,
+          turn: { ...state.turn, streaming: next.streaming },
+          talkingTo: stillTalkingTo(state.talkingTo, next.session),
+        });
       });
     } catch (err) {
       // Stop and session switches abort on purpose and clean up themselves.
@@ -200,6 +229,7 @@ export const useGame = create<GameState>()((set, get) => {
     turn: null,
     failure: null,
     drafts: {},
+    talkingTo: null,
 
     init: async () => {
       if (initialized) return;
@@ -224,7 +254,7 @@ export const useGame = create<GameState>()((set, get) => {
       const state = get();
       if ((state.current?.id === id && !state.openError) || state.opening === id) return;
       abandonTurn();
-      set({ opening: id, openError: null, current: null, failure: null });
+      set({ opening: id, openError: null, current: null, failure: null, talkingTo: null });
       try {
         const session = await api.getSession(id);
         if (get().opening !== id) return;
@@ -251,6 +281,7 @@ export const useGame = create<GameState>()((set, get) => {
         opening: null,
         openError: null,
         failure: null,
+        talkingTo: null,
         sessions: [toSummary(session), ...s.sessions.filter((x) => x.id !== session.id)],
       }));
       storage.set(SESSION_KEY, session.id);
@@ -266,7 +297,7 @@ export const useGame = create<GameState>()((set, get) => {
       const state = get();
       if (state.current?.id === id || state.opening === id || state.openError?.id === id) {
         abandonTurn();
-        set({ current: null, opening: null, openError: null, failure: null });
+        set({ current: null, opening: null, openError: null, failure: null, talkingTo: null });
         storage.remove(SESSION_KEY);
       }
       set((s) => {
@@ -281,6 +312,20 @@ export const useGame = create<GameState>()((set, get) => {
       if (trimmed) void runTurn({ kind: 'action', text: trimmed });
     },
 
+    sendTalk: (text) => {
+      const { current, talkingTo } = get();
+      const trimmed = text.trim();
+      if (!trimmed || !current || !talkingTo || !canTalkTo(current.world, talkingTo)) return;
+      void runTurn({ kind: 'talk', characterId: talkingTo, text: trimmed });
+    },
+
+    startTalking: (characterId) => {
+      const current = get().current;
+      if (current && canTalkTo(current.world, characterId)) set({ talkingTo: characterId });
+    },
+
+    stopTalking: () => set({ talkingTo: null }),
+
     beginStory: () => {
       void runTurn({ kind: 'start' });
     },
@@ -289,7 +334,7 @@ export const useGame = create<GameState>()((set, get) => {
       const { failure, current, drafts } = get();
       if (!failure?.retryable || !current) return;
       // The failed text was put back into the composer; retrying sends it, so clear it there.
-      if (failure.request.kind === 'action' && (drafts[current.id] ?? '').trim() === failure.request.text) {
+      if (failure.request.kind !== 'start' && (drafts[current.id] ?? '').trim() === failure.request.text) {
         set({ drafts: { ...drafts, [current.id]: '' } });
       }
       void runTurn(failure.request);

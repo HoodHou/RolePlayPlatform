@@ -3,6 +3,8 @@ import { z } from 'zod';
 import type { ToolSpec } from '../llm/types';
 import { rollDice } from './dice';
 import {
+  addMemory,
+  keepPlayerInScene,
   removeEntity,
   resolvePictureTarget,
   setScene,
@@ -71,7 +73,7 @@ export interface GameTool {
   run(world: WorldState, input: unknown, ctx: ToolContext): ToolOutcome;
 }
 
-function toJsonSchema(schema: z.ZodType): Record<string, unknown> {
+export function toJsonSchema(schema: z.ZodType): Record<string, unknown> {
   const { $schema: _, ...rest } = z.toJSONSchema(schema) as Record<string, unknown>;
   return rest;
 }
@@ -196,8 +198,28 @@ const characterEntry = z.strictObject({
   personality: z.string().optional().describe('Temperament, goals, manner of speaking.'),
   status: z.string().optional().describe('What they are doing or what condition they are in now.'),
   attitude: z.string().optional().describe('How they feel about the player right now.'),
-  location_id: id.nullable().optional().describe('Where they are. Defaults to the current scene. null means whereabouts unknown.'),
+  location_id: id
+    .nullable()
+    .optional()
+    .describe('Where they are. Always give it for someone who is not in the scene with the player: left out, a new character is placed in the current scene. null means whereabouts unknown.'),
   stats: z.array(stat).max(16).optional().describe('Stats to add or change; others stay as they are.'),
+  voice: z
+    .string()
+    .optional()
+    .describe('How they speak: register, rhythm, pet phrases, with a line or two of sample speech. Used when they talk to the player themselves, so make it distinctive.'),
+  goals: z.string().optional().describe('What they want right now and are working toward.'),
+  secrets: z.string().optional().describe('What they are hiding and from whom. Never shown to the player.'),
+});
+
+const memoryEntry = z.strictObject({
+  character_id: id.describe('Who remembers this. Not the player character.'),
+  text: z
+    .string()
+    .min(1)
+    .describe('The memory from their point of view, in their own words: what they saw, heard or did, and what they made of it. Only what they could know.'),
+  about: z.array(id).max(8).optional().describe('Ids of the characters, places or things it concerns.'),
+  importance: z.number().int().min(1).max(5).optional().describe('1 in passing, 3 worth retelling, 5 never forgotten. Defaults to 2.'),
+  told_by: id.optional().describe('Character id of whoever told them, when they did not witness it themselves.'),
 });
 
 const itemEntry = z.strictObject({
@@ -283,6 +305,10 @@ const RECORD_SECTIONS = {
     .optional()
     .describe('Things gone for good: a character who died or left the story, a destroyed place. Prefer updating status when the thing may matter again.'),
   scene: sceneSection.optional(),
+  memories: z
+    .array(memoryEntry)
+    .optional()
+    .describe('What characters will remember of this turn. One entry for each character who witnessed or took part in something they would remember, written from that character\'s point of view. This is the whole of what a character knows: someone who was not there gets no entry and does not know it happened, unless somebody tells them later (then set told_by).'),
 };
 
 const PICTURES = z
@@ -353,17 +379,24 @@ const record: GameTool = {
     };
 
     // Applied in dependency order, whatever order the model listed the sections
-    // in: places exist before characters are put in them, and the scene moves last.
+    // in. Places exist before the scene moves to one; the scene is set before
+    // characters arrive, because a newcomer with no stated whereabouts appears
+    // where the scene is.
     one('world', worldSection, ({ art_style, ...rest }) => updateWorld(world, { ...rest, artStyle: art_style }));
     each('locations', locationEntry, (entry) => upsertLocation(world, entry));
+    one('scene', sceneSection, ({ location_id, ...rest }) => setScene(world, { ...rest, locationId: location_id }));
     each('characters', characterEntry, ({ is_player, location_id, ...rest }) =>
       upsertCharacter(world, { ...rest, isPlayer: is_player, locationId: location_id }),
     );
+    keepPlayerInScene(world);
     each('items', itemEntry, ({ owner_id, ...rest }) => upsertItem(world, { ...rest, ownerId: owner_id }));
     each('quests', questEntry, (entry) => upsertQuest(world, entry));
     each('lore', loreEntry, (entry) => upsertLore(world, entry));
     each('remove', removal, (entry) => removeEntity(world, entry.kind, entry.id, entry.reason));
-    one('scene', sceneSection, ({ location_id, ...rest }) => setScene(world, { ...rest, locationId: location_id }));
+    // After scene and characters, so each memory is stamped with the time and place as they now stand.
+    each('memories', memoryEntry, ({ character_id, told_by, ...rest }) =>
+      addMemory(world, { ...rest, characterId: character_id, toldBy: told_by }),
+    );
     each('pictures', pictureEntry, (entry) => {
       if (!ctx.requestPicture) throw new WorldOpError('Illustrations are switched off.');
       const targetId = resolvePictureTarget(world, entry.subject, entry.id);

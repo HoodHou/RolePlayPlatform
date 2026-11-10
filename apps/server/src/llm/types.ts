@@ -32,12 +32,19 @@ export interface ChatTurn {
 /** Plain facts about the turn, for providers that do not read prompts (the mock). */
 export interface TurnMeta {
   locale: Locale;
-  kind: 'start' | 'action';
+  /**
+   * `start` and `action` are the game master's turns. `talk` is one character
+   * answering the player for themselves. `referee` is the game master ruling
+   * on what that character then does.
+   */
+  kind: 'start' | 'action' | 'talk' | 'referee';
   turn: number;
   playerText: string;
   seed: NewGameSeed;
   /** The world as the turn begins. Read-only. */
   world: WorldState;
+  /** For `talk` and `referee`: the character concerned. */
+  characterId?: string;
 }
 
 export interface ConversationInit {
@@ -49,6 +56,11 @@ export interface ConversationInit {
   prompt: string;
   tools: ToolSpec[];
   meta: TurnMeta;
+  /**
+   * `quick` asks for a fast answer where the provider has a setting for it: a
+   * line of dialogue should not take as long to arrive as a turn of the story.
+   */
+  pace?: 'quick';
 }
 
 export type StopReason = 'end' | 'tool_use' | 'max_tokens' | 'refusal';

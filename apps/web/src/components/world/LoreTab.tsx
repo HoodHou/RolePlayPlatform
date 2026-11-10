@@ -2,6 +2,7 @@ import type { LoreEntry, WorldState } from '@roleplay/shared';
 import { useTranslation } from 'react-i18next';
 import { splitLore } from '../../lib/world';
 import { useUi } from '../../store/ui';
+import { SecretsSwitch } from './SecretsSwitch';
 
 function LoreCard({ entry, lang, secret }: { entry: LoreEntry; lang: string; secret: boolean }) {
   const { t } = useTranslation();
@@ -25,22 +26,12 @@ function LoreCard({ entry, lang, secret }: { entry: LoreEntry; lang: string; sec
 export function LoreTab({ world, lang }: { world: WorldState; lang: string }) {
   const { t } = useTranslation();
   const showSecrets = useUi((s) => s.showSecrets);
-  const setShowSecrets = useUi((s) => s.setShowSecrets);
   const { visible, secret } = splitLore(world);
 
   return (
     <div className="lore">
-      <label className="switch">
-        <input
-          type="checkbox"
-          role="switch"
-          className="switch__input"
-          checked={showSecrets}
-          onChange={(event) => setShowSecrets(event.target.checked)}
-        />
-        <span className="switch__track" aria-hidden="true" />
-        <span className="switch__label">{t('world.lore.showSecrets')}</span>
-      </label>
+      {/* The warning sits with the secret entries further down. */}
+      <SecretsSwitch />
 
       {visible.length > 0 ? (
         <ul className="cards">

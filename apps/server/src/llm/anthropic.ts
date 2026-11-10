@@ -98,11 +98,15 @@ class AnthropicConversation implements Conversation {
   private readonly tools: Tool[];
   private readonly messages: MessageParam[];
   private readonly officialEndpoint: boolean;
+  private readonly effort: Effort | null;
 
   constructor(client: Anthropic, options: AnthropicOptions, init: ConversationInit) {
     this.client = client;
     this.options = options;
     this.system = init.system;
+    // A quick answer thinks less. Only where effort is in use at all: a null
+    // setting means the model does not take the parameter.
+    this.effort = init.pace === 'quick' && options.effort ? 'low' : options.effort;
     this.officialEndpoint = isOfficialEndpoint(options.baseUrl);
 
     this.tools = init.tools.map((spec) => ({
@@ -128,7 +132,8 @@ class AnthropicConversation implements Conversation {
   }
 
   private createStream(signal: AbortSignal) {
-    const { model, effort } = this.options;
+    const { model } = this.options;
+    const effort = this.effort;
     // Role-play wanders into dark material now and then; where the model supports
     // it, let the API retry a declined request on its default fallback model.
     const useFallbacks = this.officialEndpoint && FALLBACK_MODELS.has(model);

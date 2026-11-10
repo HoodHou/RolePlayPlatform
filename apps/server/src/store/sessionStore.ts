@@ -16,6 +16,24 @@ export function isValidSessionId(id: string): boolean {
   return ID_PATTERN.test(id);
 }
 
+/**
+ * Brings a save written by an earlier version up to the current shape, so the
+ * rest of the code never meets a missing field. Each line here is a field that
+ * was added after saves already existed.
+ */
+function upgrade(session: Session): Session {
+  const world = session.world as Partial<Session['world']> & Session['world'];
+  world.artStyle ??= '';
+  for (const character of Object.values(world.characters)) {
+    const mind = character as Partial<typeof character>;
+    mind.voice ??= '';
+    mind.goals ??= '';
+    mind.secrets ??= '';
+    mind.memories ??= [];
+  }
+  return session;
+}
+
 function summarize(session: Session): SessionSummary {
   return {
     id: session.id,
@@ -58,7 +76,8 @@ export class SessionStore {
 
   async get(id: string): Promise<Session | null> {
     if (!isValidSessionId(id)) return null;
-    return readJson<Session>(this.file(id));
+    const session = await readJson<Session>(this.file(id));
+    return session ? upgrade(session) : null;
   }
 
   async create(request: CreateSessionRequest): Promise<Session> {

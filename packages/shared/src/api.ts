@@ -58,8 +58,16 @@ export interface CreateSessionRequest {
   playerConcept?: string;
 }
 
-/** `start` generates the opening scene of a new session; `action` plays a turn. */
-export type TurnRequest = { kind: 'start' } | { kind: 'action'; text: string };
+/**
+ * `start` generates the opening scene of a new session. `action` is something
+ * the player's character does, answered by the game master. `talk` is
+ * something they say to one character who is present, answered by that
+ * character in their own voice and from their own memory.
+ */
+export type TurnRequest =
+  | { kind: 'start' }
+  | { kind: 'action'; text: string }
+  | { kind: 'talk'; characterId: string; text: string };
 
 export interface TokenUsage {
   inputTokens: number;
@@ -75,13 +83,19 @@ export interface TokenUsage {
  * frame carrying a narration message with the same id replaces the streamed
  * text with the final one. `narration_discard` drops a partial narration.
  *
+ * A character's reply in a `talk` turn streams the same way, except that it is
+ * announced first: a `message` frame carries the dialogue message with empty
+ * text (who is about to speak), `narration_delta` frames with its id append to
+ * it, and a final `message` frame replaces it. `narration_discard` with its id
+ * removes it.
+ *
  * A `message` frame whose id is already in the log replaces that message. This
  * is how an illustration arrives: first as a `pending` image message, later
  * with the same id as `ready` or `failed`. A turn that paints does not send
  * `done` until its pictures have settled.
  *
- * An `action` turn starts with a `message` frame echoing the player's message
- * (text trimmed, `turn` = previous `world.turn` + 1).
+ * An `action` or `talk` turn starts with a `message` frame echoing the player's
+ * message (text trimmed, `turn` = previous `world.turn` + 1, `to` set for talk).
  *
  * The stream always ends with exactly one `done` or `error`. On `error`,
  * `kept` says what became of the turn: false means it was undone and the

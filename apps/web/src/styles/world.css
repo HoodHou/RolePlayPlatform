@@ -459,10 +459,156 @@
   margin-top: 0.1rem;
 }
 
-.lore {
+.lore,
+.characters {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+}
+
+.secrets-switch {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.card__actions .disclosure {
+  margin-top: 0;
+}
+
+.talk-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+  padding: 0.22rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--speech) 45%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--speech);
+  font-size: 0.76rem;
+  font-weight: 650;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.talk-button:hover {
+  background: color-mix(in srgb, var(--speech) 10%, transparent);
+}
+
+.talk-button.is-active {
+  border-color: var(--speech);
+  background: color-mix(in srgb, var(--speech) 16%, transparent);
+}
+
+/* The character's mind: backstage material, styled like the game master's secrets. */
+.mind {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.15rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px dashed color-mix(in srgb, var(--secret) 50%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--secret-soft);
+}
+
+.mind__title {
+  color: var(--secret);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mind__title:lang(zh) {
+  font-size: 0.76rem;
+}
+
+.mind .card__label {
+  color: color-mix(in srgb, var(--secret) 70%, var(--text-muted));
+}
+
+.mind__count {
+  margin-left: 0.35rem;
+  color: var(--text-faint);
+  font-weight: 550;
+}
+
+.mind__empty {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.memories {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.3rem;
+}
+
+.memory {
+  padding: 0.45rem 0.55rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-sunken) 60%, transparent);
+}
+
+.memory__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.memory__importance {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.memory__importance span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+.memory__importance span.is-on {
+  background: var(--secret);
+}
+
+.memory__text {
+  margin-top: 0.2rem;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.memory__text:lang(zh) {
+  line-height: 1.7;
+}
+
+.memory__source {
+  margin-top: 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-style: italic;
+}
+
+.memory__source:lang(zh) {
+  font-style: normal;
 }
 
 .secrets {

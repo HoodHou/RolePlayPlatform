@@ -13,6 +13,21 @@ interface MessageBase {
 export interface PlayerMessage extends MessageBase {
   kind: 'player';
   text: string;
+  /** Set when this was said to one character directly (a `talk` turn): that character's id. */
+  to?: string;
+}
+
+/**
+ * A character speaking for themselves, in answer to the player. Unlike
+ * narration, it is written from that character's own knowledge and memory.
+ * Text is speech, with anything they visibly do in *asterisks*.
+ */
+export interface DialogueMessage extends MessageBase {
+  kind: 'dialogue';
+  characterId: string;
+  /** Their name when they said it, so the line still reads right if they are later removed. */
+  characterName: string;
+  text: string;
 }
 
 /** Prose from the game master. Light markdown: paragraphs, *emphasis*, quoted speech. */
@@ -48,7 +63,7 @@ export interface ImageMessage extends MessageBase {
   error?: ApiError;
 }
 
-export type Message = PlayerMessage | NarrationMessage | EventMessage | ImageMessage;
+export type Message = PlayerMessage | NarrationMessage | DialogueMessage | EventMessage | ImageMessage;
 
 /** What the player asked for when starting a game. Any field may be empty. */
 export interface NewGameSeed {

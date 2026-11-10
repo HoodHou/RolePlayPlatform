@@ -2,16 +2,22 @@ import type { Session } from '@roleplay/shared';
 import { useLayoutEffect, useRef, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { languageTag } from '../../i18n';
+import { COMPOSER_INPUT_ID } from '../../lib/composer';
+import { canTalkTo } from '../../lib/world';
 import { useGame } from '../../store/game';
+import { CharacterAvatar } from '../CharacterAvatar';
 import { Icon } from '../Icon';
 
-/** Suggested actions plus the input box. */
+/** Suggested actions, who the player is speaking to, and the input box. */
 export function ComposerArea({ session }: { session: Session }) {
   const { t } = useTranslation();
   const running = useGame((s) => s.turn !== null);
   const draft = useGame((s) => s.drafts[session.id] ?? '');
+  const talkingTo = useGame((s) => s.talkingTo);
   const setDraft = useGame((s) => s.setDraft);
   const sendAction = useGame((s) => s.sendAction);
+  const sendTalk = useGame((s) => s.sendTalk);
+  const stopTalking = useGame((s) => s.stopTalking);
   const stop = useGame((s) => s.stop);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
@@ -20,6 +26,8 @@ export function ComposerArea({ session }: { session: Session }) {
   const notStarted = session.world.turn === 0 && session.messages.length === 0;
   const suggestions = running || notStarted ? [] : session.world.suggestions.filter((s) => s.trim() !== '');
   const canSend = !running && !notStarted && draft.trim() !== '';
+  // The store clears `talkingTo` when they leave; checking here as well keeps a stale id from ever being sent.
+  const partner = talkingTo && canTalkTo(session.world, talkingTo) ? session.world.characters[talkingTo] : undefined;
 
   // Grow with the text up to the CSS max-height.
   useLayoutEffect(() => {
@@ -33,7 +41,8 @@ export function ComposerArea({ session }: { session: Session }) {
     if (!canSend) return;
     const text = draft.trim();
     setDraft('');
-    sendAction(text);
+    if (partner) sendTalk(text);
+    else sendAction(text);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -57,6 +66,7 @@ export function ComposerArea({ session }: { session: Session }) {
                   className="suggestion"
                   lang={storyLang}
                   onClick={() => {
+                    // Suggestions are story actions, even mid-conversation.
                     sendAction(suggestion);
                     textareaRef.current?.focus();
                   }}
@@ -68,24 +78,46 @@ export function ComposerArea({ session }: { session: Session }) {
           </ul>
         )}
 
+        {partner && (
+          <div className="talk-bar">
+            <CharacterAvatar name={partner.name} imageUrl={partner.imageUrl} size="small" />
+            <span className="talk-bar__label">
+              {t('story.speakingTo', { name: partner.name })}
+            </span>
+            <button
+              type="button"
+              className="talk-bar__stop"
+              onClick={() => {
+                stopTalking();
+                textareaRef.current?.focus();
+              }}
+            >
+              <Icon name="close" size={14} />
+              {t('story.actInstead')}
+            </button>
+          </div>
+        )}
+
         <form
-          className={running ? 'composer is-running' : 'composer'}
+          className={`composer${running ? ' is-running' : ''}${partner ? ' is-talking' : ''}`}
           onSubmit={(event) => {
             event.preventDefault();
             submit();
           }}
         >
-          <label className="sr-only" htmlFor="composer-input">
-            {t('story.composerLabel')}
+          <label className="sr-only" htmlFor={COMPOSER_INPUT_ID}>
+            {partner ? t('story.speakingTo', { name: partner.name }) : t('story.composerLabel')}
           </label>
           <textarea
-            id="composer-input"
+            id={COMPOSER_INPUT_ID}
             ref={textareaRef}
             className="composer__input"
             rows={1}
             lang={storyLang}
             value={draft}
-            placeholder={t('story.composerPlaceholder')}
+            placeholder={
+              partner ? t('story.composerTalkPlaceholder', { name: partner.name }) : t('story.composerPlaceholder')
+            }
             disabled={notStarted && !running}
             aria-describedby="composer-hint"
             onChange={(event) => setDraft(event.target.value)}

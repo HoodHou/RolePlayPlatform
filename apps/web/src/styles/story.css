@@ -198,9 +198,20 @@
   border-left: 2px solid var(--accent);
 }
 
-.player-action__who {
-  display: block;
+.player-action__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.5rem;
   margin-bottom: 0.2rem;
+}
+
+.player-action__to {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.player-action__who {
   color: var(--accent);
   font-size: 0.7rem;
   font-weight: 700;
@@ -222,6 +233,123 @@
 
 .player-action.is-pending {
   opacity: 0.65;
+}
+
+/* A character speaking for themselves: set like a script line, speaker cue then words. */
+.dialogue {
+  position: relative;
+  min-height: 2.75rem;
+  margin: 1.6rem 0 1.75rem;
+  padding-left: 3.4rem;
+}
+
+.dialogue__speaker {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+
+/* The portrait hangs in the gutter so the words align with the name. */
+.dialogue__speaker .avatar {
+  position: absolute;
+  top: 0.1rem;
+  left: 0;
+}
+
+.dialogue__speaker.is-interactive {
+  cursor: pointer;
+}
+
+.dialogue__speaker.is-interactive:hover .dialogue__name {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.dialogue__speaker.is-interactive:hover .avatar {
+  border-color: var(--accent-line);
+}
+
+.dialogue__speaker:focus-visible {
+  outline: none;
+}
+
+.dialogue__speaker:focus-visible .dialogue__name,
+.dialogue__speaker:focus-visible .avatar {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.dialogue__name {
+  color: var(--speech);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.dialogue__name:lang(zh) {
+  font-size: 0.84rem;
+  letter-spacing: 0.1em;
+}
+
+.dialogue__line {
+  margin-top: 0.15rem;
+  color: var(--speech);
+  font-family: var(--font-serif);
+  font-size: 1.125rem;
+  line-height: 1.72;
+  overflow-wrap: break-word;
+}
+
+.dialogue__line:lang(zh) {
+  line-height: 1.9;
+  letter-spacing: 0.02em;
+}
+
+.dialogue__line p + p {
+  margin-top: 0.6em;
+}
+
+/* *Actions* read as stage directions, set apart from the speech. */
+.dialogue__line em {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.dialogue__line em:lang(zh) {
+  font-style: normal;
+}
+
+.dialogue__line strong {
+  font-weight: 700;
+}
+
+.dialogue__typing {
+  display: inline-flex;
+  gap: 5px;
+  padding: 0.65rem 0 0.35rem;
+}
+
+.dialogue__typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--speech);
+  opacity: 0.3;
+  animation: thinking-pulse 1.2s ease-in-out infinite;
+}
+
+.dialogue__typing span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.dialogue__typing span:nth-child(3) {
+  animation-delay: 0.3s;
 }
 
 .events {
@@ -476,6 +604,46 @@ button.illustration__frame:hover {
   color: var(--text);
 }
 
+.talk-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.5rem;
+  padding: 0.3rem 0.35rem 0.3rem 0.4rem;
+  border: 1px solid color-mix(in srgb, var(--speech) 40%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--speech) 8%, transparent);
+  font-size: 0.84rem;
+}
+
+.talk-bar__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.talk-bar__stop {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.65rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-panel);
+  color: var(--text-soft);
+  font-size: 0.78rem;
+}
+
+.talk-bar__stop:hover {
+  border-color: var(--accent-line);
+  color: var(--text);
+}
+
 .composer {
   display: flex;
   align-items: flex-end;
@@ -492,6 +660,14 @@ button.illustration__frame:hover {
 .composer:focus-within {
   border-color: var(--accent-line);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.composer.is-talking {
+  border-color: color-mix(in srgb, var(--speech) 45%, transparent);
+}
+
+.composer.is-talking:focus-within {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--speech) 14%, transparent);
 }
 
 .composer__input {

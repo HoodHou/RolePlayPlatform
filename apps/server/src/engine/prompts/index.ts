@@ -3,11 +3,23 @@ import { en } from './en';
 import { zh } from './zh';
 
 export interface PromptOptions {
-  /** Whether the game master has a drawing tool this turn. */
+  /** Whether the game master can have pictures painted this turn. */
   illustrations: boolean;
 }
 
-/** Everything the game master is told, in one story language. */
+/** A character's reply to the player, and what that character means to do next. */
+export interface Exchange {
+  /** The character's name. */
+  name: string;
+  /** What the player said to them. */
+  said: string;
+  /** What they answered. */
+  reply: string;
+  /** What they now do beyond talking. */
+  intent: string;
+}
+
+/** Everything the models are told, in one story language. */
 export interface PromptPack {
   /**
    * The game master's standing instructions. For a given set of options the
@@ -18,10 +30,17 @@ export interface PromptPack {
   openingMarker: string;
   /** The request that starts a new game. */
   opening(seed: NewGameSeed): string;
-  /** Sent when a turn was narrated but nothing was recorded with tools. */
+  /** Sent when a turn was narrated but nothing was recorded. */
   recordReminder: string;
   /** Sent when the model stopped without telling the player anything. */
   narrateReminder: string;
+  /** Asks the game master to rule on what a character does after answering the player. */
+  referee(exchange: Exchange): string;
+
+  /** Instructions for a model playing one character in conversation. Byte-stable, like `system`. */
+  actorSystem: string;
+  /** Sent when the actor answered without using its tool or said nothing. */
+  actorReminder: string;
 }
 
 const PACKS: Record<Locale, PromptPack> = { en, zh };

@@ -2,8 +2,10 @@ import type { EventMessage, Message, Session } from '@roleplay/shared';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { languageTag } from '../../i18n';
+import { canTalkTo } from '../../lib/world';
 import { isLocalMessage } from '../../store/applyTurnEvent';
 import { useGame } from '../../store/game';
+import { DialogueLine } from './DialogueLine';
 import { EventRow } from './EventRow';
 import { Illustration } from './Illustration';
 import { Narration } from './Narration';
@@ -36,15 +38,37 @@ export function MessageLog({ session }: { session: Session }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
 
+  const { world } = session;
   const running = turn !== null && turn.sessionId === session.id;
   const streaming = running ? turn.streaming : NO_IDS;
   const thinking = running && streaming.length === 0;
-  // The server holds `done` until pictures settle; say so when that is all we are waiting for.
-  const painting = thinking && session.messages.some((m) => m.kind === 'image' && m.status === 'pending');
-  const notStarted = session.world.turn === 0 && session.messages.length === 0 && !running && !failure;
+  const notStarted = world.turn === 0 && session.messages.length === 0 && !running && !failure;
   const storyLang = languageTag(session.language);
-  const playerName = session.world.playerId ? session.world.characters[session.world.playerId]?.name : undefined;
+  const playerName = world.playerId ? world.characters[world.playerId]?.name : undefined;
   const blocks = useMemo(() => groupMessages(session.messages), [session.messages]);
+
+  // Names the dialogue lines recorded, by turn and speaker: the fallback for a "to …" label
+  // when the character has since left the world.
+  const spokenNames = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const m of session.messages) if (m.kind === 'dialogue') names.set(`${m.turn}:${m.characterId}`, m.characterName);
+    return names;
+  }, [session.messages]);
+
+  // Who the indicator says is thinking: the character until they start to answer, then the game master.
+  let thinkingLabel: string | null = null;
+  if (thinking) {
+    const request = turn.request;
+    const talkName = request.kind === 'talk' ? world.characters[request.characterId]?.name : undefined;
+    const answered =
+      request.kind === 'talk' &&
+      session.messages.some((m) => m.kind === 'dialogue' && m.characterId === request.characterId && m.turn > turn.startTurn);
+    // The server holds `done` until pictures settle; say so when that is all we are waiting for.
+    const painting = session.messages.some((m) => m.kind === 'image' && m.status === 'pending');
+    if (painting) thinkingLabel = t('story.painting');
+    else if (talkName && !answered) thinkingLabel = t('story.characterThinking', { name: talkName });
+    else thinkingLabel = t('story.thinking');
+  }
 
   const scrollToBottom = () => {
     const el = scrollRef.current;
@@ -95,11 +119,15 @@ export function MessageLog({ session }: { session: Session }) {
           if (block.kind === 'events') return <EventRow key={block.key} events={block.events} world={session.world} />;
           const message = block.message;
           if (message.kind === 'player') {
+            const toName = message.to
+              ? (world.characters[message.to]?.name ?? spokenNames.get(`${message.turn}:${message.to}`))
+              : undefined;
             return (
               <PlayerAction
                 key={message.id}
                 text={message.text}
                 speaker={playerName}
+                toName={toName}
                 lang={storyLang}
                 pending={isLocalMessage(message)}
               />
@@ -110,18 +138,30 @@ export function MessageLog({ session }: { session: Session }) {
               <Narration key={message.id} text={message.text} streaming={streaming.includes(message.id)} lang={storyLang} />
             );
           }
+          if (message.kind === 'dialogue') {
+            return (
+              <DialogueLine
+                key={message.id}
+                message={message}
+                imageUrl={world.characters[message.characterId]?.imageUrl}
+                streaming={streaming.includes(message.id)}
+                lang={storyLang}
+                canTalk={canTalkTo(world, message.characterId)}
+              />
+            );
+          }
           if (message.kind === 'image') return <Illustration key={message.id} message={message} lang={storyLang} />;
           return null;
         })}
 
-        {thinking && (
+        {thinkingLabel && (
           <p className="thinking">
             <span className="thinking__dots" aria-hidden="true">
               <span />
               <span />
               <span />
             </span>
-            {painting ? t('story.painting') : t('story.thinking')}
+            {thinkingLabel}
           </p>
         )}
 

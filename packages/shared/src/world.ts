@@ -14,6 +14,29 @@ export interface Stat {
   max?: number;
 }
 
+/**
+ * One thing a character remembers. A character's memories are everything they
+ * know of the story: only what they witnessed or were told, in their own view
+ * of it. What is not here, they do not know.
+ */
+export interface Memory {
+  id: string;
+  /** The turn it was formed in. */
+  turn: number;
+  /** In-world time, as the scene's clock read then. */
+  time: string;
+  /** Where the character was. */
+  locationId: string | null;
+  /** The memory, from this character's point of view. */
+  text: string;
+  /** Ids of the characters, places and things it concerns. Brings it back to mind when they come up. */
+  about: string[];
+  /** 1 (in passing) to 5 (never forgotten). */
+  importance: number;
+  /** Who told them, when they did not witness it themselves. Hearsay may be wrong. */
+  toldBy?: string;
+}
+
 export interface Character {
   id: string;
   name: string;
@@ -30,6 +53,17 @@ export interface Character {
   stats: Stat[];
   /** Portrait, once the game master has had one painted. A path on this server. */
   imageUrl?: string;
+
+  // The character's mind. All of it is hidden from the player by default, like
+  // hidden lore: it is what makes them themselves, not what they would tell you.
+  /** How they speak: register, habits, a sample line. Keeps them sounding like themselves. */
+  voice: string;
+  /** What they want right now. */
+  goals: string;
+  /** What they are hiding. Known to them and the game master only. */
+  secrets: string;
+  /** What they remember, oldest first. Always empty for the player character. */
+  memories: Memory[];
 }
 
 export interface Location {

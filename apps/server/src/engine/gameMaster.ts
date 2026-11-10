@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  DialogueMessage,
   ImageMessage,
   Message,
   Session,
@@ -11,26 +12,38 @@ import type {
 } from '@roleplay/shared';
 import { AppError, toAppError } from '../errors';
 import type { PaintRequest } from '../images/types';
-import { NO_USAGE, type LLMProvider, type ToolCall, type ToolResult } from '../llm/types';
-import { buildTurnInit } from './context';
+import { NO_USAGE, type ConversationInit, type LLMProvider, type ToolCall, type ToolResult } from '../llm/types';
+import { buildActorInit, playCharacter } from './actor';
+import { buildRefereeInit, buildTurnInit } from './context';
+import { isPresent } from './memory';
 import { getPrompts } from './prompts';
 import { StreamingStringField } from './streamingField';
 import { getTool, inExecutionOrder, NARRATE, type PictureRequest, type ToolContext } from './tools';
-import { attachPicture, WorldOpError } from './world';
+import { addMemory, attachPicture, WorldOpError } from './world';
 
 /**
- * The turn loop. One turn is: show the game master the world and the player's
- * action, let it tell the story and record what changed through tools, apply
- * those calls to the world, and repeat until it has nothing more to do.
+ * The turn loop.
+ *
+ * A story turn (`start`, `action`) belongs to the game master: it is shown the
+ * world and what the player did, tells the story and records what changed
+ * through tools, and the engine applies those calls to the world.
+ *
+ * A `talk` turn belongs to one character, who answers for themselves from
+ * their own memory (see actor.ts). The game master is only brought in
+ * afterwards, and only if the character does something that changes the world.
  */
 
-// A turn is narrate + record, preceded by a dice roll when one is needed: one
-// model step if the calls come together, up to three if they come one at a
+// A story turn is narrate + record, preceded by a dice roll when one is needed:
+// one model step if the calls come together, up to three if they come one at a
 // time. The cap leaves room for corrections and stops a model that never finishes.
 const MAX_STEPS = 10;
 
 // Pictures are slow and billed one by one.
 const MAX_PICTURES_PER_TURN = 2;
+
+// A memory the engine writes when a character answers but does not say what
+// they will remember of it. Long exchanges are cut to this.
+const FALLBACK_MEMORY_LENGTH = 600;
 
 export interface TurnDeps {
   provider: LLMProvider;
@@ -65,15 +78,21 @@ interface AppliedCalls {
 
 /** Throws when the request does not fit where the story is. */
 export function validateTurn(session: Session, request: TurnRequest): void {
-  const begun = session.world.turn > 0;
-  if (request.kind === 'start' && begun) {
-    throw new AppError('bad_request', 'This story has already begun.');
+  const { world } = session;
+  const begun = world.turn > 0;
+  if (request.kind === 'start') {
+    if (begun) throw new AppError('bad_request', 'This story has already begun.');
+    return;
   }
-  if (request.kind === 'action' && !begun) {
-    throw new AppError('bad_request', 'The opening scene has not been generated yet.');
-  }
-  if (request.kind === 'action' && !request.text.trim()) {
-    throw new AppError('bad_request', 'The action is empty.');
+  if (!begun) throw new AppError('bad_request', 'The opening scene has not been generated yet.');
+  if (!request.text.trim()) throw new AppError('bad_request', 'There is nothing to say or do.');
+
+  if (request.kind === 'talk') {
+    const character = world.characters[request.characterId];
+    if (!character) throw new AppError('bad_request', 'There is no such character.');
+    if (character.isPlayer) throw new AppError('bad_request', 'The player character cannot be spoken to.');
+    // You can only speak to someone who is there to hear it.
+    if (!isPresent(world, character)) throw new AppError('bad_request', `${character.name} is not here.`);
   }
 }
 
@@ -93,8 +112,8 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
   const checkpoint = { world: structuredClone(session.world), messages: session.messages.length };
   const turn = session.world.turn + 1;
 
-  // Once narration has reached the player the turn has happened, whatever follows.
-  let narrated = false;
+  // Once something has been told to the player the turn has happened, whatever follows.
+  let told = false;
   // The story is coming through the narrate tool, so plain text is only commentary.
   let toldByTool = false;
   // Set once the model was asked to record changes it had only narrated. From
@@ -116,7 +135,7 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
     if (recordOnly) return;
     const id = streaming.get(currentCallId)?.id ?? randomUUID();
     streaming.delete(currentCallId);
-    narrated = true;
+    told = true;
     toldByTool = true;
     push({ ...stamp(), id, kind: 'narration', text: text.trim() });
   };
@@ -149,6 +168,7 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
   };
 
   const { illustrate } = deps;
+  const promptOptions = { illustrations: illustrate !== undefined };
   const requestPicture = illustrate
     ? (picture: PictureRequest): void => {
         if (pictures.length >= MAX_PICTURES_PER_TURN) {
@@ -191,12 +211,11 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
     return applied;
   };
 
-  try {
-    session.world.suggestions = [];
-    const init = buildTurnInit(session, request, turn, { illustrations: illustrate !== undefined });
-    session.world.turn = turn;
-    if (request.kind === 'action') push({ ...stamp(), kind: 'player', text: request.text.trim() });
-
+  /**
+   * Runs the game master until it has told the story and recorded the turn.
+   * `announce` decides whether world changes are put in the log as events.
+   */
+  const runGameMaster = async (init: ConversationInit, announce: boolean): Promise<void> => {
     const conversation = deps.provider.startConversation(init);
     let recorded = false;
     let finished = false;
@@ -262,7 +281,7 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
       const usesNarrate = toldByTool || result.toolCalls.some((call) => call.name === NARRATE);
       const text = result.text.trim();
       if (text && !usesNarrate && !recordOnly) {
-        narrated = true;
+        told = true;
         push({ ...stamp(), id: textId, kind: 'narration', text });
       } else {
         takeBackText();
@@ -271,12 +290,12 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
       if (result.toolCalls.length === 0) {
         // The model stopped. If something is missing, say so once and go on;
         // otherwise the world would silently fall out of step with the story.
-        if (!narrated && !remindedToNarrate) {
+        if (!told && !remindedToNarrate) {
           remindedToNarrate = true;
           conversation.addUserMessage(prompts.narrateReminder);
           continue;
         }
-        if (narrated && !recorded && !recordOnly) {
+        if (told && !recorded && !recordOnly) {
           recordOnly = true;
           conversation.addUserMessage(prompts.recordReminder);
           continue;
@@ -293,9 +312,7 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
         if (entry) deps.emit({ type: 'narration_discard', id: entry.id });
         streaming.delete(callId);
       }
-      // The opening turn is all set-up: the panels filling in say it better than
-      // a dozen "added" notices under the first paragraph.
-      if (request.kind === 'action') {
+      if (announce) {
         for (const event of applied.events) push({ ...stamp(), kind: 'event', event });
       }
       deps.emit({ type: 'world', world: session.world });
@@ -305,17 +322,87 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
       // needs an answer, there is no reason to pay for another model call just
       // to hear "done". This holds whether the model sent narrate and record
       // together or one after the other, in either order.
-      if (narrated && finished && applied.settled) break;
+      if (told && finished && applied.settled) break;
       conversation.submitToolResults(applied.results);
     }
+  };
 
-    if (!narrated) throw new AppError('empty_response', 'The model told no story this turn.');
+  /** One character answers the player; the game master follows only if the character acts. */
+  const runConversation = async (request: Extract<TurnRequest, { kind: 'talk' }>): Promise<void> => {
+    const { world } = session;
+    const character = world.characters[request.characterId];
+    if (!character) throw new AppError('bad_request', 'There is no such character.');
+    const said = request.text.trim();
+
+    const init = buildActorInit(session, character, said, turn);
+    world.turn = turn;
+    push({ ...stamp(), kind: 'player', text: said, to: character.id });
+
+    // Announce who is about to speak; the words follow as they are written.
+    const line: DialogueMessage = {
+      ...stamp(),
+      kind: 'dialogue',
+      characterId: character.id,
+      characterName: character.name,
+      text: '',
+    };
+    deps.emit({ type: 'message', message: line });
+    const reply = await playCharacter(
+      deps.provider,
+      init,
+      {
+        signal: deps.signal,
+        onDelta: (text) => deps.emit({ type: 'narration_delta', id: line.id, text }),
+        // Sending the still-empty line again clears what had streamed.
+        onReset: () => deps.emit({ type: 'message', message: line }),
+      },
+      usage,
+    );
+    line.text = reply.text.trim();
+    push(line);
+    told = true;
+
+    // The exchange becomes part of what the character knows, in their own account
+    // of it; without one, the words themselves are kept.
+    const player = world.playerId ? world.characters[world.playerId] : undefined;
+    const fallback = `${player?.name ?? '?'}: ${said}\n${character.name}: ${line.text}`.slice(0, FALLBACK_MEMORY_LENGTH);
+    addMemory(world, {
+      characterId: character.id,
+      text: reply.memory?.trim() || fallback,
+      about: player ? [player.id] : [],
+      importance: reply.importance,
+    });
+    if (reply.attitude?.trim()) character.attitude = reply.attitude.trim();
+    deps.emit({ type: 'world', world });
+
+    // Talking changes nothing but minds. Anything more is for the game master
+    // to rule on: the actor knows what its character wants, not what the world allows.
+    const intent = reply.intent?.trim();
+    if (!intent) return;
+    const exchange = { name: character.name, said, reply: line.text, intent };
+    await runGameMaster(buildRefereeInit(session, character.id, exchange, turn, promptOptions), true);
+  };
+
+  try {
+    if (request.kind === 'talk') {
+      await runConversation(request);
+    } else {
+      session.world.suggestions = [];
+      const init = buildTurnInit(session, request, turn, promptOptions);
+      session.world.turn = turn;
+      if (request.kind === 'action') push({ ...stamp(), kind: 'player', text: request.text.trim() });
+      // The opening turn is all set-up: the panels filling in say it better than
+      // a dozen "added" notices under the first paragraph.
+      await runGameMaster(init, request.kind === 'action');
+    }
+
+    if (!told) throw new AppError('empty_response', 'The model told no story this turn.');
     await Promise.all(pictures);
     return { usage, error: null, committed: true };
   } catch (err) {
     const error = toAppError(err);
     if (error.code === 'internal') console.error('Turn failed:', err);
-    if (narrated) {
+    if (told) {
       await Promise.all(pictures);
       return { usage, error, committed: true };
     }

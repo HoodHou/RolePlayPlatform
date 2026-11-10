@@ -11,7 +11,7 @@ interface NarrationProps {
 // Memoized: while a turn streams, only the narration being written re-renders.
 export const Narration = memo(function Narration({ text, streaming, lang }: NarrationProps) {
   const content = useMemo(
-    () => formatNarration(text, streaming ? <span className="caret" aria-hidden="true" /> : undefined),
+    () => formatNarration(text, { trailing: streaming ? <span className="caret" aria-hidden="true" /> : undefined }),
     [text, streaming],
   );
   return (

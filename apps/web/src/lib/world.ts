@@ -1,8 +1,19 @@
-import type { Character, Item, LoreEntry, Location, Quest, QuestStatus, WorldState } from '@roleplay/shared';
+import type { Character, Item, LoreEntry, Location, Memory, Quest, QuestStatus, WorldState } from '@roleplay/shared';
 
 /** Whether a character is at the scene's location. */
 export function isPresent(world: WorldState, character: Character): boolean {
   return world.scene.locationId !== null && character.locationId === world.scene.locationId;
+}
+
+/** Only characters in the scene, other than the player, can be spoken to directly. */
+export function canTalkTo(world: WorldState, characterId: string): boolean {
+  const character = world.characters[characterId];
+  return character !== undefined && !character.isPlayer && character.id !== world.playerId && isPresent(world, character);
+}
+
+/** Newest first. Old saves are migrated by the server, but a missing list must not crash the panel. */
+export function memoriesOf(character: Character): Memory[] {
+  return Array.isArray(character.memories) ? [...character.memories].reverse() : [];
 }
 
 /** Everyone but the player, those in the current scene first. */

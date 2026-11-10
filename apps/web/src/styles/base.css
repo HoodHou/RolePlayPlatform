@@ -269,6 +269,45 @@ button:disabled {
   color: var(--text);
 }
 
+/* Character avatar: a square crop of the portrait, or their initial */
+.avatar {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Portraits are 2:3; keep the face in the square. */
+  object-position: center 22%;
+}
+
+.avatar__initial {
+  color: var(--speech);
+  font-family: var(--font-serif);
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.avatar--small {
+  width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 5px;
+}
+
+.avatar--small .avatar__initial {
+  font-size: 0.82rem;
+}
+
 /* Tags */
 .tag {
   display: inline-flex;

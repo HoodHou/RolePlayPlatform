@@ -57,7 +57,7 @@ function opensSpeech(src: string, i: number): boolean {
   return next !== undefined && !SPACE.test(next) && (prev === undefined || !ASCII_ALNUM.test(prev));
 }
 
-function parseInline(src: string): Inline[] {
+function parseInline(src: string, tintSpeech: boolean): Inline[] {
   const out: Inline[] = [];
   let text = '';
   const flush = () => {
@@ -78,20 +78,20 @@ function parseInline(src: string): Inline[] {
         i = start;
       } else {
         flush();
-        out.push({ kind: width === 2 ? 'strong' : 'em', children: parseInline(src.slice(start, end)) });
+        out.push({ kind: width === 2 ? 'strong' : 'em', children: parseInline(src.slice(start, end), tintSpeech) });
         i = end + width;
       }
       continue;
     }
 
-    const close = QUOTES[ch];
+    const close = tintSpeech ? QUOTES[ch] : undefined;
     if (close !== undefined && opensSpeech(src, i)) {
       // An unclosed quote runs to the end of the paragraph, which is also the
       // convention for speech that continues into the next paragraph.
       const end = src.indexOf(close, i + 1);
       const innerEnd = end === -1 ? src.length : end;
       flush();
-      const children: Inline[] = [ch, ...parseInline(src.slice(i + 1, innerEnd))];
+      const children: Inline[] = [ch, ...parseInline(src.slice(i + 1, innerEnd), tintSpeech)];
       if (end !== -1) children.push(close);
       out.push({ kind: 'speech', children });
       i = end === -1 ? src.length : end + 1;
@@ -124,11 +124,15 @@ function renderInline(nodes: Inline[], key: string): ReactNode[] {
   });
 }
 
-/**
- * Formats narration into paragraphs. `trailing` (e.g. a streaming caret) is
- * placed inline at the end of the last paragraph.
- */
-export function formatNarration(text: string, trailing?: ReactNode): ReactNode[] {
+interface FormatOptions {
+  /** Placed inline at the end of the last paragraph, e.g. a streaming caret. */
+  trailing?: ReactNode;
+  /** Tint quoted speech. Off for a character's own lines, where everything is speech. */
+  tintSpeech?: boolean;
+}
+
+/** Formats narration (or a character's line) into paragraphs. */
+export function formatNarration(text: string, { trailing, tintSpeech = true }: FormatOptions = {}): ReactNode[] {
   const blocks = text
     .replace(/\r\n?/g, '\n')
     .split(/\n[ \t]*\n/)
@@ -137,7 +141,7 @@ export function formatNarration(text: string, trailing?: ReactNode): ReactNode[]
 
   const out = blocks.map((block, index) => {
     if (SCENE_BREAK.test(block)) return <hr key={index} className="scene-break" />;
-    return <p key={index}>{renderInline(parseInline(block), String(index))}</p>;
+    return <p key={index}>{renderInline(parseInline(block, tintSpeech), String(index))}</p>;
   });
 
   if (trailing !== undefined) {
@@ -148,7 +152,7 @@ export function formatNarration(text: string, trailing?: ReactNode): ReactNode[]
     } else {
       out[lastIndex] = (
         <p key={lastIndex}>
-          {renderInline(parseInline(last), String(lastIndex))}
+          {renderInline(parseInline(last, tintSpeech), String(lastIndex))}
           {trailing}
         </p>
       );

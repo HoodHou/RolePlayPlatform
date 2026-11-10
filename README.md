@@ -6,6 +6,8 @@ An AI-driven role-play platform in the spirit of SillyTavern, built around one i
 
 You type what your character does. An AI game master narrates the result and, through tools, creates and updates everything else: characters, places, items, quests, stats, lore, time and weather. It can also paint the scene. There is no editor for any of that in the UI. The interface is a message log, a set of read-only world panels, and one input box.
 
+You can also speak to any character in the scene, and they answer for themselves: in their own voice, from their own memories, knowing only what they witnessed or were told.
+
 English and Chinese are both first-class: the interface, the game master's instructions, and the stories themselves.
 
 ![A game in progress: narration and a painted scene in the middle, the world the game master built on the right](docs/screenshot.jpg)
@@ -62,7 +64,7 @@ Everything the game master does goes through three tools.
 | --- | --- |
 | `roll_dice` | Decides an uncertain outcome. The result goes back to the model and is shown to the player. |
 | `narrate` | Tells the player what happens. This is the only prose the player reads, and it streams to the screen while the model is still writing it. |
-| `record` | Everything the turn changed, in one call: the world's title, premise and art style; places; characters and their free-form stats; items; quests; lore (hidden entries are the game master's private notes); removals; the scene (location, time, weather); pictures to paint; suggested next actions. It ends the turn. |
+| `record` | Everything the turn changed, in one call: the world's title, premise and art style; places; characters, their free-form stats and their minds; items; quests; lore (hidden entries are the game master's private notes); removals; the scene (location, time, weather); what each character will remember; pictures to paint; suggested next actions. It ends the turn. |
 
 A turn is `narrate` + `record`, preceded by `roll_dice` when something is uncertain. Stats are not predefined: the game master invents the system that fits the genre (HP and gold, sanity, a cultivation realm).
 
@@ -73,6 +75,20 @@ Three more consequences of the design:
 - **The world state is the memory.** Every turn is rebuilt from the world state and a transcript, not from the previous API exchange. Old turns can scroll out of the context window without the model losing track of who exists or what the player carries.
 - **Events are data, not prose.** The server never writes player-facing sentences about world changes; it emits typed events ("Mara joined", "HP 20 → 14") and the UI words them in the interface language.
 - **Each entry stands alone.** `record` validates and applies its entries one by one. A malformed character does not throw away the rest; the model is told exactly which entry was rejected and resends only that.
+
+### Characters who speak for themselves
+
+The game master knows everything, which makes it a poor actor: a character played from an all-seeing context leaks what they could not know, and every voice drifts toward the narrator's. So when you speak to a character directly, a separate model call plays that one character.
+
+- **A mind of their own.** Each character has a voice (how they speak, with sample lines), goals, secrets, and a stream of memories. All of it is hidden from the player, like hidden lore.
+- **Memory is knowledge.** Every turn the game master records what each witness will remember, from that character's point of view. A character who was not there gets no memory and does not know it happened, unless somebody tells them later. Hearsay is marked with who said it, and may be wrong.
+- **They are shown only what they have.** The actor's prompt contains who the character is, the memories that come to mind, what they can perceive (the place, the hour, who else is in the room and what those people are visibly doing), and common knowledge. The game master's notes, other characters' secrets and events they missed are not marked secret; they are simply not there. A model cannot leak what it was never shown.
+- **What comes to mind.** A character may hold hundreds of memories and a prompt a dozen. Recall weighs how recent a memory is, how much it mattered and whether it concerns who is present; and being asked about something brings back memories of it however old, so "what's in the cellar?" recalls the cellar.
+- **Talking changes minds, not the world.** The character answers, remembers the exchange in their own words, and may feel differently about you afterwards. If they also *do* something (hand over a key, call the guards, walk out), the game master is brought in to rule on it, narrate the outcome and record what changed, including what every witness makes of it. Plain conversation costs one fast call and never involves the game master; it reads the exchange as part of the story on its next turn.
+
+The "Show the game master's secrets" switch in the Characters tab reveals each character's voice, goals, secrets and memories. That view is how you check whether characters are behaving believably.
+
+![Speaking to a character: the line is theirs, and they will remember it](docs/conversation.jpg)
 
 ### Illustrations
 
@@ -85,9 +101,11 @@ packages/shared      The contract: world model, messages, API and settings types
 apps/server          Game engine + HTTP API (Hono)
   src/engine           world.ts      world operations, the only code that changes state
                        tools.ts      the three tools: schemas (zod) and handlers
-                       gameMaster.ts the turn loop
-                       context.ts    what the model sees each turn
-                       prompts/      game master instructions, one file per language
+                       gameMaster.ts the turn loop: story turns and conversations
+                       context.ts    what the game master sees each turn
+                       actor.ts      a character answering for themselves, and what they are shown
+                       memory.ts     which memories come to mind
+                       prompts/      game master and actor instructions, one file per language
   src/llm              provider interface + Anthropic, OpenAI (Responses), OpenAI-compatible (Chat Completions), mock
   src/images           painter interface + OpenAI Images and a free placeholder painter
   src/store            JSON-file persistence for sessions, settings and pictures
@@ -127,7 +145,10 @@ GET    /api/sessions                 saved games
 POST   /api/sessions                 new game { language, premise?, playerName?, playerConcept? }
 GET    /api/sessions/:id             full session: world + messages
 DELETE /api/sessions/:id
-POST   /api/sessions/:id/turns       { kind: "start" } or { kind: "action", text } → Server-Sent Events
+POST   /api/sessions/:id/turns       → Server-Sent Events. One of:
+                                       { kind: "start" }                       the opening scene
+                                       { kind: "action", text }                something you do
+                                       { kind: "talk", characterId, text }     something you say to a character present
 GET    /api/images/:sessionId/:file  a painted picture
 ```
 
@@ -135,8 +156,11 @@ The event stream and every payload type are documented in `packages/shared/src/a
 
 ## Roadmap
 
+- A living world: characters who pursue their goals off-screen, news that spreads between people who share a place, characters who start conversations themselves
+- Memory summaries for long games, so a character's early history condenses instead of crowding out
+- Automated believability tests: plant a secret and try to extract it, tell a fact and ask for it thirty turns later, change the world and check the answer changes
+- A separate, cheaper model for playing characters
 - Regenerate / undo a turn (per-turn world snapshots)
-- Summarise old turns into lore automatically
 - Import SillyTavern character cards and world info as a starting world
 - Let the player hand the game master a picture (vision input)
 - Multiple player characters in one world

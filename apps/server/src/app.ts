@@ -46,9 +46,11 @@ const createSessionSchema = z.object({
   playerConcept: z.string().max(2000).optional(),
 }) satisfies z.ZodType<CreateSessionRequest>;
 
+const spoken = z.string().trim().min(1).max(8000);
 const turnSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('start') }),
-  z.object({ kind: z.literal('action'), text: z.string().trim().min(1).max(8000) }),
+  z.object({ kind: z.literal('action'), text: spoken }),
+  z.object({ kind: z.literal('talk'), characterId: z.string().min(1).max(64), text: spoken }),
 ]) satisfies z.ZodType<TurnRequest>;
 
 const baseUrl = z

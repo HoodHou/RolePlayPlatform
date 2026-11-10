@@ -3,6 +3,7 @@ import type {
   ImageSubject,
   Item,
   Location,
+  Memory,
   QuestStatus,
   Stat,
   WorldEvent,
@@ -111,6 +112,15 @@ export function setScene(
   return events;
 }
 
+/**
+ * The scene is wherever the player is. Whatever a record says about the player
+ * character's whereabouts, they end up where the scene is set.
+ */
+export function keepPlayerInScene(world: WorldState): void {
+  const player = world.playerId ? world.characters[world.playerId] : undefined;
+  if (player && world.scene.locationId) player.locationId = world.scene.locationId;
+}
+
 export function upsertLocation(
   world: WorldState,
   input: { id: string; name?: string; description?: string; connections?: string[] },
@@ -201,6 +211,9 @@ export function upsertCharacter(
     attitude?: string;
     locationId?: string | null;
     stats?: StatPatch[];
+    voice?: string;
+    goals?: string;
+    secrets?: string;
   },
 ): WorldEvent[] {
   if (input.locationId && !world.locations[input.locationId]) {
@@ -230,6 +243,10 @@ export function upsertCharacter(
       // Newcomers appear where the action is unless placed elsewhere.
       locationId: input.locationId !== undefined ? input.locationId : world.scene.locationId,
       stats: [],
+      voice: input.voice ?? '',
+      goals: input.goals ?? '',
+      secrets: input.secrets ?? '',
+      memories: [],
     };
     applyStats(character, input.stats ?? [], false);
     world.characters[character.id] = character;
@@ -250,7 +267,56 @@ export function upsertCharacter(
   if (input.status !== undefined) existing.status = input.status;
   if (input.attitude !== undefined) existing.attitude = input.attitude;
   if (input.locationId !== undefined) existing.locationId = input.locationId;
+  if (input.voice !== undefined) existing.voice = input.voice;
+  if (input.goals !== undefined) existing.goals = input.goals;
+  if (input.secrets !== undefined) existing.secrets = input.secrets;
   return applyStats(existing, input.stats ?? [], true);
+}
+
+// A character keeps this many memories. Past it, the least important of the
+// oldest go first; what mattered stays.
+const MEMORY_LIMIT = 300;
+
+/**
+ * Gives a character a memory of something they witnessed, did or were told.
+ * Memories are the whole of what a character knows about the story, so this is
+ * also how knowledge spreads: whoever gets no memory of an event does not know
+ * it happened. Stamped with the scene's time and the character's whereabouts.
+ */
+export function addMemory(
+  world: WorldState,
+  input: { characterId: string; text: string; about?: string[]; importance?: number; toldBy?: string },
+): WorldEvent[] {
+  const character = world.characters[input.characterId];
+  if (!character) throw new WorldOpError(`There is no character with id "${input.characterId}".`);
+  if (character.isPlayer) {
+    throw new WorldOpError('The player character keeps no memories here; the player remembers for them.');
+  }
+  if (input.toldBy && !world.characters[input.toldBy]) {
+    throw new WorldOpError(`There is no character with id "${input.toldBy}" to have told them.`);
+  }
+
+  const last = character.memories.at(-1);
+  const sequence = last && last.turn === world.turn ? Number(last.id.split('_')[1] ?? 0) + 1 : 0;
+  const memory: Memory = {
+    id: `m${world.turn}_${sequence}`,
+    turn: world.turn,
+    time: world.scene.time,
+    locationId: character.locationId,
+    text: input.text.trim(),
+    about: unique(input.about ?? []),
+    importance: Math.min(Math.max(Math.round(input.importance ?? 2), 1), 5),
+    ...(input.toldBy ? { toldBy: input.toldBy } : {}),
+  };
+  character.memories.push(memory);
+
+  if (character.memories.length > MEMORY_LIMIT) {
+    const oldestHalf = character.memories.slice(0, MEMORY_LIMIT / 2);
+    const faintest = Math.min(...oldestHalf.map((m) => m.importance));
+    character.memories.splice(oldestHalf.findIndex((m) => m.importance === faintest), 1);
+  }
+  // What a character remembers is theirs; nothing is announced to the player.
+  return [];
 }
 
 /** How many of this item the player holds. playerId is null until the player exists. */

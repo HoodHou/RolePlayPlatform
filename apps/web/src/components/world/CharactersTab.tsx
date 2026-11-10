@@ -1,23 +1,46 @@
 import type { Character, WorldState } from '@roleplay/shared';
 import { useId, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { isPresent, npcsOf } from '../../lib/world';
+import { focusComposer } from '../../lib/composer';
+import { canTalkTo, isPresent, npcsOf } from '../../lib/world';
+import { useGame } from '../../store/game';
+import { useUi } from '../../store/ui';
 import { Icon } from '../Icon';
+import { CharacterMind } from './CharacterMind';
+import { SecretsSwitch } from './SecretsSwitch';
 import { StatList } from './StatList';
 import { Thumb } from './Thumb';
 
 interface CharacterCardProps {
   character: Character;
-  present: boolean;
-  whereabouts: string | undefined;
+  world: WorldState;
   lang: string;
+  showSecrets: boolean;
 }
 
-function CharacterCard({ character, present, whereabouts, lang }: CharacterCardProps) {
+function CharacterCard({ character, world, lang, showSecrets }: CharacterCardProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const id = useId();
-  const hasDetails = Boolean(character.description || character.personality || character.stats.length > 0);
+  const talkingTo = useGame((s) => s.talkingTo);
+  const startTalking = useGame((s) => s.startTalking);
+  const closeDrawer = useUi((s) => s.closeDrawer);
+
+  const present = isPresent(world, character);
+  const whereabouts = !present && character.locationId ? world.locations[character.locationId]?.name : undefined;
+  const talkable = canTalkTo(world, character.id);
+  const talking = talkable && talkingTo === character.id;
+  const hasDetails = Boolean(character.description || character.personality || character.stats.length > 0 || showSecrets);
+
+  const talk = () => {
+    // On narrow screens this panel is a drawer: close it (and let it restore focus) before focusing the composer.
+    flushSync(() => {
+      startTalking(character.id);
+      closeDrawer();
+    });
+    focusComposer();
+  };
 
   return (
     <li className={present ? 'card is-present' : 'card'}>
@@ -69,39 +92,58 @@ function CharacterCard({ character, present, whereabouts, lang }: CharacterCardP
           </div>
         )}
       </dl>
+
+      {(hasDetails || talkable) && (
+        <div className="card__actions">
+          {hasDetails && (
+            <button
+              type="button"
+              className="disclosure"
+              aria-expanded={open}
+              aria-controls={`${id}-details`}
+              aria-describedby={`${id}-name`}
+              onClick={() => setOpen((value) => !value)}
+            >
+              {t('world.characters.details')}
+              <Icon name="chevron" size={14} className="disclosure__chevron" />
+            </button>
+          )}
+          {talkable && (
+            <button
+              type="button"
+              className={talking ? 'talk-button is-active' : 'talk-button'}
+              aria-pressed={talking}
+              aria-label={t('world.characters.talkTo', { name: character.name })}
+              onClick={talk}
+            >
+              <Icon name="speech" size={14} />
+              {talking ? t('world.characters.talking') : t('world.characters.talk')}
+            </button>
+          )}
+        </div>
+      )}
+
       {hasDetails && (
-        <>
-          <button
-            type="button"
-            className="disclosure"
-            aria-expanded={open}
-            aria-controls={`${id}-details`}
-            aria-describedby={`${id}-name`}
-            onClick={() => setOpen((value) => !value)}
-          >
-            {t('world.characters.details')}
-            <Icon name="chevron" size={14} className="disclosure__chevron" />
-          </button>
-          <div id={`${id}-details`} className="card__details" hidden={!open}>
-            {character.description && (
-              <div className="card__section">
-                <h5 className="card__label">{t('world.characters.description')}</h5>
-                <p className="card__text" lang={lang}>
-                  {character.description}
-                </p>
-              </div>
-            )}
-            {character.personality && (
-              <div className="card__section">
-                <h5 className="card__label">{t('world.characters.personality')}</h5>
-                <p className="card__text" lang={lang}>
-                  {character.personality}
-                </p>
-              </div>
-            )}
-            <StatList stats={character.stats} label={t('world.statsLabel', { name: character.name })} lang={lang} />
-          </div>
-        </>
+        <div id={`${id}-details`} className="card__details" hidden={!open}>
+          {character.description && (
+            <div className="card__section">
+              <h5 className="card__label">{t('world.characters.description')}</h5>
+              <p className="card__text" lang={lang}>
+                {character.description}
+              </p>
+            </div>
+          )}
+          {character.personality && (
+            <div className="card__section">
+              <h5 className="card__label">{t('world.characters.personality')}</h5>
+              <p className="card__text" lang={lang}>
+                {character.personality}
+              </p>
+            </div>
+          )}
+          <StatList stats={character.stats} label={t('world.statsLabel', { name: character.name })} lang={lang} />
+          {showSecrets && <CharacterMind character={character} world={world} lang={lang} />}
+        </div>
       )}
     </li>
   );
@@ -109,19 +151,18 @@ function CharacterCard({ character, present, whereabouts, lang }: CharacterCardP
 
 export function CharactersTab({ world, lang }: { world: WorldState; lang: string }) {
   const { t } = useTranslation();
+  const showSecrets = useUi((s) => s.showSecrets);
   const npcs = npcsOf(world);
   if (npcs.length === 0) return <p className="tab-empty">{t('world.characters.empty')}</p>;
 
   return (
-    <ul className="cards">
-      {npcs.map((character) => {
-        const present = isPresent(world, character);
-        const whereabouts =
-          !present && character.locationId ? world.locations[character.locationId]?.name : undefined;
-        return (
-          <CharacterCard key={character.id} character={character} present={present} whereabouts={whereabouts} lang={lang} />
-        );
-      })}
-    </ul>
+    <div className="characters">
+      <SecretsSwitch warning={t('world.characters.secretsWarning')} />
+      <ul className="cards">
+        {npcs.map((character) => (
+          <CharacterCard key={character.id} character={character} world={world} lang={lang} showSecrets={showSecrets} />
+        ))}
+      </ul>
+    </div>
   );
 }
