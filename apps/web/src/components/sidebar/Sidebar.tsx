@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { useSubscriptions } from '../../store/library';
 import { useUi } from '../../store/ui';
 import { Icon } from '../Icon';
 import { LanguageToggle } from './LanguageToggle';
@@ -13,6 +14,8 @@ interface SidebarProps {
 export function Sidebar({ onClose }: SidebarProps) {
   const { t } = useTranslation();
   const openDialog = useUi((s) => s.openDialog);
+  const openLibrary = useUi((s) => s.openLibrary);
+  const subscriptions = useSubscriptions();
 
   return (
     <div className="sidebar">
@@ -37,6 +40,14 @@ export function Sidebar({ onClose }: SidebarProps) {
       </nav>
 
       <div className="sidebar__footer">
+        {/* The library is reached from here at any time, not only while choosing a story's modules. */}
+        <button type="button" className="sidebar__library" aria-haspopup="dialog" onClick={() => openLibrary()}>
+          <Icon name="modules" size={16} />
+          <span className="sidebar__library-name">{t('sidebar.library')}</span>
+          {subscriptions && (
+            <span className="sidebar__library-count">{t('sidebar.libraryCount', { count: subscriptions.length })}</span>
+          )}
+        </button>
         <div className="sidebar__footer-row">
           <LanguageToggle />
           <button type="button" className="btn btn--ghost btn--small" onClick={() => openDialog('settings')}>

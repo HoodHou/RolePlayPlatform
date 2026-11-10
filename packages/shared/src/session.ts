@@ -1,5 +1,6 @@
 import type { ApiError } from './api';
 import type { WorldEvent } from './events';
+import type { ModuleId } from './modules';
 import type { Locale, WorldState } from './world';
 
 interface MessageBase {
@@ -79,6 +80,18 @@ export interface Session {
   /** Language the story is told in. Independent of the UI language. */
   language: Locale;
   seed: NewGameSeed;
+  /**
+   * The play modules this story has. One the player has since unsubscribed
+   * from stays listed but is not offered until they subscribe again.
+   */
+  modules: ModuleId[];
+  /**
+   * True while the choice of modules is the game master's: every subscribed
+   * module is on offer until it has played a story turn through to the end,
+   * and from then on the story keeps the ones it chose in that turn's record
+   * (see `CreateSessionRequest.modules`).
+   */
+  modulesAuto: boolean;
   world: WorldState;
   messages: Message[];
 }

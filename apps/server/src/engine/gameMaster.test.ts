@@ -15,6 +15,8 @@ function newSession(language: Session['language'] = 'en'): Session {
     updatedAt: now,
     language,
     seed: { premise: '', playerName: 'Ash', playerConcept: '' },
+    modules: ['dice'],
+    modulesAuto: false,
     world: createEmptyWorld(),
     messages: [],
   };
@@ -90,7 +92,7 @@ test('an action turn rolls dice, narrates the result and updates the world', asy
   assert.equal(session.world.turn, 2);
   const turn2 = session.messages.filter((m) => m.turn === 2);
   assert.equal(turn2[0]?.kind, 'player');
-  assert.ok(turn2.some((m) => m.kind === 'event' && m.event.type === 'dice_rolled'));
+  assert.ok(turn2.some((m) => m.kind === 'event' && m.event.type === 'check_rolled'));
   assert.ok(turn2.some((m) => m.kind === 'event' && m.event.type === 'character_added'));
   assert.ok(turn2.some((m) => m.kind === 'narration'));
   assert.ok(session.world.characters.npc_stranger, 'a new NPC walked in');

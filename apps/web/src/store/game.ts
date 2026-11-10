@@ -1,4 +1,11 @@
-import type { CreateSessionRequest, PlayerMessage, Session, SessionSummary, TurnRequest } from '@roleplay/shared';
+import type {
+  CreateSessionRequest,
+  ModuleId,
+  PlayerMessage,
+  Session,
+  SessionSummary,
+  TurnRequest,
+} from '@roleplay/shared';
 import { create } from 'zustand';
 import { api } from '../api/client';
 import { RequestError, toUiError, type UiError } from '../api/errors';
@@ -50,6 +57,8 @@ interface GameState {
   openSession: (id: string, options?: { restoring?: boolean }) => Promise<void>;
   createGame: (request: CreateSessionRequest) => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
+  /** Changes the modules of the open story, from its next turn. Throws when the server refuses. */
+  setModules: (modules: ModuleId[]) => Promise<void>;
   sendAction: (text: string) => void;
   /** Says `text` to the character in `talkingTo`. */
   sendTalk: (text: string) => void;
@@ -179,7 +188,16 @@ export const useGame = create<GameState>()((set, get) => {
           outcome.kept = event.kept;
           return;
         }
-        if (event.type === 'done') return;
+        if (event.type === 'done') {
+          // The modules as the turn left them: after an opening the game master chose for, only the ones it took up.
+          const current = get().current;
+          if (current && Array.isArray(event.modules)) {
+            // The server settles the choice at the end of a story turn, never a conversation.
+            const modulesAuto = request.kind === 'talk' ? current.modulesAuto : false;
+            set({ current: { ...current, modules: event.modules, modulesAuto } });
+          }
+          return;
+        }
         const state = get();
         if (!state.current || !state.turn) return;
         const next = applyTurnEvent({ session: state.current, streaming: state.turn.streaming }, event);
@@ -304,6 +322,19 @@ export const useGame = create<GameState>()((set, get) => {
         const drafts = { ...s.drafts };
         delete drafts[id];
         return { sessions: s.sessions.filter((x) => x.id !== id), drafts };
+      });
+    },
+
+    setModules: async (modules) => {
+      const { current, turn } = get();
+      if (!current) return;
+      if (turn) throw new RequestError({ code: 'turn_in_progress', message: 'A turn is being generated.' });
+      const updated = await api.updateSession(current.id, { modules });
+      // Only the module fields: the log and world in hand are as new as the server's.
+      const latest = get().current;
+      if (latest?.id !== updated.id) return;
+      set({
+        current: { ...latest, modules: updated.modules, modulesAuto: updated.modulesAuto, updatedAt: updated.updatedAt },
       });
     },
 

@@ -11,8 +11,9 @@ interface OpenAIModelList {
 }
 
 // An OpenAI-style /models list mixes every kind of model the account has.
-const IMAGE_MODEL = /image|dall-e|imagen/i;
-const NOT_A_CHAT_MODEL = /image|dall-e|imagen|embedding|tts|whisper|transcribe|moderation|audio|realtime|live|sora|veo|rerank/i;
+const IMAGE_MODEL = /image|dall-e|imagen|seedream|banana|imagine/i;
+const NOT_A_CHAT_MODEL =
+  /image|dall-e|imagen|seedream|banana|imagine|embedding|tts|whisper|transcribe|moderation|audio|realtime|live|sora|veo|video|seedance|3d|rerank/i;
 
 async function listOpenAIStyle(baseUrl: string, apiKey: string | null): Promise<string[]> {
   if (!baseUrl) throw new AppError('not_configured', 'This connection has no base URL yet.');

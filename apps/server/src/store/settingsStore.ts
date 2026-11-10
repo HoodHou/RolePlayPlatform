@@ -4,6 +4,7 @@ import {
   CONNECTION_KINDS,
   DEFAULT_IMAGE_MODEL,
   DEFAULT_OPENAI_BASE_URL,
+  DEFAULT_SUBSCRIPTIONS,
   GENERATION_DEFAULTS,
   PROVIDER_EFFORTS,
   PROVIDER_KINDS,
@@ -14,11 +15,13 @@ import {
   type GenerationSettings,
   type ImageSettings,
   type KeySource,
+  type ModuleId,
   type ProviderKind,
   type PublicSettings,
   type RoleSettings,
   type UpdateSettingsRequest,
 } from '@roleplay/shared';
+import { normalizeModules } from '../engine/modules';
 import { readJson, writeJson } from './jsonFile';
 
 /** What is written to disk: only what the user changed in the app. */
@@ -28,6 +31,8 @@ interface StoredSettings {
   connections?: Partial<Record<ConnectionKind, Partial<ConnectionSettings> & { apiKey?: string }>>;
   generation?: Partial<GenerationSettings>;
   image?: Partial<ImageSettings> & { apiKey?: string };
+  /** Module ids as saved; ones this version does not know are ignored when read. */
+  subscribedModules?: string[];
 }
 
 interface ResolvedKey {
@@ -49,6 +54,8 @@ export interface ResolvedSettings {
   generation: GenerationSettings;
   image: ImageSettings & ResolvedKey;
   illustrationsActive: boolean;
+  /** The play modules the player subscribes to: the only ones a story can be played with. */
+  subscribedModules: ModuleId[];
 }
 
 /** What one role actually runs on, once "same as the game master" and empty models are filled in. */
@@ -181,6 +188,8 @@ export function resolveSettings(stored: StoredSettings, env: NodeJS.ProcessEnv):
     generation: { ...GENERATION_DEFAULTS, ...stored.generation },
     image,
     illustrationsActive,
+    // Until the player has been to the library, they have what every story had before there was one.
+    subscribedModules: stored.subscribedModules ? normalizeModules(stored.subscribedModules) : [...DEFAULT_SUBSCRIPTIONS],
   };
 }
 
@@ -213,6 +222,7 @@ export function toPublicSettings(settings: ResolvedSettings): PublicSettings {
     generation: settings.generation,
     image: withoutKey(settings.image),
     illustrationsActive: settings.illustrationsActive,
+    subscribedModules: settings.subscribedModules,
   };
 }
 
@@ -291,6 +301,7 @@ export class SettingsStore {
       if (merged) stored.connections = { ...stored.connections, [kind]: merged };
     }
     stored.image = merge(stored.image, patch.image);
+    if (patch.subscribedModules) stored.subscribedModules = normalizeModules(patch.subscribedModules);
 
     await writeJson(this.file, stored);
     return resolveSettings(stored, this.env);

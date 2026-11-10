@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { languageTag } from '../../i18n';
+import { playedModules } from '../../lib/modules';
 import { useGame } from '../../store/game';
+import { useSubscriptions } from '../../store/library';
 import { Icon } from '../Icon';
 import { PlayerCard } from './PlayerCard';
 import { WorldTabs } from './WorldTabs';
@@ -9,6 +11,20 @@ import { WorldTabs } from './WorldTabs';
 export function WorldPanel({ onClose }: { onClose?: () => void }) {
   const { t } = useTranslation();
   const session = useGame((s) => s.current);
+  const subscriptions = useSubscriptions();
+
+  let body = <p className="world__empty">{t('world.noSession')}</p>;
+  if (session) {
+    const lang = languageTag(session.language);
+    // The rules only mean something while checks are still being rolled by them.
+    const diceSystem = playedModules(session, subscriptions).includes('dice') ? session.world.modules?.dice?.system : undefined;
+    body = (
+      <div className="world__body">
+        <PlayerCard world={session.world} diceSystem={diceSystem} lang={lang} />
+        <WorldTabs session={session} subscriptions={subscriptions} lang={lang} />
+      </div>
+    );
+  }
 
   return (
     <div className="world">
@@ -20,14 +36,7 @@ export function WorldPanel({ onClose }: { onClose?: () => void }) {
           </button>
         )}
       </div>
-      {session ? (
-        <div className="world__body">
-          <PlayerCard world={session.world} lang={languageTag(session.language)} />
-          <WorldTabs world={session.world} lang={languageTag(session.language)} />
-        </div>
-      ) : (
-        <p className="world__empty">{t('world.noSession')}</p>
-      )}
+      {body}
     </div>
   );
 }

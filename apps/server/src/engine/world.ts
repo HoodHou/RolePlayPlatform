@@ -198,6 +198,16 @@ function applyStats(character: Character, patches: StatPatch[], emit: boolean): 
   return events;
 }
 
+/**
+ * Sets one numeric stat on a character's sheet, keeping its upper bound.
+ * For modules whose state lives on the sheet: a fight that wears down health.
+ */
+export function setStat(world: WorldState, characterId: string, name: string, value: number): WorldEvent[] {
+  const character = world.characters[characterId];
+  if (!character) throw new WorldOpError(`There is no character with id "${characterId}".`);
+  return applyStats(character, [{ name, value }], true);
+}
+
 export function upsertCharacter(
   world: WorldState,
   input: {

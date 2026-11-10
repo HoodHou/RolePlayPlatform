@@ -1,4 +1,4 @@
-import type { Character, Memory, WorldState } from '@roleplay/shared';
+import { MODULE_IDS, type Character, type Memory, type ModuleId, type WorldState } from '@roleplay/shared';
 
 /**
  * Remembering. A character can hold hundreds of memories; a prompt can carry
@@ -89,8 +89,15 @@ export function sceneFocus(world: WorldState, text = ''): RecallFocus {
  * full memory of every character, which would grow without bound: characters
  * in play (present, or named in the player's words) come with up to
  * `perCharacter` memories that bear on this moment, and the rest only with a count.
+ * Of the play modules, only the state of those in `modules` is shown: the game
+ * master should not try to keep up a board it has no tools for.
  */
-export function gameMasterView(world: WorldState, playerText: string, perCharacter = 8): unknown {
+export function gameMasterView(
+  world: WorldState,
+  playerText: string,
+  perCharacter = 8,
+  modules: readonly ModuleId[] = MODULE_IDS,
+): unknown {
   const focus = sceneFocus(world, playerText);
   const characters = Object.fromEntries(
     Object.values(world.characters).map((character) => {
@@ -100,5 +107,6 @@ export function gameMasterView(world: WorldState, playerText: string, perCharact
       return [character.id, { ...character, memories, ...(omitted > 0 ? { memories_not_shown: omitted } : {}) }];
     }),
   );
-  return { ...world, characters };
+  const states = Object.fromEntries(Object.entries(world.modules).filter(([id]) => modules.includes(id as ModuleId)));
+  return { ...world, characters, modules: states };
 }

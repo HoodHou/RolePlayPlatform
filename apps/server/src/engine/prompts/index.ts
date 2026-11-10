@@ -1,10 +1,14 @@
-import type { Locale, NewGameSeed } from '@roleplay/shared';
+import type { Locale, ModuleId, NewGameSeed } from '@roleplay/shared';
 import { en } from './en';
 import { zh } from './zh';
 
 export interface PromptOptions {
   /** Whether the game master can have pictures painted this turn. */
   illustrations: boolean;
+  /** The play modules this story is played with; each adds its own section of instructions. */
+  modules: readonly ModuleId[];
+  /** Whether this is the turn in which the game master says which of them the story keeps. */
+  choosing?: boolean;
 }
 
 /** A character's reply to the player, and what that character says it changes. */

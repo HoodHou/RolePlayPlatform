@@ -4,6 +4,7 @@ import { Lightbox } from './components/Lightbox';
 import { Modal } from './components/Modal';
 import { NewGameDialog } from './components/dialogs/NewGameDialog';
 import { SettingsDialog } from './components/dialogs/SettingsDialog';
+import { ModuleLibrary } from './components/library/ModuleLibrary';
 import { Sidebar } from './components/sidebar/Sidebar';
 import { StoryView } from './components/story/StoryView';
 import { WorldPanel } from './components/world/WorldPanel';
@@ -18,6 +19,7 @@ export function App() {
   const dialog = useUi((s) => s.dialog);
   const drawer = useUi((s) => s.drawer);
   const lightbox = useUi((s) => s.lightbox);
+  const library = useUi((s) => s.library !== null);
   const closeDrawer = useUi((s) => s.closeDrawer);
 
   useEffect(() => {
@@ -59,6 +61,8 @@ export function App() {
 
       {dialog === 'newGame' && <NewGameDialog />}
       {dialog === 'settings' && <SettingsDialog />}
+      {/* After the dialogs, so it opens on top of the one it was opened from. */}
+      {library && <ModuleLibrary />}
       {lightbox && <Lightbox key={lightbox.url} image={lightbox} />}
     </div>
   );

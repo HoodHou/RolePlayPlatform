@@ -16,6 +16,8 @@ function newSession(language: Session['language'] = 'en'): Session {
     updatedAt: now,
     language,
     seed: { premise: '', playerName: 'Ash', playerConcept: '' },
+    modules: ['dice'],
+    modulesAuto: false,
     world: createEmptyWorld(),
     messages: [],
   };

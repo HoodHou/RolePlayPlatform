@@ -116,7 +116,9 @@ export function MessageLog({ session }: { session: Session }) {
     <div className="log" ref={scrollRef} onScroll={onScroll}>
       <div className="log__inner" role="log" aria-label={t('story.logLabel')} aria-busy={running}>
         {blocks.map((block) => {
-          if (block.kind === 'events') return <EventRow key={block.key} events={block.events} world={session.world} />;
+          if (block.kind === 'events') {
+            return <EventRow key={block.key} events={block.events} world={session.world} lang={storyLang} />;
+          }
           const message = block.message;
           if (message.kind === 'player') {
             const toName = message.to

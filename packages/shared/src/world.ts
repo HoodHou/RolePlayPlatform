@@ -1,3 +1,5 @@
+import type { ModuleStates } from './modules';
+
 /**
  * The world model. Everything in here is authored by the game master (the
  * model) through tools; the UI only renders it.
@@ -125,6 +127,8 @@ export interface WorldState {
   items: Record<string, Item>;
   quests: Record<string, Quest>;
   lore: Record<string, LoreEntry>;
+  /** State kept by the play modules this story uses (see modules.ts). */
+  modules: ModuleStates;
   /** Next moves the game master proposes; replaced every turn. */
   suggestions: string[];
   /** Number of turns played. 0 means the opening scene has not been generated. */
@@ -143,6 +147,7 @@ export function createEmptyWorld(): WorldState {
     items: {},
     quests: {},
     lore: {},
+    modules: {},
     suggestions: [],
     turn: 0,
   };

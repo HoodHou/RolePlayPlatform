@@ -1,14 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import type {
-  DialogueMessage,
-  ImageMessage,
-  Message,
-  Session,
-  TokenUsage,
-  TurnEvent,
-  TurnRequest,
-  WorldEvent,
-  WorldState,
+import {
+  MODULE_IDS,
+  type DialogueMessage,
+  type ImageMessage,
+  type Message,
+  type ModuleId,
+  type Session,
+  type TokenUsage,
+  type TurnEvent,
+  type TurnRequest,
+  type WorldEvent,
+  type WorldState,
 } from '@roleplay/shared';
 import { AppError, toAppError } from '../errors';
 import type { PaintRequest } from '../images/types';
@@ -18,7 +20,8 @@ import { buildRefereeInit, buildTurnInit, DEFAULT_TUNING, type Tuning } from './
 import { isPresent } from './memory';
 import { getPrompts } from './prompts';
 import { StreamingStringField } from './streamingField';
-import { getTool, inExecutionOrder, NARRATE, type PictureRequest, type ToolContext } from './tools';
+import { getModules, playableModules, settleModules } from './modules';
+import { getToolbox, NARRATE, type PictureRequest, type ToolContext } from './tools';
 import { addMemory, attachPicture, WorldOpError } from './world';
 
 /**
@@ -52,6 +55,11 @@ export interface TurnDeps {
   actorProvider?: LLMProvider;
   /** How much story and memory the models are given. */
   tuning?: Tuning;
+  /**
+   * The play modules the player subscribes to. A story is played with those of
+   * its modules that are among them, and no others. Defaults to all of them.
+   */
+  subscribed?: readonly ModuleId[];
   emit(event: TurnEvent): void;
   signal: AbortSignal;
   random?: () => number;
@@ -174,7 +182,13 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
 
   const { illustrate } = deps;
   const tuning = deps.tuning ?? DEFAULT_TUNING;
-  const contextOptions = { illustrations: illustrate !== undefined, ...tuning };
+  // The modules this turn is played with: the story's own, as far as the player subscribes to them.
+  const playing = playableModules(session, deps.subscribed ?? MODULE_IDS);
+  // While the choice of modules is the game master's, its record says which the story keeps.
+  const choosing = session.modulesAuto && request.kind !== 'talk';
+  let chosen: ModuleId[] | undefined;
+  const contextOptions = { illustrations: illustrate !== undefined, modules: playing, choosing, ...tuning };
+  const toolbox = getToolbox(contextOptions);
   const requestPicture = illustrate
     ? (picture: PictureRequest): void => {
         if (pictures.length >= MAX_PICTURES_PER_TURN) {
@@ -194,12 +208,18 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
       }
     : undefined;
 
-  const ctx: ToolContext = { random: deps.random ?? Math.random, narrate, requestPicture };
+  const ctx: ToolContext = {
+    random: deps.random ?? Math.random,
+    narrate,
+    requestPicture,
+    ...(choosing ? { chooseModules: (ids: ModuleId[]) => void (chosen = ids) } : {}),
+  };
 
   const applyToolCalls = (world: WorldState, calls: ToolCall[]): AppliedCalls => {
     const applied: AppliedCalls = { results: [], events: [], settled: true, recorded: false, finished: false };
-    for (const call of inExecutionOrder(calls)) {
-      const tool = getTool(call.name);
+    for (const call of toolbox.inExecutionOrder(calls)) {
+      // A tool of a module this story does not have is as unknown as any other.
+      const tool = toolbox.get(call.name);
       if (!tool) {
         applied.results.push({ id: call.id, content: `Unknown tool "${call.name}".`, isError: true });
         applied.settled = false;
@@ -340,7 +360,7 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
     if (!character) throw new AppError('bad_request', 'There is no such character.');
     const said = request.text.trim();
 
-    const init = buildActorInit(session, character, said, turn, tuning.memoriesRecalled);
+    const init = buildActorInit(session, character, said, turn, tuning.memoriesRecalled, playing);
     world.turn = turn;
     push({ ...stamp(), kind: 'player', text: said, to: character.id });
 
@@ -363,6 +383,7 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
         onReset: () => deps.emit({ type: 'message', message: line }),
       },
       usage,
+      playing,
     );
     line.text = reply.text.trim();
     push(line);
@@ -379,6 +400,10 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
       importance: reply.importance,
     });
     if (reply.attitude?.trim()) character.attitude = reply.attitude.trim();
+    // What the character's own account moves in the story's modules: how close they now feel.
+    for (const module of getModules(playing)) {
+      for (const event of module.actor?.apply(world, character, reply) ?? []) push({ ...stamp(), kind: 'event', event });
+    }
     deps.emit({ type: 'world', world });
 
     // Plain talk changes nothing but minds, and costs one quick call. When the
@@ -406,12 +431,16 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
     }
 
     if (!told) throw new AppError('empty_response', 'The model told no story this turn.');
+    // The game master has had a whole turn with every subscribed module on offer: keep the ones it asked for.
+    if (choosing) settleModules(session, playing, chosen);
     await Promise.all(pictures);
     return { usage, error: null, committed: true };
   } catch (err) {
     const error = toAppError(err);
     if (error.code === 'internal') console.error('Turn failed:', err);
     if (told) {
+      // The turn stands as far as it got; so does a choice of modules made in it.
+      if (choosing && chosen !== undefined) settleModules(session, playing, chosen);
       await Promise.all(pictures);
       return { usage, error, committed: true };
     }

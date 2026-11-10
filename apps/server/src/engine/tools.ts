@@ -1,7 +1,8 @@
-import { IMAGE_SUBJECTS, type ImageSubject, type WorldEvent, type WorldState } from '@roleplay/shared';
+import { IMAGE_SUBJECTS, MODULE_IDS, type ModuleId, type WorldEvent } from '@roleplay/shared';
 import { z } from 'zod';
 import type { ToolSpec } from '../llm/types';
-import { rollDice } from './dice';
+import { getModules, modulesKey, type GameModule } from './modules';
+import { entryReader, id, invalidInput, toJsonSchema, type EntryError, type GameTool } from './toolKit';
 import {
   addMemory,
   keepPlayerInScene,
@@ -18,71 +19,24 @@ import {
   WorldOpError,
 } from './world';
 
+export { toJsonSchema, type GameTool, type PictureRequest, type ToolContext, type ToolOutcome } from './toolKit';
+
 /**
  * The game master's tools: its only way to reach the player and the world.
  *
- * There are three, on purpose. Some models send several tool calls in one
+ * The core is two, on purpose. Some models send several tool calls in one
  * response and others only ever send one, so a tool per kind of change would
  * cost the second kind a round trip for every character, item and quest. With
  * `narrate` for the story and one `record` call for everything it changed, a
  * turn is one response for a model that batches and two for one that does not.
+ *
+ * Play modules (see modules/) add to both: instruments of their own, such as
+ * dice, whose results the game master needs before it can tell the story, and
+ * a section each in `record` for what they keep.
  */
 
 export const NARRATE = 'narrate';
-export const ROLL_DICE = 'roll_dice';
 export const RECORD = 'record';
-
-export interface PictureRequest {
-  subject: ImageSubject;
-  /** The character, location or item pictured; null for a scene. */
-  targetId: string | null;
-  prompt: string;
-  caption: string;
-}
-
-export interface ToolContext {
-  /** Injected so tests can make dice deterministic. */
-  random: () => number;
-  /** Puts a passage of story in front of the player. */
-  narrate(text: string): void;
-  /**
-   * Starts painting in the background and returns at once. Absent when
-   * illustrations are off. Throws WorldOpError when it will not paint.
-   */
-  requestPicture?: (request: PictureRequest) => void;
-}
-
-export interface ToolOutcome {
-  /** Sent back to the model. */
-  content: string;
-  isError: boolean;
-  events: WorldEvent[];
-}
-
-export interface GameTool {
-  name: string;
-  /**
-   * A call whose result the model has no need to read. When every call in a
-   * step is silent and succeeds, nothing is waiting on another model round trip.
-   */
-  silent: boolean;
-  /** Whether the call writes to the world, as opposed to telling the story or rolling dice. */
-  records: boolean;
-  /** The model's signal that it is done with the turn. */
-  endsTurn: boolean;
-  run(world: WorldState, input: unknown, ctx: ToolContext): ToolOutcome;
-}
-
-export function toJsonSchema(schema: z.ZodType): Record<string, unknown> {
-  const { $schema: _, ...rest } = z.toJSONSchema(schema) as Record<string, unknown>;
-  return rest;
-}
-
-function invalidInput(error: z.ZodError, input: unknown): ToolOutcome {
-  // Tool input arrives unvalidated from the model; say exactly what was wrong so it can resend.
-  const content = JSON.stringify({ error: 'invalid_input', issues: z.prettifyError(error), received: input });
-  return { content, isError: true, events: [] };
-}
 
 // --- narrate ------------------------------------------------------------------
 // Narration is a tool rather than the model's plain reply for two reasons. Text
@@ -118,50 +72,9 @@ const narrateSpec: ToolSpec = {
   inputSchema: toJsonSchema(narrateSchema),
 };
 
-// --- roll_dice ----------------------------------------------------------------
-
-const rollDiceSchema = z.strictObject({
-  notation: z.string().describe('Dice notation such as "d20", "2d6" or "3d8+2".'),
-  reason: z.string().describe('What the roll decides, in the story language. Shown to the player.'),
-});
-
-const rollDiceTool: GameTool = {
-  name: ROLL_DICE,
-  silent: false,
-  records: false,
-  endsTurn: false,
-  run(_world, input, ctx) {
-    const parsed = rollDiceSchema.safeParse(input);
-    if (!parsed.success) return invalidInput(parsed.error, input);
-    const roll = rollDice(parsed.data.notation, ctx.random);
-    if (!roll) {
-      const content = `Cannot read dice notation "${parsed.data.notation}". Use NdM, NdM+K or NdM-K.`;
-      return { content, isError: true, events: [] };
-    }
-    return {
-      content: JSON.stringify({ rolls: roll.rolls, modifier: roll.modifier, total: roll.total }),
-      isError: false,
-      events: [{ type: 'dice_rolled', ...roll, reason: parsed.data.reason }],
-    };
-  },
-};
-
-const rollDiceSpec: ToolSpec = {
-  name: ROLL_DICE,
-  description:
-    'Roll dice to decide an uncertain outcome: a risky action, a contest, a chance event. Call it before narrating the result and let the roll decide. The result comes back to you and is shown to the player.',
-  inputSchema: toJsonSchema(rollDiceSchema),
-};
-
 // --- record -------------------------------------------------------------------
 // One call carries every change of the turn. Each entry is validated and
 // applied on its own, so one bad entry does not throw away the rest.
-
-const id = z
-  .string()
-  .min(1)
-  .max(64)
-  .describe('Short stable id in lowercase ASCII snake_case. Reuse it to update the same thing later.');
 
 const stat = z.strictObject({
   name: z.string().min(1).describe('Stat name as the player reads it, e.g. "HP", "Gold", "灵力".'),
@@ -317,146 +230,172 @@ const PICTURES = z
   .optional()
   .describe('Pictures to paint and show the player. Keep them for moments worth seeing: the opening scene, arriving somewhere striking, an important character\'s first appearance (as their portrait). Painting is slow and costs money, so most turns need none.');
 
-// What the model is shown. The scene is marked required here so that it is
-// restated every turn and the header never goes stale; a record that leaves
-// it out is still applied, since rejecting it would cost a round trip.
-const recordSchema = z.strictObject({ ...RECORD_SECTIONS, scene: sceneSection, suggestions });
-const recordSchemaWithPictures = z.strictObject({
-  ...RECORD_SECTIONS,
-  scene: sceneSection,
-  pictures: PICTURES,
-  suggestions,
-});
-
 const RECORD_DESCRIPTION =
   'Record everything this turn changed in the world, in one call, and end the turn. The world panels the player sees, and the world state you are given next turn, contain only what has been recorded. Include every section that changed and leave out the rest; suggestions is always required. Call it once, after narrate.';
 
-interface EntryError {
-  at: string;
-  problem: string;
-}
+// The game master's choice of modules, read leniently: a name it got wrong is
+// dropped rather than costing a round trip over a list, and how it capitalised
+// one does not matter.
+const chosenModules = z.array(z.string()).transform((names) => {
+  const named = names.map((name) => name.trim().toLowerCase());
+  return { asked: names.length, ids: MODULE_IDS.filter((id) => named.includes(id)) };
+});
 
-/** Validates and applies one entry; a failure is noted and the rest of the record carries on. */
-function applyEntry<S extends z.ZodType>(
-  schema: S,
-  value: unknown,
-  at: string,
-  errors: EntryError[],
-  apply: (entry: z.infer<S>) => WorldEvent[],
-): WorldEvent[] {
-  const parsed = schema.safeParse(value);
-  if (!parsed.success) {
-    errors.push({ at, problem: z.prettifyError(parsed.error) });
-    return [];
-  }
-  try {
-    return apply(parsed.data);
-  } catch (err) {
-    if (!(err instanceof WorldOpError)) throw err;
-    errors.push({ at, problem: err.message });
-    return [];
-  }
-}
+/**
+ * `record` for a story with these modules: the core sections, then one per
+ * module that keeps anything. With `choosing`, it also takes the game master's
+ * choice of which modules the story keeps.
+ */
+function makeRecord(modules: GameModule[], choosing: boolean): GameTool {
+  const known = [
+    ...Object.keys(RECORD_SECTIONS),
+    ...modules.filter((module) => module.record).map((module) => module.id),
+    ...(choosing ? ['modules'] : []),
+    'pictures',
+    'suggestions',
+  ];
 
-const record: GameTool = {
-  name: RECORD,
-  silent: true,
-  records: true,
-  endsTurn: true,
-  run(world, input, ctx) {
-    if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-      return { content: 'record takes an object of sections.', isError: true, events: [] };
-    }
-    const sections = input as Record<string, unknown>;
-    const errors: EntryError[] = [];
-    const events: WorldEvent[] = [];
-
-    const each = <S extends z.ZodType>(key: string, schema: S, apply: (entry: z.infer<S>) => WorldEvent[]) => {
-      const value = sections[key];
-      if (value === undefined || value === null) return;
-      if (!Array.isArray(value)) {
-        errors.push({ at: key, problem: 'Must be an array.' });
-        return;
+  return {
+    name: RECORD,
+    silent: true,
+    records: true,
+    endsTurn: true,
+    run(world, input, ctx) {
+      if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+        return { content: 'record takes an object of sections.', isError: true, events: [] };
       }
-      value.forEach((entry, index) => events.push(...applyEntry(schema, entry, `${key}[${index}]`, errors, apply)));
-    };
-    const one = <S extends z.ZodType>(key: string, schema: S, apply: (entry: z.infer<S>) => WorldEvent[]) => {
-      const value = sections[key];
-      if (value === undefined || value === null) return;
-      events.push(...applyEntry(schema, value, key, errors, apply));
-    };
+      const sections = input as Record<string, unknown>;
+      const errors: EntryError[] = [];
+      const events: WorldEvent[] = [];
+      const { each, one, rejectUnknown } = entryReader(sections, '', errors, events);
 
-    // Applied in dependency order, whatever order the model listed the sections
-    // in. Places exist before the scene moves to one; the scene is set before
-    // characters arrive, because a newcomer with no stated whereabouts appears
-    // where the scene is.
-    one('world', worldSection, ({ art_style, ...rest }) => updateWorld(world, { ...rest, artStyle: art_style }));
-    each('locations', locationEntry, (entry) => upsertLocation(world, entry));
-    one('scene', sceneSection, ({ location_id, ...rest }) => setScene(world, { ...rest, locationId: location_id }));
-    each('characters', characterEntry, ({ is_player, location_id, ...rest }) =>
-      upsertCharacter(world, { ...rest, isPlayer: is_player, locationId: location_id }),
-    );
-    keepPlayerInScene(world);
-    each('items', itemEntry, ({ owner_id, ...rest }) => upsertItem(world, { ...rest, ownerId: owner_id }));
-    each('quests', questEntry, (entry) => upsertQuest(world, entry));
-    each('lore', loreEntry, (entry) => upsertLore(world, entry));
-    each('remove', removal, (entry) => removeEntity(world, entry.kind, entry.id, entry.reason));
-    // After scene and characters, so each memory is stamped with the time and place as they now stand.
-    each('memories', memoryEntry, ({ character_id, told_by, ...rest }) =>
-      addMemory(world, { ...rest, characterId: character_id, toldBy: told_by }),
-    );
-    each('pictures', pictureEntry, (entry) => {
-      if (!ctx.requestPicture) throw new WorldOpError('Illustrations are switched off.');
-      const targetId = resolvePictureTarget(world, entry.subject, entry.id);
-      ctx.requestPicture({ subject: entry.subject, targetId, prompt: entry.prompt, caption: entry.caption ?? '' });
-      return [];
-    });
-    one('suggestions', suggestions, (actions) => setSuggestions(world, actions));
-    if (sections.suggestions === undefined) errors.push({ at: 'suggestions', problem: 'Required.' });
+      // Applied in dependency order, whatever order the model listed the sections
+      // in. Places exist before the scene moves to one; the scene is set before
+      // characters arrive, because a newcomer with no stated whereabouts appears
+      // where the scene is.
+      one('world', worldSection, ({ art_style, ...rest }) => updateWorld(world, { ...rest, artStyle: art_style }));
+      each('locations', locationEntry, (entry) => upsertLocation(world, entry));
+      one('scene', sceneSection, ({ location_id, ...rest }) => setScene(world, { ...rest, locationId: location_id }));
+      each('characters', characterEntry, ({ is_player, location_id, ...rest }) =>
+        upsertCharacter(world, { ...rest, isPlayer: is_player, locationId: location_id }),
+      );
+      keepPlayerInScene(world);
+      each('items', itemEntry, ({ owner_id, ...rest }) => upsertItem(world, { ...rest, ownerId: owner_id }));
+      each('quests', questEntry, (entry) => upsertQuest(world, entry));
+      each('lore', loreEntry, (entry) => upsertLore(world, entry));
+      each('remove', removal, (entry) => removeEntity(world, entry.kind, entry.id, entry.reason));
+      // After scene and characters, so each memory is stamped with the time and place as they now stand.
+      each('memories', memoryEntry, ({ character_id, told_by, ...rest }) =>
+        addMemory(world, { ...rest, characterId: character_id, toldBy: told_by }),
+      );
+      // Modules come after the cast they may refer to.
+      for (const module of modules) {
+        const section = sections[module.id];
+        if (module.record && section !== undefined && section !== null) {
+          events.push(...module.record.apply(world, section, errors, ctx));
+        }
+        module.afterRecord?.(world);
+      }
+      if (choosing) {
+        one('modules', chosenModules, ({ asked, ids }) => {
+          // A list in which nothing could be recognised says nothing: it must not
+          // read as "keep none". An empty list does say that.
+          if (ids.length > 0 || asked === 0) ctx.chooseModules?.(ids);
+          return [];
+        });
+      }
+      each('pictures', pictureEntry, (entry) => {
+        if (!ctx.requestPicture) throw new WorldOpError('Illustrations are switched off.');
+        const targetId = resolvePictureTarget(world, entry.subject, entry.id);
+        ctx.requestPicture({ subject: entry.subject, targetId, prompt: entry.prompt, caption: entry.caption ?? '' });
+        return [];
+      });
+      one('suggestions', suggestions, (actions) => setSuggestions(world, actions));
+      if (sections.suggestions === undefined) errors.push({ at: 'suggestions', problem: 'Required.' });
+      rejectUnknown(known, 'section');
 
-    const known = new Set([...Object.keys(RECORD_SECTIONS), 'pictures', 'suggestions']);
-    for (const key of Object.keys(sections)) {
-      if (!known.has(key)) errors.push({ at: key, problem: 'Unknown section.' });
-    }
+      if (errors.length === 0) return { content: 'ok', isError: false, events };
+      const content = JSON.stringify({
+        error: 'some_entries_rejected',
+        rejected: errors,
+        note: 'Everything else was applied. Call record again with only the corrected entries and suggestions.',
+      });
+      return { content, isError: true, events };
+    },
+  };
+}
 
-    if (errors.length === 0) return { content: 'ok', isError: false, events };
-    const content = JSON.stringify({
-      error: 'some_entries_rejected',
-      rejected: errors,
-      note: 'Everything else was applied. Call record again with only the corrected entries and suggestions.',
-    });
-    return { content, isError: true, events };
-  },
-};
-
-function recordSpec(schema: z.ZodType): ToolSpec {
+/**
+ * `record` as the model is shown it. The scene is marked required so that it
+ * is restated every turn and the header never goes stale; a record that leaves
+ * it out is still applied, since rejecting it would cost a round trip.
+ */
+function recordSpec(modules: GameModule[], illustrations: boolean, choosing: boolean): ToolSpec {
+  const moduleSections = Object.fromEntries(
+    modules.flatMap((module) => (module.record ? [[module.id, module.record.schema.optional()] as const] : [])),
+  );
+  const ids = modules.map((module) => module.id);
+  const choice = z
+    .array(z.enum(ids as [ModuleId, ...ModuleId[]]))
+    .describe('The modules this story will use, chosen for its premise: every one you have set up in this record, and every one you expect to need as the story goes on. The ones you leave out are put away after this turn.');
+  const schema = z.strictObject({
+    ...RECORD_SECTIONS,
+    scene: sceneSection,
+    ...moduleSections,
+    ...(choosing ? { modules: choice } : {}),
+    ...(illustrations ? { pictures: PICTURES } : {}),
+    suggestions,
+  });
   return { name: RECORD, description: RECORD_DESCRIPTION, inputSchema: toJsonSchema(schema) };
 }
 
-// --- registry -----------------------------------------------------------------
+// --- toolbox ------------------------------------------------------------------
 
-// Declaration order is also the order calls of one step run in: the story is
-// told before its consequences are announced.
-const tools: GameTool[] = [narrate, rollDiceTool, record];
-const byName = new Map(tools.map((tool) => [tool.name, tool]));
-const order = new Map(tools.map((tool, index) => [tool.name, index]));
+export interface ToolboxOptions {
+  /** Pictures are only part of `record` when something can actually paint. */
+  illustrations: boolean;
+  /** The play modules this story is being played with. */
+  modules: readonly ModuleId[];
+  /** Whether this is the turn in which the game master says which of them the story keeps. */
+  choosing?: boolean;
+}
 
-const specs = [narrateSpec, rollDiceSpec, recordSpec(recordSchema)];
-const specsWithPictures = [narrateSpec, rollDiceSpec, recordSpec(recordSchemaWithPictures)];
+/** The tools the game master has in one story. */
+export interface Toolbox {
+  /** What the model is offered. */
+  specs: ToolSpec[];
+  get(name: string): GameTool | undefined;
+  /** Sorts one step's calls into the order they should take effect in. */
+  inExecutionOrder<T extends { name: string }>(calls: T[]): T[];
+}
+
+function buildToolbox(options: ToolboxOptions): Toolbox {
+  const modules = getModules(options.modules);
+  // With nothing on offer there is nothing to choose between.
+  const choosing = options.choosing === true && modules.length > 0;
+  const instruments = modules.flatMap((module) => module.tools);
+  // Declaration order is also the order calls of one step run in: the story is
+  // told before its consequences are announced, and the record comes last.
+  const tools = [narrate, ...instruments.map((instrument) => instrument.tool), makeRecord(modules, choosing)];
+  const byName = new Map(tools.map((tool) => [tool.name, tool]));
+  const order = new Map(tools.map((tool, index) => [tool.name, index]));
+
+  return {
+    specs: [narrateSpec, ...instruments.map((instrument) => instrument.spec), recordSpec(modules, options.illustrations, choosing)],
+    get: (name) => byName.get(name),
+    inExecutionOrder: (calls) => [...calls].sort((a, b) => (order.get(a.name) ?? 0) - (order.get(b.name) ?? 0)),
+  };
+}
+
+const toolboxes = new Map<string, Toolbox>();
 
 /**
- * The tools offered to the game master. Pictures are only part of `record`
- * when something can actually paint. Both lists are fixed, so either one caches.
+ * The toolbox for a set of options. Built once per combination and reused, so
+ * the list a model is sent is byte-identical from turn to turn and caches.
  */
-export function getToolSpecs(options: { illustrations: boolean }): ToolSpec[] {
-  return options.illustrations ? specsWithPictures : specs;
-}
-
-export function getTool(name: string): GameTool | undefined {
-  return byName.get(name);
-}
-
-/** Sorts one step's calls into the order they should take effect in. */
-export function inExecutionOrder<T extends { name: string }>(calls: T[]): T[] {
-  return [...calls].sort((a, b) => (order.get(a.name) ?? 0) - (order.get(b.name) ?? 0));
+export function getToolbox(options: ToolboxOptions): Toolbox {
+  const key = `${modulesKey(options.modules)}|${options.illustrations ? 'pictures' : 'plain'}|${options.choosing ? 'choosing' : 'set'}`;
+  let toolbox = toolboxes.get(key);
+  if (!toolbox) toolboxes.set(key, (toolbox = buildToolbox(options)));
+  return toolbox;
 }

@@ -1,3 +1,5 @@
+import type { ModuleId } from './modules';
+
 /**
  * AI settings. Three ideas:
  *
@@ -149,6 +151,11 @@ export interface PublicSettings {
    * a placeholder painter stands in so the feature can be seen without a key.
    */
   illustrationsActive: boolean;
+  /**
+   * The play modules the player subscribes to (see modules.ts). Only these can
+   * ever be on in a story.
+   */
+  subscribedModules: ModuleId[];
 }
 
 /**
@@ -161,6 +168,8 @@ export interface UpdateSettingsRequest {
   connections?: Partial<Record<ConnectionKind, Partial<ConnectionSettings> & { apiKey?: string | null }>>;
   generation?: Partial<GenerationSettings>;
   image?: Partial<ImageSettings> & { apiKey?: string | null };
+  /** The whole list of subscriptions, replacing the saved one. */
+  subscribedModules?: ModuleId[];
 }
 
 /**

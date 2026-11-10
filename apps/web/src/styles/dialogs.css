@@ -419,6 +419,110 @@
   font-size: 0.84rem;
 }
 
+/* New game: play modules picked by hand */
+.module-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.module-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-sunken) 45%, transparent);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.module-option:hover {
+  border-color: var(--accent-line);
+}
+
+.module-option:has(.module-option__input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.module-option:has(.module-option__input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.module-option__input {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin: 0.15rem 0 0;
+  accent-color: var(--accent);
+}
+
+.module-option__input:focus-visible {
+  outline: none;
+}
+
+.module-option__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.module-option__name {
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+
+.module-option__desc {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.module-option .module-glyph {
+  margin-top: -0.1rem;
+}
+
+/* Nothing subscribed: the story will be pure narrative, and the library is the way to more. */
+.modules-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.modules-more .link-btn {
+  font-size: inherit;
+}
+
+/* The enlarged sandbox map */
+.map-dialog__heading {
+  min-width: 0;
+}
+
+.map-dialog__when {
+  margin-top: 0.1rem;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.map-dialog__body {
+  gap: 0.9rem;
+}
+
 @keyframes modal-fade {
   from {
     opacity: 0;
@@ -446,7 +550,8 @@
 
 /* Small screens: dialogs become full-screen sheets. */
 @media (max-width: 600px) {
-  .modal--dialog {
+  .modal--dialog,
+  .modal--dialog.modal--wide {
     width: 100%;
     height: 100%;
     max-height: 100%;

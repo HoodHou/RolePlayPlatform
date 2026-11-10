@@ -1,3 +1,4 @@
+import type { ModuleId, ModuleLibraryEntry } from './modules';
 import type { Message } from './session';
 import type { Locale, WorldState } from './world';
 
@@ -8,15 +9,23 @@ import type { Locale, WorldState } from './world';
  *   PUT    /api/settings               UpdateSettingsRequest -> PublicSettings
  *   GET    /api/settings/models?target=<ModelListTarget> -> ModelListResponse
  *                                      (asks the provider, using the saved settings and key)
+ *   GET    /api/modules                -> ModuleLibraryResponse
+ *                                      (subscribing is a settings update: `subscribedModules`)
  *   GET    /api/sessions               -> SessionSummary[]
  *   POST   /api/sessions               CreateSessionRequest -> Session
  *   GET    /api/sessions/:id           -> Session
+ *   PATCH  /api/sessions/:id           UpdateSessionRequest -> Session
  *   DELETE /api/sessions/:id           -> { ok: true }
  *   POST   /api/sessions/:id/turns     TurnRequest -> text/event-stream of TurnEvent
  *   GET    /api/images/:sessionId/:file -> the image bytes (the `url` of image messages)
  *
  * Failed requests answer with a non-2xx status and an ErrorResponse body.
  */
+
+export interface ModuleLibraryResponse {
+  /** Every module there is, in the order they are always listed in. */
+  modules: ModuleLibraryEntry[];
+}
 
 export interface ModelListResponse {
   /** Model ids the configured key can use, most relevant first. */
@@ -56,6 +65,21 @@ export interface CreateSessionRequest {
   premise?: string;
   playerName?: string;
   playerConcept?: string;
+  /**
+   * The play modules this story has, from among those the player subscribes
+   * to; any other is dropped. Leave it out to let the game master choose: it
+   * is offered every subscribed module for the opening turn, and says in its
+   * record which ones the story will use.
+   */
+  modules?: ModuleId[];
+}
+
+/**
+ * Changes which modules a story has, from among those the player subscribes
+ * to. Takes effect from the next turn; a module switched off keeps its state.
+ */
+export interface UpdateSessionRequest {
+  modules: ModuleId[];
 }
 
 /**
@@ -97,6 +121,10 @@ export interface TokenUsage {
  * An `action` or `talk` turn starts with a `message` frame echoing the player's
  * message (text trimmed, `turn` = previous `world.turn` + 1, `to` set for talk).
  *
+ * `done` carries the session's modules as they now stand: after the opening
+ * turn of a story that left the choice to the game master, the list is
+ * narrowed to the modules it took up.
+ *
  * The stream always ends with exactly one `done` or `error`. On `error`,
  * `kept` says what became of the turn: false means it was undone and the
  * session is as it was before, so the same request can simply be sent again;
@@ -108,5 +136,5 @@ export type TurnEvent =
   | { type: 'narration_delta'; id: string; text: string }
   | { type: 'narration_discard'; id: string }
   | { type: 'world'; world: WorldState }
-  | { type: 'done'; turn: number; usage: TokenUsage }
+  | { type: 'done'; turn: number; usage: TokenUsage; modules: ModuleId[] }
   | { type: 'error'; error: ApiError; kept: boolean };

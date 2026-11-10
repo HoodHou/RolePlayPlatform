@@ -370,6 +370,65 @@ test('chat completions: what a server attaches to a tool call is sent back with 
   }
 });
 
+test('chat completions: an assistant turn goes back the way it came, whatever the server added to it', async () => {
+  // Through a gateway each model family adds fields of its own, streamed in pieces like everything else.
+  const api = await fakeApi([
+    {
+      body: sse([
+        chunk({ role: 'assistant', reasoning_content: 'The lock is old. ' }),
+        chunk({ reasoning_content: 'Roll for it.', provider_specific_fields: { thought_signatures: ['c2ln'] } }),
+        // One block of reasoning in three pieces, told apart from the next block by its index.
+        chunk({ reasoning_details: [{ type: 'reasoning.text', index: 0, text: 'The lock ' }] }),
+        chunk({ reasoning_details: [{ type: 'reasoning.text', index: 0, text: 'is old.' }] }),
+        chunk({ reasoning_details: [{ type: 'reasoning.text', index: 0, signature: 'U0lH' }, { type: 'reasoning.encrypted', index: 1, data: 'b3BhcXVl' }] }),
+        chunk({
+          tool_calls: [
+            { index: 0, id: 'call_1', type: 'function', function: { name: 'roll_dice', arguments: '{"notation":' }, caller: { type: 'direct' } },
+          ],
+        }),
+        chunk({
+          tool_calls: [{ index: 0, function: { arguments: '"d20"}' }, provider_specific_fields: { thought_signature: 'bmVk' } }],
+          provider_specific_fields: { thought_signatures: ['bmVk'] },
+        }),
+        chunk({ refusal: null }, 'tool_calls'),
+        { data: '[DONE]' },
+      ]),
+    },
+    { body: sse([chunk({ content: 'Done.' }), chunk({}, 'stop'), { data: '[DONE]' }]) },
+  ]);
+  try {
+    const conversation = new OpenAICompatProvider({ ...plainCompat, baseUrl: api.url }).startConversation(init);
+    const first = await conversation.step(handlers());
+    // None of it reaches the engine.
+    assert.deepEqual(first.toolCalls, [{ id: 'call_1', name: 'roll_dice', input: { notation: 'd20' } }]);
+
+    conversation.submitToolResults([{ id: 'call_1', content: '{"total":17}', isError: false }]);
+    await conversation.step(handlers());
+    assert.deepEqual(api.requests[1]!.body.messages[4], {
+      role: 'assistant',
+      content: null,
+      // Text is joined, lists run on, and nothing the server left empty is invented.
+      reasoning_content: 'The lock is old. Roll for it.',
+      provider_specific_fields: { thought_signatures: ['c2ln', 'bmVk'] },
+      reasoning_details: [
+        { type: 'reasoning.text', index: 0, text: 'The lock is old.', signature: 'U0lH' },
+        { type: 'reasoning.encrypted', index: 1, data: 'b3BhcXVl' },
+      ],
+      tool_calls: [
+        {
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'roll_dice', arguments: '{"notation":"d20"}' },
+          caller: { type: 'direct' },
+          provider_specific_fields: { thought_signature: 'bmVk' },
+        },
+      ],
+    });
+  } finally {
+    api.close();
+  }
+});
+
 test('chat completions: a custom API with no address or no model is a configuration error', () => {
   for (const missing of [{ baseUrl: '' }, { baseUrl: 'https://gateway.example/v1', model: '' }]) {
     assert.throws(

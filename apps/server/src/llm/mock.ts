@@ -1,5 +1,6 @@
 import type { Character, Locale, WorldState } from '@roleplay/shared';
 import { AppError } from '../errors';
+import { BOARD_PREMISE, boardOrders, boardOutcome, openBoard } from './mockBoard';
 import {
   NO_USAGE,
   type Conversation,
@@ -17,6 +18,10 @@ import {
  * turns, and characters answering for themselves. That makes it the reference
  * for how a turn is meant to look, and lets the whole stack run offline in
  * development and tests.
+ *
+ * It uses whatever play modules the story has: a check where there are dice,
+ * and for a premise about contending powers a second story told on the sandbox
+ * board (mockBoard.ts).
  */
 
 /** The input of one `record` call, as the tool schema defines it. */
@@ -30,6 +35,14 @@ interface RecordInput {
   scene?: Record<string, unknown>;
   memories?: { character_id: string; text: string; about?: string[]; importance?: number }[];
   pictures?: Record<string, unknown>[];
+  /** Sections of the play modules the story has. */
+  dice?: Record<string, unknown>;
+  clocks?: Record<string, unknown>[];
+  bonds?: Record<string, unknown>[];
+  calendar?: Record<string, unknown>;
+  combat?: Record<string, unknown>;
+  /** The modules the story keeps, on the turn that choice is the game master's. */
+  modules?: string[];
   suggestions: string[];
 }
 
@@ -40,13 +53,25 @@ interface RespondInput {
   importance?: number;
   attitude?: string;
   changes?: string;
+  /** The bonds module's part: how the exchange moved them. */
+  bond?: { change: number; reason: string };
 }
 
 interface ScriptedStep {
   roll?: { notation: string; reason: string };
+  /** A check against the player's sheet, where the story has dice. */
+  check?: Record<string, unknown>;
+  /** A question put to the oracle. */
+  fate?: Record<string, unknown>;
+  /** Time passing, on the calendar. */
+  pass?: Record<string, unknown>;
+  /** A round of blows, in the combat tracker. */
+  fight?: Record<string, unknown>;
+  /** Battles and rounds, handed to the sandbox. */
+  simulate?: Record<string, unknown>;
   /** Told through `narrate`. */
   text?: string;
-  record?: RecordInput;
+  record?: RecordInput | Record<string, unknown>;
   /** A character's answer, through `respond`. */
   respond?: RespondInput;
 }
@@ -62,6 +87,36 @@ interface Part {
 interface Script {
   hp: string;
   gold: string;
+  /** The stat the player's attempts are checked against. */
+  wits: string;
+  /** The danger the inn's one progress clock counts toward. */
+  clock: { name: string; description: string };
+  /** Why Mara's bond with the player moves. */
+  bond: { earned: string; lost: string; talked: string };
+  /** The fight the player can pick with what waits outside. */
+  combat: {
+    /** Matches an action that starts it. */
+    words: RegExp;
+    foe: string;
+    playerStrikes: string;
+    foeStrikes: string;
+    /** Told after a round that settled nothing, when the player's side won, and when it lost. */
+    ongoing: string;
+    won: string;
+    lost: string;
+    /** How it ended, for the tracker. */
+    outcomeWon: string;
+    outcomeLost: string;
+  };
+  /** What the calendar holds: a deadline the player knows of, and an arrival they do not. */
+  calendar: {
+    deadline: { title: string; description: string };
+    arrival: { title: string; description: string };
+    /** What fills the two hours each action takes. */
+    passing: string;
+    /** Told when the hidden arrival comes due. */
+    arrives: string;
+  };
   times: string[];
   opening(meta: TurnMeta): { text: string; record: RecordInput };
   rollReason: string;
@@ -98,10 +153,31 @@ const PLAYER = 'pc_player';
 const MARA = 'npc_mara';
 const STRANGER = 'npc_stranger';
 const QUEST = 'quest_missing_courier';
+const CLOCK = 'clock_marsh';
 
 const en: Script = {
   hp: 'HP',
   gold: 'Gold',
+  wits: 'Wits',
+  clock: { name: 'The marsh closes in', description: 'Whatever walks the causeway with a lantern reaches the inn door.' },
+  bond: { earned: 'You did what you said you would', lost: 'You made a mess of it under her roof', talked: 'You asked, and listened to the answer' },
+  combat: {
+    words: /\b(attack|fight|strike|stab|kill)\b|\bdraw (my|a|the) (knife|blade|sword|weapon)\b/i,
+    foe: 'The lantern-bearer',
+    playerStrikes: 'You go for it with your knife',
+    foeStrikes: 'It swings the lantern at your head',
+    ongoing: 'Steel and brass ring in the dark of the yard. Neither of you gives ground, and the green light swings wildly between you.',
+    won: 'The lantern hits the mud and gutters. Whatever carried it folds up around the wound like wet cloth, and is still.',
+    lost: 'The lantern catches you across the temple. The yard tilts, the mud comes up to meet you, and the pale light bends over where you lie.',
+    outcomeWon: 'The lantern-bearer fell in the inn yard.',
+    outcomeLost: 'You went down in the yard, under the pale light.',
+  },
+  calendar: {
+    deadline: { title: 'The road closes', description: 'At first light on the third day the causeway floods, and nobody leaves the inn for a week.' },
+    arrival: { title: 'The lantern reaches the yard', description: 'Whatever carries the light on the causeway comes as far as the inn yard.' },
+    passing: 'The evening wears on',
+    arrives: '*Outside, a pale light has stopped in the yard. It is not moving on.*',
+  },
   times: ['Dusk', 'Nightfall', 'Late evening', 'Midnight', 'The small hours', 'First light'],
   opening: ({ seed }) => ({
     text: [
@@ -145,6 +221,7 @@ const en: Script = {
           stats: [
             { name: 'HP', value: 20, max: 20 },
             { name: 'Gold', value: 12 },
+            { name: 'Wits', value: 2 },
             { name: 'Nerve', value: 'Steady' },
           ],
         },
@@ -289,6 +366,26 @@ const en: Script = {
 const zh: Script = {
   hp: '生命',
   gold: '铜钱',
+  wits: '机敏',
+  clock: { name: '大泽合围', description: '栈道上那个提灯的东西走到客栈门口。' },
+  bond: { earned: '你说到做到', lost: '你在她的屋檐下把事情搞砸了', talked: '你问了，也听进去了' },
+  combat: {
+    words: /攻击|动手|拔刀|出刀|挥刀|砍|刺向|开打|杀/,
+    foe: '提灯者',
+    playerStrikes: '你挺刀刺了过去',
+    foeStrikes: '它抡起铜灯砸向你的头',
+    ongoing: '院子的黑暗里，铁器和铜器撞得铮铮作响。谁也不肯退半步，那点青光在你们之间乱晃。',
+    won: '铜灯落进泥里，闪了几下灭了。提着它的那个东西像一块湿布，裹着伤口缩成一团，不动了。',
+    lost: '铜灯砸在你的太阳穴上。院子一歪，泥地迎面扑来，那点惨白的光俯在你倒下的地方。',
+    outcomeWon: '提灯者倒在了客栈的院子里。',
+    outcomeLost: '你倒在院子里，倒在那点惨白的灯光下。',
+  },
+  calendar: {
+    deadline: { title: '古道封路', description: '第三天破晓时栈道会被水淹没，一个礼拜之内谁也离不开客栈。' },
+    arrival: { title: '灯火进了院子', description: '栈道上提着那盏灯的东西，一直走到了客栈的院子里。' },
+    passing: '夜一点点深了',
+    arrives: '*门外，一点惨白的光停在了院子里，不再往前走。*',
+  },
   times: ['黄昏', '入夜', '夜深', '子时', '后半夜', '破晓'],
   opening: ({ seed }) => ({
     text: [
@@ -324,6 +421,7 @@ const zh: Script = {
           stats: [
             { name: '生命', value: 20, max: 20 },
             { name: '铜钱', value: 12 },
+            { name: '机敏', value: 2 },
             { name: '胆气', value: '尚稳' },
           ],
         },
@@ -467,18 +565,95 @@ function numericStat(world: WorldState, name: string, fallback: number): number 
   return typeof value === 'number' ? value : fallback;
 }
 
-function rollTotal(results: ToolResult[]): number {
+/** Whether the attempt came off: by the outcome of a check, or by the total of a plain roll. Without dice it simply does. */
+function succeeded(results: ToolResult[]): boolean {
   try {
-    const parsed = JSON.parse(results[0]?.content ?? '') as { total?: unknown };
-    return typeof parsed.total === 'number' ? parsed.total : 10;
+    const parsed = JSON.parse(results[0]?.content ?? '') as { outcome?: unknown; total?: unknown; answer?: unknown };
+    if (typeof parsed.outcome === 'string') return ['critical', 'success', 'partial'].includes(parsed.outcome);
+    // The oracle's word: any kind of yes.
+    if (typeof parsed.answer === 'string') return parsed.answer.startsWith('yes');
+    return typeof parsed.total === 'number' ? parsed.total >= 10 : true;
   } catch {
-    return 10;
+    return true;
   }
 }
 
+const FOE = 'foe_lantern';
+
+/** A round of the fight in the yard: the player's blow, then the foe's. The first round also begins the fight. */
+function fightRound(meta: TurnMeta, script: Script): Record<string, unknown> {
+  const begun = meta.world.modules.combat?.active === true;
+  return {
+    ...(begun
+      ? {}
+      : {
+          begin: {
+            combatants: [
+              // The player's health is the stat on their sheet: the blows land there.
+              { id: PLAYER, side: 'player', defense: 13, character_id: PLAYER, hp_stat: script.hp, initiative_bonus: 2 },
+              { id: FOE, side: 'enemy', defense: 11, name: script.combat.foe, hp: 9 },
+            ],
+          },
+        }),
+    attacks: [
+      { attacker_id: PLAYER, target_id: FOE, bonus: 4, damage: '1d8+1', reason: script.combat.playerStrikes },
+      { attacker_id: FOE, target_id: PLAYER, bonus: 3, damage: '1d6', reason: script.combat.foeStrikes },
+    ],
+    next_round: true,
+  };
+}
+
+/** Tells the round as it fell, and ends the fight in the record once one of the two is down. */
+function resolveFight(script: Script, results: ToolResult[]): ScriptedStep {
+  let standing: { id: string; down: boolean }[] = [];
+  try {
+    standing = (JSON.parse(results[0]?.content ?? '{}') as { standing?: typeof standing }).standing ?? [];
+  } catch {
+    // An unreadable result is told as a round that settled nothing.
+  }
+  const down = (combatantId: string) => standing.find((combatant) => combatant.id === combatantId)?.down === true;
+  const outcome = down(FOE) ? 'won' : down(PLAYER) ? 'lost' : 'ongoing';
+  const ended = { won: script.combat.outcomeWon, lost: script.combat.outcomeLost, ongoing: undefined }[outcome];
+  return {
+    text: script.combat[outcome],
+    record: {
+      ...(ended ? { combat: { end: { outcome: ended } } } : {}),
+      scene: { summary: ended ?? script.combat.ongoing },
+      suggestions: script.suggestions,
+    },
+  };
+}
+
+/** What `pass_time` said came due, if time was passed this turn. */
+function dueOnCalendar(results: ToolResult[]): { id: string }[] {
+  for (const result of results) {
+    try {
+      const parsed = JSON.parse(result.content) as { came_due?: { id: string }[] };
+      if (Array.isArray(parsed.came_due)) return parsed.came_due;
+    } catch {
+      // Not a calendar result.
+    }
+  }
+  return [];
+}
+
 /** The opening, with a picture of the first scene when the game master can paint. */
-function openGame(meta: TurnMeta, script: Script, canDraw: boolean): ScriptedStep {
+function openGame(meta: TurnMeta, script: Script, canDraw: boolean, story: StoryModules): ScriptedStep {
   const { text, record } = script.opening(meta);
+  if (story.has('dice')) record.dice = { system: 'd20' };
+  if (story.has('clocks')) record.clocks = [{ id: CLOCK, ...script.clock, segments: 6, filled: 1 }];
+  if (story.has('calendar')) {
+    record.calendar = {
+      now: { day: 1, hour: 18 },
+      schedule: [
+        { id: 'sched_road_closes', ...script.calendar.deadline, day: 3, hour: 6 },
+        // Known to the game master only: it comes due a few actions in.
+        { id: 'sched_lantern', ...script.calendar.arrival, in_hours: 6, hidden: true },
+      ],
+    };
+  }
+  // An inn story has no use for a board of warring powers; everything else on offer it keeps.
+  if (story.choosing) record.modules = story.offered.filter((id) => id !== 'sandbox');
   if (canDraw) {
     record.world = { ...record.world, art_style: script.art.style };
     record.pictures = [{ subject: 'scene', ...script.art.scene }];
@@ -487,10 +662,17 @@ function openGame(meta: TurnMeta, script: Script, canDraw: boolean): ScriptedSte
 }
 
 /** The second step of an action turn: tell how the roll went and record what changed. */
-function resolveAction(meta: TurnMeta, script: Script, results: ToolResult[], canDraw: boolean): ScriptedStep {
+function resolveAction(
+  meta: TurnMeta,
+  script: Script,
+  results: ToolResult[],
+  canDraw: boolean,
+  story: StoryModules,
+): ScriptedStep {
   const { world, turn } = meta;
-  const success = rollTotal(results) >= 10;
+  const success = succeeded(results);
   const paragraphs = [script.outcome(meta, success)];
+  const cameDue = dueOnCalendar(results);
 
   const player: Record<string, unknown> = { id: PLAYER };
   const record: RecordInput = {
@@ -501,6 +683,17 @@ function resolveAction(meta: TurnMeta, script: Script, results: ToolResult[], ca
     memories: [{ character_id: MARA, text: script.witnessed(meta, success), about: [PLAYER] }],
     suggestions: script.suggestions,
   };
+
+  // Mara watched: she thinks better or worse of the player for it, and a failure costs time the marsh uses.
+  if (story.has('bonds')) {
+    record.bonds = [{ character_id: MARA, change: success ? 4 : -2, reason: success ? script.bond.earned : script.bond.lost }];
+  }
+  if (story.has('clocks') && !success && world.modules.clocks?.clocks[CLOCK]) record.clocks = [{ id: CLOCK, tick: 1 }];
+  // What came due while the time passed happens now, and is then settled.
+  if (cameDue.length > 0) {
+    record.calendar = { schedule: cameDue.map((entry) => ({ id: entry.id, status: 'done' })) };
+    if (cameDue.some((entry) => entry.id === 'sched_lantern')) paragraphs.push(script.calendar.arrives);
+  }
 
   if (success) {
     player.stats = [{ name: script.gold, value: numericStat(world, script.gold, 12) + 3 }];
@@ -529,14 +722,16 @@ function resolveAction(meta: TurnMeta, script: Script, results: ToolResult[], ca
  * they have seen of you, the further they open up, and the same question asked
  * twice does not get the same answer.
  */
-function answer(meta: TurnMeta, script: Script): ScriptedStep {
+function answer(meta: TurnMeta, script: Script, feelsBond: boolean): ScriptedStep {
   const character = meta.characterId ? meta.world.characters[meta.characterId] : undefined;
   if (!character) return {};
   const said = meta.playerText;
+  // Being asked, and heard out, draws anyone a little closer.
+  const bond = feelsBond ? { bond: { change: 2, reason: script.bond.talked } } : {};
 
   if (character.id === MARA && said.toLowerCase().includes(script.cellar.word)) {
     const { line, remember, intent } = script.cellar;
-    return { respond: { text: line, memory: remember, importance: 4, changes: intent } };
+    return { respond: { text: line, memory: remember, importance: 4, changes: intent, ...bond } };
   }
 
   const part = script.parts[character.id] ?? script.anyone(character);
@@ -548,6 +743,7 @@ function answer(meta: TurnMeta, script: Script): ScriptedStep {
       memory: part.remember(said),
       importance: 2,
       attitude: part.attitudes[Math.min(index, part.attitudes.length - 1)],
+      ...bond,
     },
   };
 }
@@ -561,6 +757,29 @@ function rule(script: Script): ScriptedStep {
       quests: [{ id: QUEST, progress: script.cellar.progress }],
       suggestions: script.suggestions,
     },
+  };
+}
+
+/** What the script can tell of the story's modules from the tools it was handed. */
+interface StoryModules {
+  /** Whether the story has this module: by its section of the record, or by one of its tools. */
+  has(id: string): boolean;
+  /** True on the turn the game master is asked which modules the story keeps. */
+  choosing: boolean;
+  /** The modules it may choose among. */
+  offered: string[];
+}
+
+const MODULE_TOOLS: Record<string, string> = { oracle: 'ask_fate', sandbox: 'simulate', combat: 'fight', calendar: 'pass_time' };
+
+function readModules(init: ConversationInit): StoryModules {
+  const names = new Set(init.tools.map((tool) => tool.name));
+  const record = init.tools.find((tool) => tool.name === 'record');
+  const sections = (record?.inputSchema.properties ?? {}) as Record<string, { items?: { enum?: string[] } }>;
+  return {
+    has: (id) => id in sections || names.has(MODULE_TOOLS[id] ?? ''),
+    choosing: 'modules' in sections,
+    offered: sections.modules?.items?.enum ?? [],
   };
 }
 
@@ -582,6 +801,12 @@ class MockConversation implements Conversation {
   private readonly meta: TurnMeta;
   private readonly delayMs: number;
   private readonly canDraw: boolean;
+  /** Names of the tools on offer, which is how the script knows the story's modules. */
+  private readonly offered: Set<string>;
+  private readonly story: StoryModules;
+  /** Whether a character's reply may say how the exchange moved them (the bonds module). */
+  private readonly feelsBond: boolean;
+  private readonly onBoard: boolean;
   private stepIndex = 0;
   private results: ToolResult[] = [];
 
@@ -590,7 +815,19 @@ class MockConversation implements Conversation {
     this.delayMs = delayMs;
     // Pictures are a section of `record` only when something can paint.
     const record = init.tools.find((tool) => tool.name === 'record');
-    this.canDraw = 'pictures' in ((record?.inputSchema.properties as object | undefined) ?? {});
+    const sections = (record?.inputSchema.properties as object | undefined) ?? {};
+    this.canDraw = 'pictures' in sections;
+    this.offered = new Set(init.tools.map((tool) => tool.name));
+    this.story = readModules(init);
+    const respond = init.tools.find((tool) => tool.name === 'respond');
+    this.feelsBond = 'bond' in ((respond?.inputSchema.properties as object | undefined) ?? {});
+    // The board story is told once a board exists. It is begun when a board is
+    // on offer and the premise asks for one (or there are no dice, so the board
+    // is all the story has).
+    const { world, seed } = init.meta;
+    this.onBoard =
+      world.modules.sandbox !== undefined ||
+      (world.turn === 0 && this.offered.has('simulate') && (BOARD_PREMISE.test(seed.premise) || !this.offered.has('roll_dice')));
   }
 
   private script(): ScriptedStep {
@@ -598,16 +835,52 @@ class MockConversation implements Conversation {
     const first = this.stepIndex === 0;
     switch (this.meta.kind) {
       case 'start':
-        return first ? openGame(this.meta, script, this.canDraw) : {};
+        if (!first) return {};
+        return this.onBoard ? openBoard(this.meta, this.story) : openGame(this.meta, script, this.canDraw, this.story);
       case 'talk':
-        return first ? answer(this.meta, script) : {};
+        return first ? answer(this.meta, script, this.feelsBond) : {};
       case 'referee':
         return first ? rule(script) : {};
       case 'action':
-        // An action turn takes two steps, like a real one: roll first, then tell the result.
-        if (first) return { roll: { notation: 'd20', reason: script.rollReason } };
-        return this.stepIndex === 1 ? resolveAction(this.meta, script, this.results, this.canDraw) : {};
+        return this.act(script, first);
     }
+  }
+
+  /**
+   * An action turn takes two steps, like a real one: first whatever is not the
+   * storyteller's to decide, then the telling. Without an instrument to wait
+   * for, the telling is the first step.
+   */
+  private act(script: Script, first: boolean): ScriptedStep {
+    if (this.onBoard) {
+      // With the sandbox switched off mid-story there is nothing to hand over: the season is simply told.
+      const sandbox = this.offered.has('simulate');
+      if (first && sandbox) return { simulate: boardOrders(this.meta) };
+      return this.stepIndex === (sandbox ? 1 : 0) ? boardOutcome(this.meta, this.results, sandbox) : {};
+    }
+    // A fight, once on, is fought to the end; one begins when the player goes for a weapon.
+    const fighting = this.offered.has('fight') && (this.meta.world.modules.combat?.active === true || script.combat.words.test(this.meta.playerText));
+    if (fighting) {
+      if (first) return { fight: fightRound(this.meta, script) };
+      return this.stepIndex === 1 ? resolveFight(script, this.results) : {};
+    }
+    // Something the player wonders about is a question for the oracle; anything else they attempt is a check.
+    const wonders = /[?？]/.test(this.meta.playerText) && this.offered.has('ask_fate');
+    const instrument: ScriptedStep | undefined = wonders
+      ? { fate: { question: this.meta.playerText, odds: 'even' } }
+      : this.offered.has('check')
+        ? // The number is passed along for stories begun before the sheet had this stat.
+          { check: { stat: script.wits, value: 2, difficulty: 'normal', reason: script.rollReason } }
+        : this.offered.has('roll_dice')
+          ? { roll: { notation: 'd20', reason: script.rollReason } }
+          : undefined;
+    // Whatever the player does takes a couple of hours of the evening.
+    const passing: ScriptedStep = this.offered.has('pass_time') ? { pass: { hours: 2, reason: script.calendar.passing } } : {};
+    const instruments: ScriptedStep | undefined = instrument || passing.pass ? { ...instrument, ...passing } : undefined;
+    if (first && instruments) return instruments;
+    return this.stepIndex === (instruments ? 1 : 0)
+      ? resolveAction(this.meta, script, this.results, this.canDraw, this.story)
+      : {};
   }
 
   async step(handlers: StepHandlers): Promise<StepResult> {
@@ -617,6 +890,11 @@ class MockConversation implements Conversation {
     // In the order a real model is asked to work: dice, then the telling, then the record.
     const calls: { name: string; input: unknown }[] = [];
     if (step.roll) calls.push({ name: 'roll_dice', input: step.roll });
+    if (step.check) calls.push({ name: 'check', input: step.check });
+    if (step.fate) calls.push({ name: 'ask_fate', input: step.fate });
+    if (step.pass) calls.push({ name: 'pass_time', input: step.pass });
+    if (step.fight) calls.push({ name: 'fight', input: step.fight });
+    if (step.simulate) calls.push({ name: 'simulate', input: step.simulate });
     if (step.respond) calls.push({ name: 'respond', input: step.respond });
     if (step.text) calls.push({ name: 'narrate', input: { text: step.text } });
     if (step.record) calls.push({ name: 'record', input: step.record });

@@ -313,6 +313,7 @@ button:disabled {
   display: inline-flex;
   flex: none;
   align-items: center;
+  gap: 0.25rem;
   padding: 0.04rem 0.5rem;
   border: 1px solid var(--border-strong);
   border-radius: 999px;
@@ -345,6 +346,145 @@ button:disabled {
   border-color: color-mix(in srgb, var(--secret) 50%, transparent);
   background: var(--secret-soft);
   color: var(--secret);
+}
+
+/* Something happening right now (a fight on): a red dot that breathes. */
+.tag--live {
+  border-color: color-mix(in srgb, var(--bad) 45%, transparent);
+  color: var(--bad);
+}
+
+.live-dot {
+  flex: none;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--bad);
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* A module's mark: its glyph on a tile tinted by the kind of play it is for. */
+.module-glyph {
+  --tint: var(--accent);
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid color-mix(in srgb, var(--tint) 40%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--tint) 12%, transparent);
+  color: var(--tint);
+  font-size: 1.15rem;
+  font-variant-emoji: text;
+  line-height: 1;
+}
+
+.module-glyph--rules {
+  --tint: var(--accent);
+}
+
+.module-glyph--story {
+  --tint: var(--secret);
+}
+
+.module-glyph--world {
+  --tint: var(--faction-5);
+}
+
+.module-glyph--characters {
+  --tint: var(--faction-6);
+}
+
+.module-glyph--small {
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 5px;
+  font-size: 0.82rem;
+}
+
+.module-glyph--large {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: var(--radius);
+  font-size: 1.7rem;
+}
+
+/* The sides of a fight (set `side--*` on an element; children read `--side`). */
+.side--player {
+  --side: var(--accent);
+}
+
+.side--ally {
+  --side: var(--good);
+}
+
+.side--enemy {
+  --side: var(--bad);
+}
+
+.side--neutral {
+  --side: var(--text-muted);
+}
+
+/* A progress clock's dial (ClockDial). A card sets `--dial-gap` to its own background so the segments read as cut. */
+.dial {
+  --dial-fill: var(--accent);
+  --dial-empty: var(--bg-sunken);
+  --dial-gap: var(--bg-raised);
+  --dial-rim: var(--border-strong);
+  display: block;
+  flex: none;
+}
+
+.dial__segment {
+  fill: var(--dial-empty);
+  stroke: var(--dial-gap);
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+
+.dial__segment.is-filled {
+  fill: var(--dial-fill);
+}
+
+.dial__rim {
+  fill: none;
+  stroke: var(--dial-rim);
+  stroke-width: 1;
+}
+
+.dial.is-full {
+  --dial-fill: var(--bad);
+  --dial-rim: var(--bad);
+}
+
+/* A sandbox faction's colour (set `--faction` on it or an ancestor), as on its tokens on the map. */
+.swatch {
+  display: inline-block;
+  flex: none;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--faction, var(--text-faint));
+}
+
+.swatch--unclaimed {
+  border: 1px dashed var(--text-faint);
+  background: var(--bg-raised);
+}
+
+/* The player's own side, ringed as its regions are on the map. */
+.swatch--player {
+  box-shadow:
+    0 0 0 1.5px var(--bg-panel),
+    0 0 0 2.75px var(--text);
 }
 
 /* Segmented control: language toggle and story-language picker */
@@ -468,6 +608,14 @@ button:disabled {
 .switch__input:focus-visible + .switch__track {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+
+.switch:has(.switch__input:disabled) {
+  cursor: default;
+}
+
+.switch__input:disabled + .switch__track {
+  opacity: 0.45;
 }
 
 /* Notices */

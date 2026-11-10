@@ -1,14 +1,140 @@
-import { LOCALES, type CreateSessionRequest, type Locale } from '@roleplay/shared';
-import { useId, useState, type FormEvent } from 'react';
+import { LOCALES, type CreateSessionRequest, type Locale, type ModuleId } from '@roleplay/shared';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toUiError, type UiError } from '../../api/errors';
 import { PRESET_IDS, PRESET_PREMISES, type PresetId } from '../../data/presets';
 import { languageTag, useLocale } from '../../i18n';
 import { describeError } from '../../lib/describe';
+import { withModule } from '../../lib/modules';
+import { formatList } from '../../lib/text';
 import { useGame } from '../../store/game';
+import { useSubscriptions } from '../../store/library';
+import { useSettings } from '../../store/settings';
 import { useUi } from '../../store/ui';
 import { Icon } from '../Icon';
 import { Modal } from '../Modal';
+import { ModuleGlyph } from '../ModuleGlyph';
+
+type ModuleChoice = 'auto' | 'manual';
+
+/**
+ * Leave the modules to the game master (the default), or tick them by hand,
+ * none at all included. Either way only modules the player subscribes to are
+ * on offer; the library, for more, opens on top of this dialog.
+ */
+function ModulesField({
+  subscribed,
+  choice,
+  picked,
+  onChoice,
+  onPick,
+}: {
+  /** Null while the subscriptions are not known. */
+  subscribed: ModuleId[] | null;
+  choice: ModuleChoice;
+  picked: ModuleId[];
+  onChoice: (choice: ModuleChoice) => void;
+  onPick: (picked: ModuleId[]) => void;
+}) {
+  const { t } = useTranslation();
+  const uiTag = languageTag(useLocale());
+  const settingsStatus = useSettings((s) => s.status);
+  const openLibrary = useUi((s) => s.openLibrary);
+  const id = useId();
+
+  const browse = (
+    <button type="button" className="link-btn" aria-haspopup="dialog" onClick={() => openLibrary()}>
+      {t('newGame.modulesBrowse')}
+    </button>
+  );
+
+  if (subscribed === null) {
+    return (
+      <fieldset className="field">
+        <legend className="field__label">{t('newGame.modules')}</legend>
+        <p className="field__hint" role="status">
+          {settingsStatus === 'error' ? t('newGame.modulesUnknown') : t('newGame.modulesLoading')}
+        </p>
+      </fieldset>
+    );
+  }
+
+  if (subscribed.length === 0) {
+    return (
+      <fieldset className="field">
+        <legend className="field__label">{t('newGame.modules')}</legend>
+        <div className="modules-empty">
+          <p>{t('newGame.modulesNoneSubscribed')}</p>
+          <button type="button" className="btn btn--small" aria-haspopup="dialog" onClick={() => openLibrary()}>
+            <Icon name="modules" size={15} />
+            {t('newGame.modulesBrowse')}
+          </button>
+        </div>
+      </fieldset>
+    );
+  }
+
+  const ticked = picked.filter((module) => subscribed.includes(module));
+  const names = formatList(
+    subscribed.map((module) => t(`modules.names.${module}`)),
+    uiTag,
+  );
+
+  return (
+    <fieldset className="field">
+      <legend className="field__label">{t('newGame.modules')}</legend>
+      <div className="segmented">
+        {(['auto', 'manual'] as const).map((option) => (
+          <label key={option} className="segmented__option">
+            <input
+              type="radio"
+              name={`${id}-modules`}
+              value={option}
+              checked={choice === option}
+              onChange={() => onChoice(option)}
+            />
+            <span>{option === 'auto' ? t('newGame.modulesAuto') : t('newGame.modulesManual')}</span>
+          </label>
+        ))}
+      </div>
+      {choice === 'auto' ? (
+        <p className="field__hint">{t('newGame.modulesAutoHint', { list: names })}</p>
+      ) : (
+        <>
+          <ul className="module-options">
+            {subscribed.map((module) => (
+              <li key={module}>
+                <label className="module-option">
+                  <input
+                    type="checkbox"
+                    className="module-option__input"
+                    checked={ticked.includes(module)}
+                    aria-describedby={`${id}-${module}`}
+                    onChange={(event) => onPick(withModule(ticked, module, event.target.checked))}
+                  />
+                  <ModuleGlyph id={module} size="small" />
+                  <span className="module-option__body">
+                    <span className="module-option__name">{t(`modules.names.${module}`)}</span>
+                    <span id={`${id}-${module}`} className="module-option__desc">
+                      {t(`modules.descriptions.${module}`)}
+                    </span>
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <p className={ticked.length === 0 ? 'field__hint field__hint--warning' : 'field__hint'} aria-live="polite">
+            {ticked.length === 0 ? t('newGame.modulesNone') : t('newGame.modulesManualHint')}
+          </p>
+        </>
+      )}
+      <p className="field__hint modules-more">
+        {choice === 'manual' && <>{t('newGame.modulesSubscribedOnly')} </>}
+        {browse}
+      </p>
+    </fieldset>
+  );
+}
 
 export function NewGameDialog() {
   const { t } = useTranslation();
@@ -22,8 +148,21 @@ export function NewGameDialog() {
   const [preset, setPreset] = useState<PresetId | null>(null);
   const [playerName, setPlayerName] = useState('');
   const [playerConcept, setPlayerConcept] = useState('');
+  const [moduleChoice, setModuleChoice] = useState<ModuleChoice>('auto');
+  const [pickedModules, setPickedModules] = useState<ModuleId[]>(['dice']);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<UiError | null>(null);
+  const subscribed = useSubscriptions();
+
+  // A module subscribed to from here (the library opens on top of this dialog) is wanted: tick it.
+  const known = useRef(subscribed);
+  useEffect(() => {
+    const before = known.current;
+    known.current = subscribed;
+    if (!before || !subscribed) return;
+    const added = subscribed.filter((module) => !before.includes(module));
+    if (added.length > 0) setPickedModules((picked) => added.reduce((list, module) => withModule(list, module, true), picked));
+  }, [subscribed]);
 
   const presetUntouched = preset !== null && premise === PRESET_PREMISES[preset][language];
 
@@ -45,6 +184,12 @@ export function NewGameDialog() {
     if (premise.trim()) request.premise = premise.trim();
     if (playerName.trim()) request.playerName = playerName.trim();
     if (playerConcept.trim()) request.playerConcept = playerConcept.trim();
+    // Left out, the game master chooses among the subscribed modules; an empty list is a choice too (no
+    // modules at all), and the only one there is without a subscription.
+    if (subscribed?.length === 0) request.modules = [];
+    else if (moduleChoice === 'manual') {
+      request.modules = subscribed ? pickedModules.filter((module) => subscribed.includes(module)) : pickedModules;
+    }
 
     setBusy(true);
     setError(null);
@@ -157,6 +302,14 @@ export function NewGameDialog() {
               />
             </div>
           </div>
+
+          <ModulesField
+            subscribed={subscribed}
+            choice={moduleChoice}
+            picked={pickedModules}
+            onChoice={setModuleChoice}
+            onPick={setPickedModules}
+          />
 
           {error && (
             <div className="form-error" role="alert">

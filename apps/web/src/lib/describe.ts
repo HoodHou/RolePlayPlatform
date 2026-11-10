@@ -1,14 +1,20 @@
-import type { WorldEvent } from '@roleplay/shared';
+import { bondStage, HOURS_PER_DAY, type Stance, type WorldEvent } from '@roleplay/shared';
 import type { TFunction } from 'i18next';
 import { isKnownErrorCode, type UiError } from '../api/errors';
+import { formatSpan, formatWhen, partOfDay } from './calendar';
+import { MODULE_GLYPH } from './modules';
+import { formatNumber, formatSigned } from './text';
 
-export type EventTone = 'neutral' | 'good' | 'bad';
+/** `notice` is for a moment that should stand out: something come due, a bond crossing into a new stage, a fight's end. */
+export type EventTone = 'neutral' | 'good' | 'bad' | 'notice';
 
 export interface EventView {
   /** A text glyph (not emoji) identifying the kind of event. */
   glyph: string;
   text: string;
   tone: EventTone;
+  /** For a clock: drawn as a small dial in place of the glyph. */
+  dial?: { filled: number; segments: number };
 }
 
 function formatModifier(modifier: number): string {
@@ -21,16 +27,32 @@ function formatChange(from: number | string, to: number | string, max: number | 
   return `${from} → ${to}${max !== undefined ? ` / ${max}` : ''}`;
 }
 
+const STANCE_TONE: Record<Stance, EventTone> = {
+  war: 'bad',
+  hostile: 'bad',
+  neutral: 'neutral',
+  friendly: 'good',
+  allied: 'good',
+};
+
+export interface DescribeContext {
+  /** Hides the title of lore that is (still) a game-master secret. */
+  isSecretLore: (id: string) => boolean;
+  /** Id of the player's faction on the board, if any: land it takes is good news, land it loses bad. */
+  playerFaction: string | null;
+  /** Interface language tag, for numbers. */
+  locale: string;
+}
+
 /**
- * Words a world event in the interface language. `isSecretLore` hides the
- * title of lore that is (still) a game-master secret. Returns null for event
- * types this client does not know (a newer server), which are not shown.
+ * Words a world event as a one-line chip in the interface language. Returns
+ * null for event types this client does not know (a newer server), which are
+ * not shown, and for events told on cards of their own (components/story:
+ * CheckCard, BattleCard, FateCard, CombatStartCard, AttackList, and
+ * ClockFilledCard for a clock tick that fills it; see EventRow).
  */
-export function describeEvent(
-  t: TFunction,
-  event: WorldEvent,
-  isSecretLore: (id: string) => boolean,
-): EventView | null {
+export function describeEvent(t: TFunction, event: WorldEvent, context: DescribeContext): EventView | null {
+  const { isSecretLore, playerFaction, locale } = context;
   switch (event.type) {
     case 'world_named':
       return { glyph: '✦', tone: 'neutral', text: t('events.world_named', { title: event.title }) };
@@ -115,6 +137,134 @@ export function describeEvent(
           ? t('events.dice_rolled_reason', { ...values, reason: event.reason })
           : t('events.dice_rolled', values),
       };
+    }
+    case 'sandbox_round': {
+      const base = event.period
+        ? t('events.sandbox_round_period', { round: event.round, period: event.period })
+        : t('events.sandbox_round', { round: event.round });
+      // A round is income coming in, so each change reads as what it added.
+      const changes = event.changes
+        .map((change) => `${change.resource} ${formatSigned(change.to - change.from, locale)}`)
+        .join(t('common.listSeparator'));
+      return {
+        glyph: '◷',
+        tone: 'neutral',
+        text: changes ? t('events.sandbox_round_changes', { base, changes }) : base,
+      };
+    }
+    case 'region_taken': {
+      const { regionName: region, fromName: from, toName: to } = event;
+      let text: string;
+      if (from && to) text = t('events.region_taken', { region, from, to });
+      else if (to) text = t('events.region_taken_unheld', { region, to });
+      else if (from) text = t('events.region_taken_lost', { region, from });
+      else text = t('events.region_taken_bare', { region });
+      const tone: EventTone =
+        playerFaction && event.toId === playerFaction
+          ? 'good'
+          : playerFaction && event.fromId === playerFaction
+            ? 'bad'
+            : 'neutral';
+      return { glyph: '⚑', tone, text };
+    }
+    case 'faction_added':
+      return { glyph: '✚', tone: 'neutral', text: t('events.faction_added', { name: event.name }) };
+    case 'faction_removed':
+      return {
+        glyph: '✕',
+        tone: 'neutral',
+        text: event.reason
+          ? t('events.faction_removed_reason', { name: event.name, reason: event.reason })
+          : t('events.faction_removed', { name: event.name }),
+      };
+    case 'relation_changed':
+      return {
+        glyph: '⇌',
+        tone: STANCE_TONE[event.stance] ?? 'neutral',
+        text: t(`events.relation_changed.${event.stance}`, { a: event.aName, b: event.bName }),
+      };
+    case 'resource_changed':
+      return {
+        glyph: event.to > event.from ? '▲' : event.to < event.from ? '▼' : '◆',
+        tone: 'neutral',
+        text: t('events.resource_changed', {
+          faction: event.factionName,
+          resource: event.resource,
+          change: `${formatNumber(event.from, locale)} → ${formatNumber(event.to, locale)}`,
+        }),
+      };
+    case 'clock_started':
+      return {
+        glyph: MODULE_GLYPH.clocks,
+        dial: { filled: event.filled, segments: event.segments },
+        tone: 'neutral',
+        text: t('events.clock_started', { name: event.name, filled: event.filled, segments: event.segments }),
+      };
+    case 'clock_ticked': {
+      const values = { name: event.name, from: event.from, to: event.to, segments: event.segments };
+      return {
+        glyph: MODULE_GLYPH.clocks,
+        dial: { filled: event.to, segments: event.segments },
+        // A clock drawing closer is a danger or a task advancing; which one is the story's to say.
+        tone: 'neutral',
+        text: event.to < event.from ? t('events.clock_eased', values) : t('events.clock_ticked', values),
+      };
+    }
+    case 'time_passed': {
+      const hours = (event.toDay - event.fromDay) * HOURS_PER_DAY + (event.toHour - event.fromHour);
+      const values = {
+        span: formatSpan(t, hours),
+        when: formatWhen(t, event.toDay, event.toHour, 'inline'),
+        part: partOfDay(t, event.toHour),
+      };
+      // Servers from before `reason` existed send none.
+      const reason = typeof event.reason === 'string' ? event.reason.trim() : '';
+      return {
+        glyph: '◷',
+        tone: 'neutral',
+        text: reason ? t('events.time_passed_reason', { ...values, reason }) : t('events.time_passed', values),
+      };
+    }
+    case 'schedule_added':
+      return {
+        glyph: MODULE_GLYPH.calendar,
+        tone: 'neutral',
+        text: t('events.schedule_added', { title: event.title, when: formatWhen(t, event.day, event.hour, 'inline') }),
+      };
+    case 'schedule_due':
+      return { glyph: '◉', tone: 'notice', text: t('events.schedule_due', { title: event.title }) };
+    case 'bond_changed': {
+      const change = formatSigned(event.to - event.from, locale);
+      const reason = event.reason.trim();
+      const before = bondStage(event.from);
+      const after = bondStage(event.to);
+      if (before !== after) {
+        const stage = t(`events.bond_stage.${after}`, { name: event.characterName });
+        return {
+          glyph: MODULE_GLYPH.bonds,
+          tone: 'notice',
+          text: reason
+            ? t('events.bond_stage_line', { stage, change, reason })
+            : t('events.bond_stage_lineBare', { stage, change }),
+        };
+      }
+      const warmer = event.to > event.from;
+      const key = warmer ? 'bond_warmer' : 'bond_cooler';
+      return {
+        glyph: MODULE_GLYPH.bonds,
+        tone: warmer ? 'good' : 'bad',
+        text: reason
+          ? t(`events.${key}`, { name: event.characterName, change, reason })
+          : t(`events.${key}Bare`, { name: event.characterName, change }),
+      };
+    }
+    case 'combat_round':
+      return { glyph: MODULE_GLYPH.combat, tone: 'neutral', text: t('events.combat_round', { round: event.round }) };
+    case 'combat_ended': {
+      // No outcome: another fight began while this one was on, and closed it.
+      const outcome = event.outcome.trim();
+      if (!outcome) return { glyph: MODULE_GLYPH.combat, tone: 'neutral', text: t('events.combat_brokeOff', { count: event.rounds }) };
+      return { glyph: MODULE_GLYPH.combat, tone: 'notice', text: t('events.combat_ended', { count: event.rounds, outcome }) };
     }
     default:
       return null;

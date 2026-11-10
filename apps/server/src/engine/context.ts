@@ -2,7 +2,7 @@ import { GENERATION_DEFAULTS, type Message, type Session, type TurnRequest } fro
 import type { ChatTurn, ConversationInit } from '../llm/types';
 import { gameMasterView } from './memory';
 import { getPrompts, type Exchange, type PromptOptions } from './prompts';
-import { getToolSpecs } from './tools';
+import { getToolbox } from './tools';
 
 /**
  * Builds what the game master sees for one turn.
@@ -90,14 +90,15 @@ function gameMasterInit(
   const { world } = session;
   // The game master watches several characters at once, so each gets fewer memories than an actor would.
   const perCharacter = Math.max(2, Math.round((options.memoriesRecalled * 2) / 3));
-  const state = `<world_state>\n${JSON.stringify(gameMasterView(world, playerText, perCharacter))}\n</world_state>`;
+  const view = gameMasterView(world, playerText, perCharacter, options.modules);
+  const state = `<world_state>\n${JSON.stringify(view)}\n</world_state>`;
   const nameOf = (id: string) => world.characters[id]?.name ?? id;
 
   return {
     system: prompts.system(options),
     history: buildHistory(session.messages, prompts.openingMarker, nameOf, options.historyTurns),
     prompt: `${state}\n\n${ask}`,
-    tools: getToolSpecs(options),
+    tools: getToolbox(options).specs,
     meta: {
       locale: session.language,
       kind,

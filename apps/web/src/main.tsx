@@ -8,6 +8,7 @@ import './styles/sidebar.css';
 import './styles/story.css';
 import './styles/world.css';
 import './styles/dialogs.css';
+import './styles/library.css';
 import { App } from './App';
 
 const root = document.getElementById('root');

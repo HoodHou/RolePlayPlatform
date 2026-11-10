@@ -192,23 +192,134 @@
   overflow-wrap: anywhere;
 }
 
-/* Tabs */
+/* The dice rules, under the stats they give meaning to. */
+.dice-rules {
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--border);
+}
+
+.dice-rules__label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.dice-rules__label:lang(zh) {
+  font-size: 0.74rem;
+  letter-spacing: 0.1em;
+}
+
+.dice-rules__system {
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.dice-rules__text {
+  margin-top: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.77rem;
+  line-height: 1.55;
+}
+
+/*
+ * Tabs: two rows in one tab list. Above, a view for each play module that has
+ * something to show, as pills that wrap; below, the world's own five tabs.
+ */
 .tabs__list {
   position: sticky;
   top: 0;
   z-index: 1;
-  display: flex;
-  gap: 0;
   margin: 0 -1.1rem;
   padding: 0 1.1rem;
-  overflow-x: auto;
   border-bottom: 1px solid var(--border);
   background: var(--bg-panel);
+}
+
+.tabs__row {
+  display: flex;
+  overflow-x: auto;
   scrollbar-width: none;
 }
 
-.tabs__list::-webkit-scrollbar {
+.tabs__row::-webkit-scrollbar {
   display: none;
+}
+
+.tabs__modules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  padding: 0.55rem 0 0.5rem;
+  border-bottom: 1px dashed var(--border);
+}
+
+.tabs__module {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem 0.22rem 0.42rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 550;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.tabs__module:hover {
+  border-color: var(--accent-line);
+  color: var(--text);
+}
+
+.tabs__module[aria-selected='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.tabs__module:focus-visible {
+  outline-offset: 1px;
+}
+
+/* A module the story does not play: still there, drawn as a dashed outline. */
+.tabs__module.is-off {
+  border-style: dashed;
+}
+
+.tabs__module.is-off .tabs__glyph {
+  opacity: 0.55;
+}
+
+.tabs__module.is-live {
+  border-color: color-mix(in srgb, var(--bad) 50%, var(--border-strong));
+}
+
+.tabs__glyph {
+  color: var(--accent);
+  font-variant-emoji: text;
+}
+
+.tabs__module .tabs__count {
+  align-self: center;
+  margin-top: 0;
+  font-size: 0.68rem;
+}
+
+/* Calendar entries that have come due and await the story. */
+.tabs__count--due {
+  color: var(--accent);
+  font-weight: 750;
 }
 
 /* Five tabs share a narrow column; they spread out when there is room and scroll when there is not. */
@@ -415,6 +526,37 @@
 
 .disclosure[aria-expanded='true'] .disclosure__chevron {
   transform: rotate(180deg);
+}
+
+.disclosure__count {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+/* Over a module's view while the story does not play it. */
+.module-note {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  margin-bottom: 0.9rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.module-note__action {
+  font-size: 0.78rem;
+}
+
+.world-note {
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  line-height: 1.5;
 }
 
 .tab-empty {
@@ -630,4 +772,1131 @@
   color: var(--text-faint);
   font-size: 0.74rem;
   line-height: 1.5;
+}
+
+/* Sandbox: the board's date, its map, the powers on it and how they stand. */
+.sandbox {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.sandbox__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.sandbox__when {
+  min-width: 0;
+}
+
+.sandbox__round {
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.sandbox__round:lang(zh) {
+  font-size: 0.78rem;
+}
+
+.sandbox__period {
+  font-family: var(--font-serif);
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.sandbox__head .btn {
+  flex: none;
+}
+
+.sandbox__map {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.sandbox__hint {
+  color: var(--text-faint);
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.sandbox__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.sandbox__note {
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+/*
+ * The map. The plane is the bounding box of the regions, one cell per grid
+ * square, kept to the grid's proportions; borders are an SVG stretched over it
+ * and each region a button placed at its cell's centre. `--cols`/`--rows` come
+ * from the component; `--token` is the size of a region's marker.
+ */
+.map {
+  --token: 1.75rem;
+  /* The side margin, which names in the outer columns may reach into. */
+  --map-margin: 1rem;
+  /* Never squeezed by a flex column (the map dialog's body): it scrolls sideways at most. */
+  flex: none;
+  padding: 0.9rem var(--map-margin) 1.25rem;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+
+.map__plane {
+  position: relative;
+  width: min(100%, calc(20rem * var(--cols) / var(--rows)));
+  min-width: calc(var(--cols) * 2rem);
+  min-height: calc(var(--rows) * 3rem);
+  aspect-ratio: var(--cols) / var(--rows);
+  margin: 0 auto;
+  /* A faint dot at every cell, so the board reads as a board. */
+  background-image: radial-gradient(circle, var(--border-strong) 1px, transparent 1.5px);
+  background-size: calc(100% / var(--cols)) calc(100% / var(--rows));
+}
+
+.map__lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.map__border {
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+/* Within one power's lands, in its colour (set inline). */
+.map__border--inner {
+  stroke-width: 2.5;
+  opacity: 0.55;
+}
+
+/* Between powers at war. */
+.map__border--front {
+  stroke: var(--bad);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+
+.map__region {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  width: max-content;
+  max-width: max(5.25rem, calc(190% / var(--cols)));
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-soft);
+  /* Centre the token, not the whole button, on the cell. */
+  transform: translate(-50%, calc(var(--token) / -2));
+}
+
+/* Centred on a cell at the map's edge, a name has its own cell plus the margin on either side. */
+.map__region.is-edge {
+  max-width: min(max(5.25rem, calc(190% / var(--cols))), calc(100% / var(--cols) + 2 * var(--map-margin)));
+}
+
+.map__region:focus-visible {
+  outline: none;
+}
+
+.map__region:focus-visible .map__token {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+}
+
+.map__token {
+  display: inline-grid;
+  place-items: center;
+  min-width: var(--token);
+  height: var(--token);
+  padding: 0 0.3rem;
+  border: 1.5px solid color-mix(in srgb, var(--faction) 62%, #000);
+  border-radius: 999px;
+  background: var(--faction);
+  box-shadow: var(--shadow-sm);
+  color: var(--faction-ink);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+
+.map__region:hover .map__token {
+  transform: scale(1.08);
+}
+
+.map__region.is-unclaimed .map__token {
+  border: 1.5px dashed var(--text-faint);
+  background: var(--bg-raised);
+  color: var(--text-muted);
+}
+
+.map__region.is-player .map__token {
+  box-shadow:
+    0 0 0 2px var(--bg-sunken),
+    0 0 0 3.5px var(--text);
+}
+
+.map__region.is-selected {
+  z-index: 2;
+}
+
+.map__region.is-selected .map__token {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.map__name {
+  max-width: 100%;
+  padding: 0 0.2rem;
+  overflow: hidden;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-sunken) 82%, transparent);
+  font-size: 0.72rem;
+  font-weight: 550;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map__region.is-player .map__name {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.map__region.is-selected .map__name {
+  color: var(--accent);
+}
+
+.map--large {
+  --token: 2.2rem;
+  --map-margin: 1.5rem;
+  padding: 1.25rem var(--map-margin) 1.75rem;
+}
+
+.map--large .map__plane {
+  width: min(100%, calc(50dvh * var(--cols) / var(--rows)));
+  min-width: calc(var(--cols) * 3.2rem);
+  min-height: calc(var(--rows) * 3.2rem);
+}
+
+.map--large .map__region {
+  max-width: max(7rem, calc(190% / var(--cols)));
+}
+
+.map--large .map__region.is-edge {
+  max-width: min(max(7rem, calc(190% / var(--cols))), calc(100% / var(--cols) + 2 * var(--map-margin)));
+}
+
+.map--large .map__token {
+  font-size: 0.82rem;
+}
+
+.map--large .map__name {
+  font-size: 0.86rem;
+}
+
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.9rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.map-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.map-legend__front {
+  width: 1.1rem;
+  border-top: 2px dashed var(--bad);
+}
+
+.region-card {
+  box-shadow: inset 3px 0 0 var(--faction, var(--border-strong));
+}
+
+.region-card__owner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.region-card__number {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* Powers */
+.faction {
+  box-shadow: inset 3px 0 0 var(--faction);
+}
+
+.faction.is-player {
+  border-color: color-mix(in srgb, var(--faction) 45%, var(--border));
+}
+
+.faction__name {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.faction__status {
+  margin-top: 0.15rem;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.faction__description {
+  margin-top: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.holdings {
+  width: 100%;
+  margin-top: 0.55rem;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.holdings th,
+.holdings td {
+  padding: 0.22rem 0 0.22rem 0.75rem;
+  border-bottom: 1px dashed var(--border);
+  font-weight: inherit;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.holdings thead th {
+  padding-top: 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.holdings tbody th {
+  padding-left: 0;
+  color: var(--text-muted);
+  text-align: left;
+  white-space: normal;
+}
+
+.holdings td {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.holdings td.is-up {
+  color: var(--good);
+  font-weight: 550;
+}
+
+.holdings td.is-down {
+  color: var(--bad);
+  font-weight: 550;
+}
+
+.holdings td.is-flat {
+  color: var(--text-faint);
+  font-weight: 450;
+}
+
+.holdings tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+/* Relations, with the stance on a five-step scale from war to alliance. */
+.relation--war,
+.stance--war {
+  --stance: var(--bad);
+}
+
+.relation--hostile,
+.stance--hostile {
+  --stance: color-mix(in srgb, var(--bad) 60%, var(--text-muted));
+}
+
+.relation--neutral,
+.stance--neutral {
+  --stance: var(--text-muted);
+}
+
+.relation--friendly,
+.stance--friendly {
+  --stance: color-mix(in srgb, var(--good) 60%, var(--text-muted));
+}
+
+.relation--allied,
+.stance--allied {
+  --stance: var(--good);
+}
+
+.relations {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.relation {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--stance);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+}
+
+.relation__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem 0.6rem;
+}
+
+.relation__pair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.4rem;
+  min-width: 0;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.relation__link {
+  width: 0.75rem;
+  border-top: 1px solid var(--text-faint);
+}
+
+.faction-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  overflow-wrap: anywhere;
+}
+
+.relation__note {
+  margin-top: 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.stance {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--stance);
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.stance__scale {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.stance__step {
+  width: 0.45rem;
+  height: 0.3rem;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--step) 30%, transparent);
+}
+
+.stance__step--war {
+  --step: var(--bad);
+}
+
+.stance__step--hostile {
+  --step: color-mix(in srgb, var(--bad) 60%, var(--text-muted));
+}
+
+.stance__step--neutral {
+  --step: var(--text-muted);
+}
+
+.stance__step--friendly {
+  --step: color-mix(in srgb, var(--good) 60%, var(--text-muted));
+}
+
+.stance__step--allied {
+  --step: var(--good);
+}
+
+.stance__step.is-on {
+  height: 0.6rem;
+  background: var(--step);
+}
+
+/* Fight: the round, everyone in acting order, their health; afterwards how it ended. */
+.fight {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.fight__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+}
+
+.fight__round {
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.fight__round:lang(zh) {
+  font-size: 0.78rem;
+}
+
+.fight__standing {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.fight__heading {
+  margin-bottom: 0.45rem;
+}
+
+.fight__outcome {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+
+.fight__over {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.fight__outcome-text {
+  margin-top: 0.2rem;
+  color: var(--text);
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.fight.is-over .disclosure {
+  align-self: flex-start;
+  margin-top: 0;
+}
+
+.combatants {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.combatant {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--side);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+}
+
+.combatant__initiative {
+  flex: none;
+  min-width: 1.4rem;
+  margin-top: 0.25rem;
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: center;
+}
+
+.combatant__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.combatant__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.45rem;
+}
+
+.combatant__name {
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.side-tag {
+  color: var(--side);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.side-tag:lang(zh) {
+  font-size: 0.72rem;
+}
+
+.combatant__down {
+  border-color: color-mix(in srgb, var(--bad) 45%, transparent);
+  color: var(--bad);
+}
+
+.combatant__health {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.combatant__bar {
+  flex: 1;
+  min-width: 2.5rem;
+  height: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-sunken);
+}
+
+.combatant__bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--side);
+  transition: width 0.4s ease;
+}
+
+.combatant__hp {
+  color: var(--text-soft);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.combatant.is-low .combatant__hp {
+  color: var(--bad);
+}
+
+.combatant__defense {
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.combatant__conditions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+}
+
+.combatant.is-down {
+  border-left-color: var(--border-strong);
+  opacity: 0.62;
+}
+
+.combatant.is-down .combatant__name {
+  text-decoration: line-through;
+  text-decoration-color: var(--text-faint);
+}
+
+/* Clocks */
+.clocks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.clock {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+}
+
+.clock .dial {
+  margin-top: 0.1rem;
+}
+
+.clock.is-secret .dial {
+  --dial-gap: var(--bg-panel);
+}
+
+.clock.is-full {
+  border-color: color-mix(in srgb, var(--bad) 45%, var(--border));
+}
+
+.clock__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.clock__progress {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.clock__full {
+  border-color: color-mix(in srgb, var(--bad) 50%, transparent);
+  color: var(--bad);
+}
+
+.clock__when .card__label {
+  margin-bottom: 0.1rem;
+}
+
+/* Calendar: now, then the schedule. */
+.calendar {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.calendar__now {
+  padding: 0.8rem 0.9rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+
+.calendar__when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.2rem 0.75rem;
+}
+
+.calendar__day {
+  font-family: var(--font-serif);
+  font-size: 1.3rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.calendar__time {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.calendar__clock {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.calendar__part {
+  text-transform: capitalize;
+}
+
+/* The day as 24 hours, tinted by part of the day; the present hour stands up out of the strip. */
+.day-track {
+  margin-top: 0.7rem;
+}
+
+.day-track__hours {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  align-items: center;
+  gap: 1px;
+  height: 0.9rem;
+}
+
+.day-track__hour {
+  height: 0.4rem;
+  border-radius: 1px;
+  background: var(--part);
+}
+
+.day-track__hour.is-now {
+  height: 0.9rem;
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 1.5px var(--bg-raised),
+    0 0 0 2.75px var(--text);
+}
+
+.part--night {
+  --part: color-mix(in srgb, var(--secret) 38%, var(--bg-sunken));
+}
+
+.part--dawn {
+  --part: color-mix(in srgb, var(--faction-6) 60%, var(--bg-sunken));
+}
+
+.part--morning {
+  --part: color-mix(in srgb, var(--accent) 62%, var(--bg-sunken));
+}
+
+.part--noon {
+  --part: var(--accent);
+}
+
+.part--afternoon {
+  --part: color-mix(in srgb, var(--accent) 80%, var(--bg-sunken));
+}
+
+.part--dusk {
+  --part: color-mix(in srgb, var(--bad) 65%, var(--bg-sunken));
+}
+
+.part--evening {
+  --part: color-mix(in srgb, var(--secret) 62%, var(--bg-sunken));
+}
+
+.day-track__marks {
+  position: relative;
+  height: 0.95rem;
+  margin-top: 0.2rem;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+}
+
+.day-track__marks span {
+  position: absolute;
+  top: 0;
+}
+
+.calendar__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.calendar__section > .disclosure {
+  align-self: flex-start;
+  margin-top: 0;
+}
+
+.calendar__note {
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.calendar__section--due .schedule {
+  border-color: var(--accent-line);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.schedule__title {
+  font-size: 0.95rem;
+}
+
+.schedule__badge {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.schedule--due .schedule__badge {
+  color: var(--accent);
+}
+
+.schedule__when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.45rem;
+  margin-top: 0.1rem;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule__description {
+  font-size: 0.8rem;
+}
+
+.schedule--done .schedule__title,
+.schedule--cancelled .schedule__title {
+  color: var(--text-muted);
+}
+
+.schedule--cancelled .schedule__title {
+  text-decoration: line-through;
+  text-decoration-color: var(--text-faint);
+}
+
+/* Bonds: each stage a colour, from enmity's red through grey to devotion's rose. */
+.stage--hostile {
+  --bond: var(--bad);
+}
+
+.stage--cold {
+  --bond: color-mix(in srgb, var(--bad) 55%, var(--text-muted));
+}
+
+.stage--neutral {
+  --bond: var(--text-muted);
+}
+
+.stage--warm {
+  --bond: color-mix(in srgb, var(--accent) 65%, var(--good));
+}
+
+.stage--close {
+  --bond: var(--good);
+}
+
+.stage--devoted {
+  --bond: var(--faction-6);
+}
+
+.bonds {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.bond {
+  box-shadow: inset 3px 0 0 var(--bond);
+}
+
+.bond__head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.bond__who {
+  flex: 1;
+  min-width: 0;
+}
+
+.bond__role {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
+.bond__standing {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.bond__stage {
+  color: var(--bond);
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.bond__stage:lang(zh) {
+  font-size: 0.8rem;
+}
+
+.bond__score {
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+/* The scale from −100 to 100: a bar from the middle toward the score, stage boundaries ticked. */
+.bond-meter {
+  position: relative;
+  height: 0.5rem;
+  margin-top: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-sunken);
+}
+
+.bond-meter__fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bond) 75%, transparent);
+}
+
+.bond-meter__tick {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 1px;
+  background: var(--border-strong);
+}
+
+.bond-meter__zero {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 50%;
+  width: 1.5px;
+  background: var(--text-faint);
+  transform: translateX(-50%);
+}
+
+.bond-meter__marker {
+  position: absolute;
+  top: 50%;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid var(--bg-raised);
+  border-radius: 50%;
+  background: var(--bond);
+  transform: translate(-50%, -50%);
+}
+
+.bond-meter--compact {
+  width: 3.25rem;
+  height: 0.35rem;
+  margin-top: 0;
+}
+
+.bond-meter--compact .bond-meter__marker {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-width: 1.5px;
+}
+
+.bond__latest {
+  margin-top: 0.55rem;
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.bond__latest .card__label {
+  display: inline;
+  margin-right: 0.4rem;
+}
+
+.bond__change {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.bond__change.is-up {
+  color: var(--good);
+}
+
+.bond__change.is-down {
+  color: var(--bad);
+}
+
+.bond__history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+
+.bond__history li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.bond__reason {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bond__turn {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 0.7rem;
+}
+
+/* A bond on a character's card in the cast. */
+.bond-badge {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.45rem;
+}
+
+.bond-badge__stage {
+  color: var(--bond);
+  font-weight: 700;
+}
+
+.bond-badge__score {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 600px) {
+  .map--large .map__plane {
+    min-width: calc(var(--cols) * 2.8rem);
+  }
 }

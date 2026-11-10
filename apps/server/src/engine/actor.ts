@@ -1,9 +1,10 @@
-import type { Character, Message, Session, TokenUsage, WorldState } from '@roleplay/shared';
+import type { Character, Message, ModuleId, Session, TokenUsage, WorldState } from '@roleplay/shared';
 import { z } from 'zod';
 import { AppError } from '../errors';
 import type { ChatTurn, ConversationInit, LLMProvider, ToolSpec } from '../llm/types';
 import { DEFAULT_TUNING } from './context';
 import { mentionedIds, recall, type RecallFocus } from './memory';
+import { getModules, modulesKey } from './modules';
 import { getPrompts } from './prompts';
 import { StreamingStringField } from './streamingField';
 import { toJsonSchema } from './tools';
@@ -45,13 +46,42 @@ const respondSchema = z.strictObject({
     .describe('Leave out for plain talk. Fill in when this exchange changes more than how the two of you feel: you do something (hand something over, leave, call for help, strike), you agree to or promise something, or you tell them something that matters to what they are after. Say what, in a sentence; the game master records it.'),
 });
 
-export type ActorReply = z.infer<typeof respondSchema>;
+/** What every character says back, plus whatever the story's modules asked them for (see `GameModule.actor`). */
+export type ActorReply = z.infer<typeof respondSchema> & Record<string, unknown>;
 
-const respondSpec: ToolSpec = {
-  name: RESPOND,
-  description: 'Answer as your character. Call it exactly once.',
-  inputSchema: toJsonSchema(respondSchema),
-};
+interface RespondTool {
+  schema: z.ZodType<ActorReply>;
+  spec: ToolSpec;
+}
+
+const respondTools = new Map<string, RespondTool>();
+
+/**
+ * `respond` for a story with these modules: the same call for every
+ * character, with the fields modules add to it. Built once per set of
+ * modules, so the tool a model is sent is byte-identical from turn to turn.
+ */
+function respondTool(modules: readonly ModuleId[]): RespondTool {
+  const key = modulesKey(modules);
+  let tool = respondTools.get(key);
+  if (!tool) {
+    const extra = Object.assign({}, ...getModules(modules).map((module) => module.actor?.fields ?? {})) as z.ZodRawShape;
+    // The model is shown each module's field in full. The reply is checked
+    // against the character's own fields only: a module reads its field for
+    // itself, so that a slip there cannot cost the character their line.
+    const anything = Object.fromEntries(Object.keys(extra).map((name) => [name, z.unknown().optional()]));
+    tool = {
+      schema: respondSchema.extend(anything) as unknown as z.ZodType<ActorReply>,
+      spec: {
+        name: RESPOND,
+        description: 'Answer as your character. Call it exactly once.',
+        inputSchema: toJsonSchema(respondSchema.extend(extra)),
+      },
+    };
+    respondTools.set(key, tool);
+  }
+  return tool;
+}
 
 // How much the character is given to work with, besides the memories they recall.
 const EXCHANGES_REPLAYED = 8;
@@ -152,9 +182,17 @@ export function buildActorInit(
   said: string,
   turn: number,
   memoriesRecalled: number = DEFAULT_TUNING.memoriesRecalled,
+  /** The modules the story is being played with. None unless named: what a story lists is not what it is played with. */
+  modules: readonly ModuleId[] = [],
 ): ConversationInit {
   const view = characterView(session.world, character, said, memoriesRecalled);
   const section = (tag: string, value: unknown) => `<${tag}>\n${JSON.stringify(value)}\n</${tag}>`;
+  // What the story's modules show this character: the balance of power on a
+  // sandbox board, how close they have grown to the player.
+  const fromModules = getModules(modules).flatMap((module) => {
+    const shown = module.shownToCharacter?.of(session.world, character.id);
+    return module.shownToCharacter && shown !== undefined ? [section(module.shownToCharacter.tag, shown)] : [];
+  });
 
   return {
     system: getPrompts(session.language).actorSystem,
@@ -164,10 +202,11 @@ export function buildActorInit(
       section('your_memories', view.your_memories),
       section('here_and_now', view.here_and_now),
       section('common_knowledge', view.common_knowledge),
+      ...fromModules,
       section('speaking_to_you', view.speaking_to_you),
       `<they_say>\n${said}\n</they_say>`,
     ].join('\n\n'),
-    tools: [respondSpec],
+    tools: [respondTool(modules).spec],
     meta: {
       locale: session.language,
       kind: 'talk',
@@ -197,7 +236,10 @@ export async function playCharacter(
   init: ConversationInit,
   handlers: ActorHandlers,
   usage: TokenUsage,
+  /** The modules the story is being played with, which decide what the reply may carry. */
+  modules: readonly ModuleId[] = [],
 ): Promise<ActorReply> {
+  const { schema } = respondTool(modules);
   const conversation = provider.startConversation(init);
   const reminder = getPrompts(init.meta.locale).actorReminder;
 
@@ -231,7 +273,7 @@ export async function playCharacter(
 
     const call = result.toolCalls.find((candidate) => candidate.name === RESPOND);
     if (call && result.stop !== 'max_tokens') {
-      const parsed = respondSchema.safeParse(call.input);
+      const parsed = schema.safeParse(call.input);
       if (parsed.success) {
         // Whatever part did not stream (a provider that sends inputs whole) goes out now.
         if (!streamed) handlers.onDelta(parsed.data.text);

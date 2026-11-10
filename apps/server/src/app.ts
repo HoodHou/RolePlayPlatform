@@ -4,12 +4,15 @@ import {
   IMAGE_QUALITIES,
   LOCALES,
   MODEL_LIST_TARGETS,
+  MODULE_IDS,
   PROVIDER_KINDS,
   type CreateSessionRequest,
   type ErrorResponse,
   type ModelListResponse,
+  type ModuleLibraryResponse,
   type TurnEvent,
   type TurnRequest,
+  type UpdateSessionRequest,
   type UpdateSettingsRequest,
 } from '@roleplay/shared';
 import { Hono, type Context } from 'hono';
@@ -17,6 +20,7 @@ import { streamSSE } from 'hono/streaming';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { runTurn, validateTurn } from './engine/gameMaster';
+import { listLibrary, normalizeModules } from './engine/modules';
 import { AppError, toAppError } from './errors';
 import { createPainter } from './images';
 import type { Painter } from './images/types';
@@ -40,12 +44,17 @@ export interface AppDeps {
   createPainter?: (settings: ResolvedSettings) => Painter | null;
 }
 
+const modules = z.array(z.enum(MODULE_IDS)).max(MODULE_IDS.length);
+
 const createSessionSchema = z.object({
   language: z.enum(LOCALES),
   premise: z.string().max(4000).optional(),
   playerName: z.string().max(80).optional(),
   playerConcept: z.string().max(2000).optional(),
+  modules: modules.optional(),
 }) satisfies z.ZodType<CreateSessionRequest>;
+
+const updateSessionSchema = z.object({ modules }) satisfies z.ZodType<UpdateSessionRequest>;
 
 const spoken = z.string().trim().min(1).max(8000);
 const turnSchema = z.discriminatedUnion('kind', [
@@ -102,6 +111,7 @@ const settingsSchema = z.object({
       apiKey,
     })
     .optional(),
+  subscribedModules: modules.optional(),
 }) satisfies z.ZodType<UpdateSettingsRequest>;
 
 async function readBody<S extends z.ZodType>(c: Context, schema: S): Promise<z.infer<S>> {
@@ -115,8 +125,15 @@ export function createApp(deps: AppDeps): Hono {
   const { sessions, settings, images } = deps;
   const makeProvider = deps.createProvider ?? createProvider;
   const makePainter = deps.createPainter ?? createPainter;
-  // A session's world is mutated while a turn runs, so only one turn at a time.
+  // A session is read, changed and saved by one request at a time: a turn
+  // mutates the world as it runs, and anything else written to the session
+  // meanwhile would be lost when the turn saves. The claim is taken before the
+  // session is read, so nothing can slip in between the reading and the claiming.
   const running = new Set<string>();
+  const claim = (id: string): void => {
+    if (running.has(id)) throw new AppError('turn_in_progress', 'A turn is being generated for this session.');
+    running.add(id);
+  };
 
   const app = new Hono();
 
@@ -148,11 +165,16 @@ export function createApp(deps: AppDeps): Hono {
     return c.json(body);
   });
 
+  app.get('/api/modules', async (c) => {
+    const body: ModuleLibraryResponse = { modules: listLibrary((await settings.get()).subscribedModules) };
+    return c.json(body);
+  });
+
   app.get('/api/sessions', async (c) => c.json(await sessions.list()));
 
   app.post('/api/sessions', async (c) => {
     const request = await readBody(c, createSessionSchema);
-    return c.json(await sessions.create(request), 201);
+    return c.json(await sessions.create(request, (await settings.get()).subscribedModules), 201);
   });
 
   app.get('/api/sessions/:id', async (c) => {
@@ -161,12 +183,38 @@ export function createApp(deps: AppDeps): Hono {
     return c.json(session);
   });
 
+  app.patch('/api/sessions/:id', async (c) => {
+    const id = c.req.param('id');
+    const patch = await readBody(c, updateSessionSchema);
+    // A turn in progress is playing with the modules it started with.
+    claim(id);
+    try {
+      const session = await sessions.get(id);
+      if (!session) throw new AppError('not_found', 'No such session.');
+      // Only what the player subscribes to can be switched on. A module the story
+      // already has stays listed if they have since unsubscribed, for when they return.
+      const { subscribedModules } = await settings.get();
+      const kept = session.modules.filter((id) => !subscribedModules.includes(id));
+      session.modules = normalizeModules([...kept, ...patch.modules.filter((id) => subscribedModules.includes(id))]);
+      // The player has chosen; the game master no longer does.
+      session.modulesAuto = false;
+      await sessions.save(session);
+      return c.json(session);
+    } finally {
+      running.delete(id);
+    }
+  });
+
   app.delete('/api/sessions/:id', async (c) => {
     const id = c.req.param('id');
-    if (running.has(id)) throw new AppError('turn_in_progress', 'A turn is being generated for this session.');
-    if (!(await sessions.delete(id))) throw new AppError('not_found', 'No such session.');
-    await images.deleteSession(id);
-    return c.json({ ok: true });
+    claim(id);
+    try {
+      if (!(await sessions.delete(id))) throw new AppError('not_found', 'No such session.');
+      await images.deleteSession(id);
+      return c.json({ ok: true });
+    } finally {
+      running.delete(id);
+    }
   });
 
   app.get('/api/images/:sessionId/:file', async (c) => {
@@ -185,19 +233,28 @@ export function createApp(deps: AppDeps): Hono {
   app.post('/api/sessions/:id/turns', async (c) => {
     const id = c.req.param('id');
     const request = await readBody(c, turnSchema);
-    const session = await sessions.get(id);
-    if (!session) throw new AppError('not_found', 'No such session.');
-    if (running.has(id)) throw new AppError('turn_in_progress', 'A turn is already being generated for this session.');
+    claim(id);
     // Anything wrong before generation starts is a plain JSON error, not a stream.
-    validateTurn(session, request);
-    const current = await settings.get();
-    const provider = makeProvider(current, 'gameMaster');
-    // Only a talk turn has a character speak for themselves.
-    const actorProvider = request.kind === 'talk' ? makeProvider(current, 'actor') : undefined;
-    const painter = makePainter(current);
-    const { historyTurns, memoriesRecalled } = current.generation;
+    const prepared = await (async () => {
+      const session = await sessions.get(id);
+      if (!session) throw new AppError('not_found', 'No such session.');
+      validateTurn(session, request);
+      const current = await settings.get();
+      return {
+        session,
+        provider: makeProvider(current, 'gameMaster'),
+        // Only a talk turn has a character speak for themselves.
+        actorProvider: request.kind === 'talk' ? makeProvider(current, 'actor') : undefined,
+        painter: makePainter(current),
+        subscribed: current.subscribedModules,
+        tuning: { historyTurns: current.generation.historyTurns, memoriesRecalled: current.generation.memoriesRecalled },
+      };
+    })().catch((err: unknown) => {
+      running.delete(id);
+      throw err;
+    });
+    const { session, provider, actorProvider, painter, subscribed, tuning } = prepared;
 
-    running.add(id);
     return streamSSE(c, async (stream) => {
       const abort = new AbortController();
       stream.onAbort(() => abort.abort());
@@ -213,7 +270,8 @@ export function createApp(deps: AppDeps): Hono {
         const outcome = await runTurn(session, request, {
           provider,
           actorProvider,
-          tuning: { historyTurns, memoriesRecalled },
+          tuning,
+          subscribed,
           emit,
           signal: abort.signal,
           illustrate: painter
@@ -224,7 +282,7 @@ export function createApp(deps: AppDeps): Hono {
         emit(
           outcome.error
             ? { type: 'error', error: outcome.error.toApiError(), kept: outcome.committed }
-            : { type: 'done', turn: session.world.turn, usage: outcome.usage },
+            : { type: 'done', turn: session.world.turn, usage: outcome.usage, modules: session.modules },
         );
       } catch (err) {
         console.error(err);

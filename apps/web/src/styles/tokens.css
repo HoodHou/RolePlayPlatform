@@ -34,6 +34,18 @@
   --secret: #b9a0e2;
   --secret-soft: rgba(185, 160, 226, 0.08);
 
+  /* Sandbox factions: `SandboxFaction.color` is a slot 0–7 in this palette. Mid tones that
+     stay apart from each other and from the panel, each carrying dark ink for numbers. */
+  --faction-0: #6c9cd8; /* blue */
+  --faction-1: #df7366; /* red */
+  --faction-2: #84b84f; /* green */
+  --faction-3: #b383d9; /* violet */
+  --faction-4: #d6bd52; /* yellow */
+  --faction-5: #45b7a8; /* teal */
+  --faction-6: #e08cb5; /* pink */
+  --faction-7: #b48a63; /* brown */
+  --faction-ink: #16121a;
+
   --focus: #f0c27f;
   --backdrop: rgba(8, 6, 10, 0.66);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
@@ -86,6 +98,16 @@
     --bad-soft: rgba(178, 70, 58, 0.08);
     --secret: #6a4ea0;
     --secret-soft: rgba(106, 78, 160, 0.06);
+
+    --faction-0: #4f86d0;
+    --faction-1: #d65a4a;
+    --faction-2: #66a032;
+    --faction-3: #9a62cc;
+    --faction-4: #d9ae2a;
+    --faction-5: #22a093;
+    --faction-6: #d46ea0;
+    --faction-7: #a0714a;
+    --faction-ink: #1a130c;
 
     --focus: #9a5716;
     --backdrop: rgba(42, 30, 18, 0.38);

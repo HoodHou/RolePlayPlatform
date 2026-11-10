@@ -7,6 +7,7 @@ import { canTalkTo } from '../../lib/world';
 import { useGame } from '../../store/game';
 import { CharacterAvatar } from '../CharacterAvatar';
 import { Icon } from '../Icon';
+import { ModulesMenu } from './ModulesMenu';
 
 /** Suggested actions, who the player is speaking to, and the input box. */
 export function ComposerArea({ session }: { session: Session }) {
@@ -140,9 +141,12 @@ export function ComposerArea({ session }: { session: Session }) {
             </button>
           )}
         </form>
-        <p id="composer-hint" className="composer__hint">
-          {t('story.composerHint')}
-        </p>
+        <div className="composer__meta">
+          <ModulesMenu session={session} />
+          <p id="composer-hint" className="composer__hint">
+            {t('story.composerHint')}
+          </p>
+        </div>
       </div>
     </div>
   );

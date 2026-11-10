@@ -42,6 +42,24 @@ const PATHS = {
       <path d="M12 11v5M12 7.8h.01" />
     </>
   ),
+  // Building blocks with one more to add: the play modules a story is given.
+  modules: (
+    <>
+      <rect x="4.5" y="4.5" width="6" height="6" rx="1.2" />
+      <rect x="13.5" y="4.5" width="6" height="6" rx="1.2" />
+      <rect x="4.5" y="13.5" width="6" height="6" rx="1.2" />
+      <path d="M16.5 13.5v6M13.5 16.5h6" />
+    </>
+  ),
+  expand: <path d="M14 4.5h5.5V10M10 19.5H4.5V14M19.5 4.5l-6 6M4.5 19.5l6-6" />,
+  check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
+  search: (
+    <>
+      <circle cx="10.5" cy="10.5" r="6" />
+      <path d="M15 15l4.5 4.5" />
+    </>
+  ),
+  back: <path d="M19 12H5.5M11 6l-6 6 6 6" />,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;

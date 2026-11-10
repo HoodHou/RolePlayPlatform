@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createEmptyWorld, type WorldState } from '@roleplay/shared';
+import { createEmptyWorld, MODULE_IDS, type WorldState } from '@roleplay/shared';
 import { rollDice } from './dice';
-import { getTool, getToolSpecs, inExecutionOrder, type ToolContext } from './tools';
+import { getToolbox, type ToolContext } from './tools';
 import { removeEntity, setScene, upsertCharacter, upsertItem, upsertLocation, upsertQuest, WorldOpError } from './world';
+
+// Every module on, pictures on: the fullest set of tools a story can have.
+const toolbox = getToolbox({ illustrations: true, modules: MODULE_IDS });
+const getTool = (name: string) => toolbox.get(name);
 
 function worldWithPlayer(): WorldState {
   const world = createEmptyWorld();
@@ -191,12 +195,13 @@ test('suggestions are required, since they are how the record ends the turn', ()
 
 test('pictures are part of the record only when something can paint', () => {
   const sections = (illustrations: boolean) => {
-    const spec = getToolSpecs({ illustrations }).find((s) => s.name === 'record');
+    const spec = getToolbox({ illustrations, modules: [] }).specs.find((s) => s.name === 'record');
     return Object.keys((spec?.inputSchema.properties ?? {}) as object);
   };
   assert.ok(sections(true).includes('pictures'));
   assert.ok(!sections(false).includes('pictures'));
-  assert.deepEqual(getToolSpecs({ illustrations: false }).map((s) => s.name), ['narrate', 'roll_dice', 'record']);
+  // With no modules the game master has the core two tools and nothing else.
+  assert.deepEqual(getToolbox({ illustrations: false, modules: [] }).specs.map((s) => s.name), ['narrate', 'record']);
 });
 
 test('a portrait needs a subject that exists; a scene needs nothing', () => {
@@ -249,14 +254,14 @@ test('narrate and roll_dice validate their input', () => {
 });
 
 test('tool schemas are plain JSON Schema objects', () => {
-  for (const spec of getToolSpecs({ illustrations: true })) {
+  for (const spec of toolbox.specs) {
     assert.equal(spec.inputSchema.type, 'object', spec.name);
     assert.equal('$schema' in spec.inputSchema, false, spec.name);
   }
 });
 
 test('within one response the story is told before dice and record take effect', () => {
-  const names = inExecutionOrder([{ name: 'record' }, { name: 'roll_dice' }, { name: 'narrate' }]).map((c) => c.name);
+  const names = toolbox.inExecutionOrder([{ name: 'record' }, { name: 'roll_dice' }, { name: 'narrate' }]).map((c) => c.name);
   assert.deepEqual(names, ['narrate', 'roll_dice', 'record']);
 });
 

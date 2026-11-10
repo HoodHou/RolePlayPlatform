@@ -2,11 +2,13 @@ import type { Character, WorldState } from '@roleplay/shared';
 import { useId, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import { bondOf } from '../../lib/bonds';
 import { focusComposer } from '../../lib/composer';
 import { canTalkTo, isPresent, npcsOf } from '../../lib/world';
 import { useGame } from '../../store/game';
 import { useUi } from '../../store/ui';
 import { Icon } from '../Icon';
+import { BondBadge } from './BondMeter';
 import { CharacterMind } from './CharacterMind';
 import { SecretsSwitch } from './SecretsSwitch';
 import { StatList } from './StatList';
@@ -31,6 +33,8 @@ function CharacterCard({ character, world, lang, showSecrets }: CharacterCardPro
   const whereabouts = !present && character.locationId ? world.locations[character.locationId]?.name : undefined;
   const talkable = canTalkTo(world, character.id);
   const talking = talkable && talkingTo === character.id;
+  // Kept by the bonds module; a character with no entry is a stranger and shows none.
+  const bond = bondOf(world, character.id);
   const hasDetails = Boolean(character.description || character.personality || character.stats.length > 0 || showSecrets);
 
   const talk = () => {
@@ -89,6 +93,14 @@ function CharacterCard({ character, world, lang, showSecrets }: CharacterCardPro
           <div className="facts__row">
             <dt>{t('world.characters.whereabouts')}</dt>
             <dd lang={lang}>{whereabouts}</dd>
+          </div>
+        )}
+        {bond && (
+          <div className="facts__row">
+            <dt>{t('world.characters.bond')}</dt>
+            <dd>
+              <BondBadge score={bond.score} name={character.name} />
+            </dd>
           </div>
         )}
       </dl>

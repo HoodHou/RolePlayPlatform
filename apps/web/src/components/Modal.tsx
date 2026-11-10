@@ -10,6 +10,8 @@ interface ModalProps {
   dismissOnBackdrop?: boolean;
   /** A wider centered dialog, for forms with sections. */
   wide?: boolean;
+  /** Extra class on the dialog box, for a dialog that needs its own size. */
+  className?: string;
   children: ReactNode;
 }
 
@@ -26,6 +28,7 @@ export function Modal({
   variant = 'dialog',
   dismissOnBackdrop = false,
   wide = false,
+  className,
   children,
 }: ModalProps) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -70,7 +73,7 @@ export function Modal({
       aria-modal="true"
       aria-labelledby={labelledBy}
       aria-label={labelledBy ? undefined : label}
-      className={`modal modal--${variant}${wide ? ' modal--wide' : ''}`}
+      className={`modal modal--${variant}${wide ? ' modal--wide' : ''}${className ? ` ${className}` : ''}`}
       onPointerDown={(event) => {
         pressedOnBackdrop.current = event.target === event.currentTarget;
       }}

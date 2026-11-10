@@ -2,9 +2,11 @@ import type {
   CreateSessionRequest,
   ModelListResponse,
   ModelListTarget,
+  ModuleLibraryResponse,
   PublicSettings,
   Session,
   SessionSummary,
+  UpdateSessionRequest,
   UpdateSettingsRequest,
 } from '@roleplay/shared';
 import { errorFromResponse, isAbortError, networkError, RequestError } from './errors';
@@ -42,11 +44,16 @@ export const api = {
   /** Asks the provider which models the *saved* settings and key can use. */
   listModels: (target: ModelListTarget) =>
     request<ModelListResponse>(`/api/settings/models?target=${encodeURIComponent(target)}`),
+  /** Every module there is; subscribing is a settings update (`subscribedModules`). */
+  getModules: () => request<ModuleLibraryResponse>('/api/modules'),
 
   listSessions: () => request<SessionSummary[]>('/api/sessions'),
   createSession: (create: CreateSessionRequest) =>
     request<Session>('/api/sessions', { method: 'POST', body: create }),
   getSession: (id: string) => request<Session>(sessionPath(id)),
+  /** Refused with `turn_in_progress` while a turn is being generated. */
+  updateSession: (id: string, update: UpdateSessionRequest) =>
+    request<Session>(sessionPath(id), { method: 'PATCH', body: update }),
   deleteSession: (id: string) => request<{ ok: true }>(sessionPath(id), { method: 'DELETE' }),
 
   turnsPath: (id: string) => `${sessionPath(id)}/turns`,

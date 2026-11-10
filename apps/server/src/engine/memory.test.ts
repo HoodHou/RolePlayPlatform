@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createEmptyWorld, type Memory, type WorldState } from '@roleplay/shared';
 import { gameMasterView, mentionedIds, recall, sceneFocus } from './memory';
-import { getTool } from './tools';
+import { getToolbox } from './tools';
 import { addMemory, setScene, upsertCharacter, upsertLocation, WorldOpError } from './world';
 
 function world(): WorldState {
@@ -47,7 +47,7 @@ test('only characters in the story remember; the player character does not', () 
 
 test('the record gives each witness their own memory, and a bad one does not sink the rest', () => {
   const w = world();
-  const record = getTool('record');
+  const record = getToolbox({ illustrations: false, modules: [] }).get('record');
   assert.ok(record);
 
   const outcome = record.run(

@@ -193,6 +193,48 @@
   border-top: 1px solid var(--border);
 }
 
+/* The module library: always one click away, with how many modules are subscribed. */
+.sidebar__library {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 0.84rem;
+  font-weight: 550;
+  text-align: left;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.sidebar__library:hover {
+  border-color: var(--accent-line);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.sidebar__library .icon {
+  color: var(--accent);
+}
+
+.sidebar__library-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar__library-count {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .sidebar__footer-row {
   display: flex;
   align-items: center;

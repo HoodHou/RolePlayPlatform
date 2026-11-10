@@ -352,12 +352,21 @@
   animation-delay: 0.3s;
 }
 
+/* A stretch of world events: rows of chips, and cards for checks and battles, in the order they happened. */
+.event-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1.1rem 0 1.5rem;
+}
+
 .events {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 0.4rem;
-  margin: 1.1rem 0 1.5rem;
+  width: 100%;
 }
 
 .chip {
@@ -388,10 +397,866 @@
   color: var(--bad);
 }
 
+/* A moment that should stand out: something come due, a bond crossing into a new stage, a fight ending. */
+.chip--notice {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* A clock's chip carries a small dial in place of the glyph. */
+.chip__glyph:has(.dial) {
+  align-self: center;
+}
+
+.chip__glyph .dial {
+  --dial-gap: var(--bg-panel);
+}
+
 .chip__text {
   min-width: 0;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
+}
+
+/* A check: who tried what, the dice, the total against what it had to beat, the outcome. */
+.roll {
+  --tone: var(--text-muted);
+  width: min(100%, 30rem);
+  padding: 0.6rem 0.85rem 0.65rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--tone);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.roll--critical,
+.roll--success {
+  --tone: var(--good);
+}
+
+.roll--partial {
+  --tone: var(--accent);
+}
+
+.roll--failure,
+.roll--fumble {
+  --tone: var(--bad);
+}
+
+/* The extremes glow a little. */
+.roll--critical,
+.roll--fumble {
+  background: color-mix(in srgb, var(--tone) 7%, var(--bg-panel));
+}
+
+.roll__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.roll__glyph {
+  flex: none;
+  color: var(--tone);
+  font-variant-emoji: text;
+}
+
+.roll__who {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-soft);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.roll__difficulty {
+  color: var(--text-muted);
+  font-weight: 450;
+}
+
+.roll__outcome {
+  flex: none;
+  align-self: center;
+  padding: 0.04rem 0.55rem 0.06rem;
+  border: 1px solid color-mix(in srgb, var(--tone) 55%, transparent);
+  border-radius: 999px;
+  color: var(--tone);
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.roll__outcome:lang(zh) {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+}
+
+.roll--critical .roll__outcome,
+.roll--fumble .roll__outcome {
+  border-color: var(--tone);
+  background: var(--tone);
+  color: var(--bg);
+}
+
+.roll__reason {
+  margin-top: 0.2rem;
+  color: var(--text);
+  font-family: var(--font-serif);
+  font-size: 0.97rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.roll__math {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.45rem;
+  margin-top: 0.45rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.roll__system {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+}
+
+.roll__dice {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.die {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.65rem;
+  height: 1.65rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+/* A die an edge threw away. */
+.die.is-dropped {
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-faint);
+  font-weight: 550;
+  text-decoration: line-through;
+}
+
+.roll__total {
+  color: var(--tone);
+  font-size: 0.92rem;
+  font-weight: 750;
+}
+
+.roll__target::before,
+.roll__natural::before {
+  content: '·';
+  margin-right: 0.45rem;
+  color: var(--text-faint);
+}
+
+.roll__natural {
+  color: var(--tone);
+  font-weight: 600;
+}
+
+/* A battle: the two sides facing each other, what each brought and lost, and the verdict. */
+.battle {
+  --tone: var(--accent);
+  width: min(100%, 34rem);
+  padding: 0.85rem 1rem 0.8rem;
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--tone);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tone) 6%, transparent), transparent 4.5rem), var(--bg-panel);
+  box-shadow: var(--shadow-sm);
+  text-align: center;
+}
+
+.battle--good {
+  --tone: var(--good);
+}
+
+.battle--bad {
+  --tone: var(--bad);
+}
+
+.battle__head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.battle__glyph {
+  color: var(--tone);
+  font-size: 1.05rem;
+  font-variant-emoji: text;
+}
+
+.battle__title {
+  font-family: var(--font-serif);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+
+.battle__reason {
+  margin-top: 0.15rem;
+  color: var(--text-muted);
+  font-family: var(--font-serif);
+  font-size: 0.93rem;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.battle__reason:lang(zh) {
+  font-style: normal;
+}
+
+.battle__sides {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.5rem;
+  margin-top: 0.85rem;
+  text-align: left;
+}
+
+.battle__sides::before {
+  content: '';
+  position: absolute;
+  top: 0.15rem;
+  bottom: 0.15rem;
+  left: 50%;
+  border-left: 1px dashed var(--border-strong);
+}
+
+.battle__side--defender {
+  text-align: right;
+}
+
+.battle__role {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.battle__role:lang(zh) {
+  font-size: 0.76rem;
+}
+
+.battle__side--defender .battle__role {
+  justify-content: flex-end;
+}
+
+.battle__result {
+  color: var(--text-faint);
+}
+
+.battle__side.is-winner .battle__result {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.battle__name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.15rem;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.battle__side--defender .battle__name {
+  flex-direction: row-reverse;
+}
+
+.battle__side.is-loser .battle__name {
+  color: var(--text-soft);
+}
+
+/* Bars are to one scale, so the larger force is visibly larger; the lost part is hatched. */
+.battle__bar {
+  display: flex;
+  height: 0.5rem;
+  margin-top: 0.45rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-sunken);
+}
+
+.battle__side--defender .battle__bar {
+  flex-direction: row-reverse;
+}
+
+.battle__kept {
+  background: var(--faction, var(--text-muted));
+}
+
+.battle__lost {
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--faction, var(--text-muted)) 60%, transparent) 0 3px,
+    transparent 3px 6px
+  );
+}
+
+.battle__numbers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.1rem 0.65rem;
+  margin-top: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.77rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.battle__side--defender .battle__numbers {
+  justify-content: flex-end;
+}
+
+.battle__losses {
+  color: var(--bad);
+}
+
+.battle__verdict {
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+  color: var(--tone);
+  font-size: 0.92rem;
+  font-weight: 650;
+}
+
+/* A question to fate: the question, the d100 against the chance of a yes, the answer, any twist. */
+.fate {
+  --tone: var(--secret);
+  width: min(100%, 30rem);
+  padding: 0.6rem 0.85rem 0.7rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--tone);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--secret) 5%, var(--bg-panel));
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.fate__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.fate__glyph {
+  flex: none;
+  color: var(--tone);
+  font-variant-emoji: text;
+}
+
+.fate__title {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-soft);
+  font-weight: 650;
+}
+
+.fate__odds {
+  color: var(--text-muted);
+  font-weight: 450;
+}
+
+.fate__answer {
+  flex: none;
+  align-self: center;
+  padding: 0.04rem 0.55rem 0.06rem;
+  border: 1px solid color-mix(in srgb, var(--tone) 55%, transparent);
+  border-radius: 999px;
+  color: var(--tone);
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.fate__answer:lang(zh) {
+  font-size: 0.78rem;
+}
+
+/* A yes is the filled badge; a no, the outline. */
+.fate--yes .fate__answer {
+  border-color: var(--tone);
+  background: var(--tone);
+  color: var(--bg);
+}
+
+.fate__question {
+  margin-top: 0.2rem;
+  color: var(--text);
+  font-family: var(--font-serif);
+  font-size: 0.97rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* 1 to 100 left to right: the band a yes needed, and a line where the roll fell. */
+.fate__scale {
+  position: relative;
+  height: 0.4rem;
+  margin-top: 0.55rem;
+  border-radius: 999px;
+  background: var(--bg-sunken);
+}
+
+.fate__yes {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone) 45%, transparent);
+}
+
+.fate__roll {
+  position: absolute;
+  top: -0.22rem;
+  bottom: -0.22rem;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--text);
+}
+
+.fate__math {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.45rem;
+  margin-top: 0.45rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.fate__needs::before,
+.fate__means::before {
+  content: '·';
+  margin-right: 0.45rem;
+  color: var(--text-faint);
+}
+
+.fate__means {
+  color: var(--text-soft);
+}
+
+.fate__twist {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.45rem;
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--text-soft);
+}
+
+.fate__twist-label {
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.fate__twist-label:lang(zh) {
+  font-size: 0.76rem;
+}
+
+.fate__twist-name {
+  color: var(--text);
+}
+
+.fate__twist-why {
+  color: var(--text-faint);
+  font-size: 0.74rem;
+}
+
+/* A clock filling: in the alarm colour, so it cannot pass for one more tick. */
+.clock-filled {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: min(100%, 30rem);
+  padding: 0.65rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--bad) 55%, var(--border));
+  border-left: 3px solid var(--bad);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bad) 9%, var(--bg-panel));
+  box-shadow: var(--shadow-sm);
+}
+
+.clock-filled .dial {
+  --dial-gap: color-mix(in srgb, var(--bad) 9%, var(--bg-panel));
+}
+
+.clock-filled__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.clock-filled__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.55rem;
+}
+
+.clock-filled__name {
+  color: var(--text);
+  font-family: var(--font-serif);
+  font-size: 1.02rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.clock-filled__badge {
+  padding: 0.02rem 0.5rem;
+  border-radius: 999px;
+  background: var(--bad);
+  color: var(--bad-ink);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.clock-filled__text {
+  margin-top: 0.15rem;
+  color: var(--bad);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.clock-filled__when {
+  margin-top: 0.15rem;
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+/* A fight breaking out: the acting order as numbered chips in each side's colour. */
+.combat-start {
+  --tone: var(--bad);
+  width: min(100%, 30rem);
+  padding: 0.65rem 0.9rem 0.75rem;
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--tone);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tone) 7%, transparent), transparent 3.5rem), var(--bg-panel);
+  text-align: center;
+}
+
+.combat-start__head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.combat-start__glyph {
+  color: var(--tone);
+  font-variant-emoji: text;
+}
+
+.combat-start__title {
+  font-family: var(--font-serif);
+  font-size: 1.08rem;
+  font-weight: 600;
+}
+
+.combat-start__label {
+  margin-top: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.combat-start__label:lang(zh) {
+  font-size: 0.74rem;
+}
+
+.combat-start__order {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.order-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0.15rem 0.55rem 0.15rem 0.2rem;
+  border: 1px solid color-mix(in srgb, var(--side) 45%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--side) 8%, var(--bg-raised));
+  font-size: 0.8rem;
+}
+
+.order-chip__place {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  min-width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 50%;
+  background: var(--side);
+  color: var(--bg);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.order-chip__name {
+  min-width: 0;
+  color: var(--text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.order-chip__initiative {
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Blows: one frame for a run of them, a compact row each. */
+.attacks {
+  width: min(100%, 32rem);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+
+.attacks > li + li {
+  border-top: 1px dashed var(--border);
+}
+
+.attack {
+  --tone: var(--text-muted);
+  padding: 0.45rem 0.75rem 0.5rem;
+  border-left: 3px solid var(--tone);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.attack--good {
+  --tone: var(--good);
+}
+
+.attack--bad {
+  --tone: var(--bad);
+}
+
+.attack--neutral {
+  --tone: var(--accent);
+}
+
+.attack--miss {
+  --tone: var(--border-strong);
+}
+
+.attack__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.attack__glyph {
+  flex: none;
+  color: var(--tone);
+  font-size: 0.85rem;
+  font-variant-emoji: text;
+}
+
+.attack__who {
+  flex: 1;
+  min-width: 0;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.side-name {
+  color: var(--side);
+}
+
+.attack__arrow {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.attack__outcome {
+  flex: none;
+  align-self: center;
+  padding: 0 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--tone) 60%, transparent);
+  border-radius: 999px;
+  color: var(--tone);
+  font-size: 0.66rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.attack__outcome:lang(zh) {
+  font-size: 0.72rem;
+}
+
+.attack--miss .attack__outcome {
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+}
+
+/* The dice speaking: a critical or a fumble fills the badge. */
+.attack--critical .attack__outcome {
+  border-color: var(--tone);
+  background: var(--tone);
+  color: var(--bg);
+}
+
+.attack--fumble .attack__outcome {
+  border-color: var(--text-muted);
+  background: var(--text-muted);
+  color: var(--bg);
+}
+
+.attack__reason {
+  margin-top: 0.05rem;
+  color: var(--text-muted);
+  font-family: var(--font-serif);
+  font-size: 0.88rem;
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+
+.attack__reason:lang(zh) {
+  font-style: normal;
+}
+
+.attack__math {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.4rem;
+  margin-top: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.die--small {
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding: 0 0.2rem;
+  border-radius: 4px;
+  font-size: 0.76rem;
+}
+
+.attack__total {
+  color: var(--text-soft);
+  font-weight: 700;
+}
+
+.attack__versus {
+  color: var(--text-faint);
+}
+
+.attack__damage,
+.attack__target {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.attack__damage::before {
+  content: '·';
+  margin-right: 0.1rem;
+  color: var(--text-faint);
+}
+
+/* The health bar leads the target's part, so it needs no separator, and nothing dangles when it wraps. */
+.attack__target {
+  margin-left: 0.2rem;
+}
+
+.attack__notation {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.attack__amount {
+  color: var(--tone);
+  font-weight: 750;
+}
+
+.attack__bar {
+  width: 2.6rem;
+  height: 5px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-sunken);
+}
+
+.attack__bar > span {
+  display: block;
+  height: 100%;
+  background: var(--side);
+}
+
+.attack__target {
+  color: var(--text-soft);
+}
+
+.attack__down {
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--bad);
+  color: var(--bad-ink);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .thinking {
@@ -575,6 +1440,7 @@ button.illustration__frame:hover {
 .composer-area__inner {
   max-width: var(--measure);
   margin: 0 auto;
+  container-type: inline-size;
 }
 
 .suggestions {
@@ -736,11 +1602,201 @@ button.illustration__frame:hover {
   color: var(--bad);
 }
 
+/* Under the composer: the story's play modules on the left, the keyboard hint on the right. */
+.composer__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 1.6rem;
+  margin-top: 0.3rem;
+}
+
 .composer__hint {
-  margin-top: 0.4rem;
+  flex: none;
+  margin-left: auto;
   color: var(--text-faint);
   font-size: 0.72rem;
   text-align: right;
+  /* The modules line beside it truncates instead, so the hint never breaks onto two lines. */
+  white-space: nowrap;
+}
+
+/* When the column is too narrow for both, the modules keep their line and the keyboard hint gives way. */
+@container (max-width: 34rem) {
+  .composer__hint {
+    display: none;
+  }
+}
+
+/* Pulled left by its padding so the icon lines up with the composer's text. */
+.modules {
+  position: relative;
+  min-width: 0;
+  margin-left: -0.45rem;
+}
+
+.modules__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0.18rem 0.45rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-faint);
+  font-size: 0.74rem;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.modules__button:hover,
+.modules__button[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--text-soft);
+}
+
+.modules__summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The panel opens upward: the chevron points that way until it is open. */
+.modules__chevron {
+  transform: rotate(180deg);
+  transition: transform 0.15s;
+}
+
+.modules__button[aria-expanded='true'] .modules__chevron {
+  transform: none;
+}
+
+.modules__panel {
+  position: absolute;
+  bottom: calc(100% + 0.45rem);
+  left: 0;
+  z-index: 5;
+  width: min(23rem, calc(100vw - 1.5rem));
+  /* Seven modules and the out-of-play ones can outgrow a short window. */
+  max-height: min(36rem, calc(100dvh - 9rem));
+  padding: 0.85rem 0.95rem 0.75rem;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-lg);
+  animation: dialog-in 0.15s ease-out;
+}
+
+.modules__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.modules__library {
+  margin: -0.35rem -0.45rem -0.35rem 0;
+}
+
+.modules__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+/* Kept by the story, not subscribed: set apart under its own heading. */
+.modules__away {
+  margin-top: 0.9rem;
+  padding-top: 0.7rem;
+  border-top: 1px dashed var(--border-strong);
+}
+
+.modules__away-name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.modules__item--away .modules__name {
+  color: var(--text-muted);
+}
+
+.modules__item--away .modules__desc {
+  margin-left: 1.95rem;
+}
+
+.modules__item--away .link-btn {
+  margin-top: 0.15rem;
+  font-size: 0.77rem;
+}
+
+.modules__title {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.modules__title:lang(zh) {
+  font-size: 0.76rem;
+}
+
+.modules__note {
+  margin-top: 0.45rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.modules__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.7rem;
+}
+
+.modules__name {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.modules__desc {
+  margin: 0.2rem 0 0 2.8rem;
+  color: var(--text-muted);
+  font-size: 0.77rem;
+  line-height: 1.5;
+}
+
+.modules__kept {
+  margin-top: 0.15rem;
+  color: var(--accent);
+}
+
+.modules__error {
+  margin-top: 0.7rem;
+}
+
+.modules__foot {
+  margin-top: 0.75rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 0.74rem;
+  line-height: 1.5;
 }
 
 /* Empty state */

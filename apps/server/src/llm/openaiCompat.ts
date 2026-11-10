@@ -35,40 +35,36 @@ export interface OpenAICompatOptions {
   maxOutputTokens: number | null;
 }
 
-interface WireToolCall {
+/**
+ * Servers attach things of their own to what they send, and some of them want
+ * those things back on the next request of the turn: DeepSeek its
+ * `reasoning_content`, Gemini a thought signature (`extra_content` from Google
+ * itself, `provider_specific_fields` through a LiteLLM gateway), Doubao an
+ * `encrypted_content`. So the rule is simply to return an assistant turn the
+ * way it arrived: every field this code does not itself interpret is kept.
+ */
+type Extras = Record<string, unknown>;
+
+interface WireToolCall extends Extras {
   id: string;
   type: 'function';
   function: { name: string; arguments: string };
-  /**
-   * Whatever else the server attached to the call. Gemini puts a thought
-   * signature here and rejects the next request unless it is sent back.
-   */
-  extra_content?: unknown;
 }
 
 type WireMessage =
   | { role: 'system' | 'user'; content: string }
-  | {
-      role: 'assistant';
-      content: string | null;
-      tool_calls?: WireToolCall[];
-      reasoning_content?: string;
-      extra_content?: unknown;
-    }
+  | ({ role: 'assistant'; content: string | null; tool_calls?: WireToolCall[] } & Extras)
   | { role: 'tool'; tool_call_id: string; content: string };
 
 interface WireChunk {
   choices?: {
-    delta?: {
+    delta?: Extras & {
       content?: string | null;
-      reasoning_content?: string | null;
-      extra_content?: unknown;
-      tool_calls?: {
+      tool_calls?: (Extras & {
         index?: number;
         id?: string;
         function?: { name?: string; arguments?: string };
-        extra_content?: unknown;
-      }[];
+      })[];
     };
     finish_reason?: string | null;
   }[];
@@ -78,6 +74,53 @@ interface WireChunk {
     prompt_tokens_details?: { cached_tokens?: number } | null;
   } | null;
   error?: { message?: string };
+}
+
+// The fields of a streamed message and of a streamed tool call that are read here.
+const READ_FROM_MESSAGE = new Set(['role', 'content', 'tool_calls', 'function_call', 'refusal', 'audio']);
+const READ_FROM_CALL = new Set(['index', 'id', 'type', 'function']);
+
+const isRecord = (value: unknown): value is Extras => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+// What a block streamed in pieces repeats in every piece; the rest of it is text that runs on.
+const REPEATED_IN_PIECES = new Set(['index', 'type', 'format', 'id']);
+
+/**
+ * Joins a streamed field the way streaming splits it: text is appended, lists
+ * run on, objects are merged field by field. A string inside an object is a
+ * value (a signature, an id) rather than a run of text, so there the latest wins.
+ *
+ * The exception is a list of blocks that each carry an `index` (reasoning
+ * details, thinking blocks): those arrive the way tool calls do, one block in
+ * many pieces, and the pieces of a block are joined back into it.
+ */
+function accumulate(previous: unknown, next: unknown, isText = true): unknown {
+  if (typeof next === 'string') return isText && typeof previous === 'string' ? previous + next : next;
+  if (Array.isArray(next)) {
+    const list: unknown[] = Array.isArray(previous) ? [...previous] : [];
+    for (const piece of next) {
+      const at = isRecord(piece) && 'index' in piece ? list.findIndex((block) => isRecord(block) && block.index === piece.index) : -1;
+      if (at < 0) list.push(piece);
+      else list[at] = merge(list[at] as Extras, piece as Extras, (name) => !REPEATED_IN_PIECES.has(name));
+    }
+    return list;
+  }
+  if (isRecord(next)) return merge(isRecord(previous) ? previous : {}, next, () => false);
+  return next;
+}
+
+function merge(into: Extras, from: Extras, isText: (name: string) => boolean): Extras {
+  const merged = { ...into };
+  for (const [name, value] of Object.entries(from)) {
+    if (value !== null && value !== undefined) merged[name] = accumulate(merged[name], value, isText(name));
+  }
+  return merged;
+}
+
+function keepExtras(into: Extras, from: Extras, read: Set<string>): void {
+  for (const [name, value] of Object.entries(from)) {
+    if (!read.has(name) && value !== null && value !== undefined) into[name] = accumulate(into[name], value);
+  }
 }
 
 function mapStop(finishReason: string | null, hasToolCalls: boolean): StopReason {
@@ -145,8 +188,7 @@ class OpenAICompatConversation implements Conversation {
     const body = await this.request(handlers.signal);
 
     let text = '';
-    let reasoning = '';
-    let extra: unknown;
+    const extras: Extras = {};
     let finishReason: string | null = null;
     const usage: TokenUsage = { ...NO_USAGE };
     const calls: WireToolCall[] = [];
@@ -170,8 +212,7 @@ class OpenAICompatConversation implements Conversation {
 
         const delta = choice.delta;
         if (!delta) continue;
-        if (delta.reasoning_content) reasoning += delta.reasoning_content;
-        if (delta.extra_content !== undefined) extra = delta.extra_content;
+        keepExtras(extras, delta, READ_FROM_MESSAGE);
         if (delta.content) {
           text += delta.content;
           handlers.onTextDelta(delta.content);
@@ -183,7 +224,7 @@ class OpenAICompatConversation implements Conversation {
           const call = (calls[index] ??= { id: '', type: 'function', function: { name: '', arguments: '' } });
           // Servers that send no ids still need each call told apart within the turn.
           call.id ||= piece.id || `call_${this.messages.length}_${index}`;
-          if (piece.extra_content !== undefined) call.extra_content = piece.extra_content;
+          keepExtras(call, piece, READ_FROM_CALL);
           if (piece.function?.name) call.function.name += piece.function.name;
           if (piece.function?.arguments) {
             call.function.arguments += piece.function.arguments;
@@ -199,14 +240,12 @@ class OpenAICompatConversation implements Conversation {
     }
 
     const wireCalls = calls.filter(Boolean);
-    // The assistant turn goes back exactly as it came, extras included: some
-    // models check their own reasoning or signatures on the next request.
+    // The assistant turn goes back the way it came, extras included.
     this.messages.push({
+      ...extras,
       role: 'assistant',
       content: text || null,
       ...(wireCalls.length > 0 ? { tool_calls: wireCalls } : {}),
-      ...(reasoning ? { reasoning_content: reasoning } : {}),
-      ...(extra !== undefined ? { extra_content: extra } : {}),
     });
 
     const toolCalls: ToolCall[] = wireCalls.map((call) => ({
