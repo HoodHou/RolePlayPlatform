@@ -25,6 +25,10 @@ export interface OpenAIResponsesOptions {
   apiKey: string | null;
   baseUrl: string;
   model: string;
+  /** Reasoning effort, in OpenAI's own names. null leaves it to the model. */
+  effort: string | null;
+  /** null leaves the length to the API. */
+  maxOutputTokens: number | null;
 }
 
 /** An entry of the `input` array: a message, a function call, its output, or a reasoning item. */
@@ -107,7 +111,7 @@ class ResponsesConversation implements Conversation {
   }
 
   async step(handlers: StepHandlers): Promise<StepResult> {
-    const { apiKey, baseUrl, model } = this.options;
+    const { apiKey, baseUrl, model, effort, maxOutputTokens } = this.options;
     const url = endpointUrl(baseUrl, '/responses');
     const response = await send(url, {
       method: 'POST',
@@ -118,6 +122,9 @@ class ResponsesConversation implements Conversation {
         input: this.input,
         tools: this.tools,
         stream: true,
+        // Only sent when chosen: a model without reasoning rejects the setting.
+        ...(effort ? { reasoning: { effort } } : {}),
+        ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
         // Nothing is kept on OpenAI's side: the turn carries its own history,
         // including the model's reasoning, which comes back encrypted for that.
         store: false,
@@ -206,7 +213,7 @@ class ResponsesConversation implements Conversation {
 }
 
 export class OpenAIResponsesProvider implements LLMProvider {
-  readonly kind = 'openai-compatible';
+  readonly kind = 'openai';
   private readonly options: OpenAIResponsesOptions;
 
   constructor(options: OpenAIResponsesOptions) {

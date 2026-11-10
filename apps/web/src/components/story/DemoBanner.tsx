@@ -5,7 +5,7 @@ import { Icon } from '../Icon';
 
 export function DemoBanner() {
   const { t } = useTranslation();
-  const isDemo = useSettings((s) => s.settings?.activeProvider === 'mock');
+  const isDemo = useSettings((s) => s.settings?.gameMaster.provider === 'mock');
   const openDialog = useUi((s) => s.openDialog);
   if (!isDemo) return null;
 

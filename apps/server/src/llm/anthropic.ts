@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { Effort, TokenUsage } from '@roleplay/shared';
+import type { TokenUsage } from '@roleplay/shared';
 import { AppError } from '../errors';
 import {
   NO_USAGE,
@@ -17,6 +17,9 @@ type MessageParam = Anthropic.Beta.BetaMessageParam;
 type Message = Anthropic.Beta.BetaMessage;
 type Tool = Anthropic.Beta.BetaTool;
 
+/** The effort levels Claude's API has. */
+export type AnthropicEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export interface AnthropicOptions {
   /** A key saved in the app. When null the SDK resolves credentials from the environment. */
   apiKey: string | null;
@@ -24,7 +27,10 @@ export interface AnthropicOptions {
   hasKey: boolean;
   baseUrl: string;
   model: string;
-  effort: Effort | null;
+  /** null leaves the effort to the model's default (and suits models that take no effort setting). */
+  effort: AnthropicEffort | null;
+  /** null uses a generous default. */
+  maxOutputTokens: number | null;
 }
 
 // Streaming keeps long generations clear of HTTP timeouts, so the cap can be generous.
@@ -98,15 +104,11 @@ class AnthropicConversation implements Conversation {
   private readonly tools: Tool[];
   private readonly messages: MessageParam[];
   private readonly officialEndpoint: boolean;
-  private readonly effort: Effort | null;
 
   constructor(client: Anthropic, options: AnthropicOptions, init: ConversationInit) {
     this.client = client;
     this.options = options;
     this.system = init.system;
-    // A quick answer thinks less. Only where effort is in use at all: a null
-    // setting means the model does not take the parameter.
-    this.effort = init.pace === 'quick' && options.effort ? 'low' : options.effort;
     this.officialEndpoint = isOfficialEndpoint(options.baseUrl);
 
     this.tools = init.tools.map((spec) => ({
@@ -132,8 +134,7 @@ class AnthropicConversation implements Conversation {
   }
 
   private createStream(signal: AbortSignal) {
-    const { model } = this.options;
-    const effort = this.effort;
+    const { model, effort, maxOutputTokens } = this.options;
     // Role-play wanders into dark material now and then; where the model supports
     // it, let the API retry a declined request on its default fallback model.
     const useFallbacks = this.officialEndpoint && FALLBACK_MODELS.has(model);
@@ -141,7 +142,7 @@ class AnthropicConversation implements Conversation {
     return this.client.beta.messages.stream(
       {
         model,
-        max_tokens: MAX_OUTPUT_TOKENS,
+        max_tokens: maxOutputTokens ?? MAX_OUTPUT_TOKENS,
         system: [{ type: 'text', text: this.system, cache_control: { type: 'ephemeral' } }],
         messages: this.messages,
         tools: this.tools,

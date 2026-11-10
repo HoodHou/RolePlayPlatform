@@ -1,5 +1,6 @@
 import {
   EFFORTS,
+  GENERATION_LIMITS,
   IMAGE_QUALITIES,
   LOCALES,
   MODEL_LIST_TARGETS,
@@ -35,7 +36,7 @@ export interface AppDeps {
   /** Folder of the built web app; omit to serve the API only. */
   webDist?: string;
   /** Overridable for tests. */
-  createProvider?: (settings: ResolvedSettings) => LLMProvider;
+  createProvider?: (settings: ResolvedSettings, role: 'gameMaster' | 'actor') => LLMProvider;
   createPainter?: (settings: ResolvedSettings) => Painter | null;
 }
 
@@ -61,17 +62,37 @@ const baseUrl = z
 const model = z.string().trim().max(200);
 const apiKey = z.string().max(500).nullable().optional();
 
+const effort = z.enum(EFFORTS).nullable();
+const connection = z.object({ model: model.optional(), baseUrl: baseUrl.optional(), apiKey });
+const limits = GENERATION_LIMITS;
+
 const settingsSchema = z.object({
-  activeProvider: z.enum(PROVIDER_KINDS).optional(),
-  anthropic: z
+  gameMaster: z
+    .object({ provider: z.enum(PROVIDER_KINDS).optional(), model: model.optional(), effort: effort.optional() })
+    .optional(),
+  actor: z
     .object({
+      provider: z.enum([...PROVIDER_KINDS, 'same']).optional(),
       model: model.optional(),
-      baseUrl: baseUrl.optional(),
-      effort: z.enum(EFFORTS).nullable().optional(),
-      apiKey,
+      effort: effort.optional(),
     })
     .optional(),
-  openaiCompatible: z.object({ model: model.optional(), baseUrl: baseUrl.optional(), apiKey }).optional(),
+  connections: z
+    .object({
+      anthropic: connection.optional(),
+      openai: connection.optional(),
+      gemini: connection.optional(),
+      custom: connection.optional(),
+    })
+    .optional(),
+  generation: z
+    .object({
+      maxOutputTokens: z.number().int().min(limits.maxOutputTokens.min).max(limits.maxOutputTokens.max).nullable().optional(),
+      temperature: z.number().min(limits.temperature.min).max(limits.temperature.max).nullable().optional(),
+      historyTurns: z.number().int().min(limits.historyTurns.min).max(limits.historyTurns.max).optional(),
+      memoriesRecalled: z.number().int().min(limits.memoriesRecalled.min).max(limits.memoriesRecalled.max).optional(),
+    })
+    .optional(),
   image: z
     .object({
       enabled: z.boolean().optional(),
@@ -170,8 +191,11 @@ export function createApp(deps: AppDeps): Hono {
     // Anything wrong before generation starts is a plain JSON error, not a stream.
     validateTurn(session, request);
     const current = await settings.get();
-    const provider = makeProvider(current);
+    const provider = makeProvider(current, 'gameMaster');
+    // Only a talk turn has a character speak for themselves.
+    const actorProvider = request.kind === 'talk' ? makeProvider(current, 'actor') : undefined;
     const painter = makePainter(current);
+    const { historyTurns, memoriesRecalled } = current.generation;
 
     running.add(id);
     return streamSSE(c, async (stream) => {
@@ -188,6 +212,8 @@ export function createApp(deps: AppDeps): Hono {
       try {
         const outcome = await runTurn(session, request, {
           provider,
+          actorProvider,
+          tuning: { historyTurns, memoriesRecalled },
           emit,
           signal: abort.signal,
           illustrate: painter

@@ -216,7 +216,7 @@ const memoryEntry = z.strictObject({
   text: z
     .string()
     .min(1)
-    .describe('The memory from their point of view, in their own words: what they saw, heard or did, and what they made of it. Only what they could know.'),
+    .describe('The memory from their point of view, in their own words: what they saw, heard, said or did, and what they made of it. Only what they could know, and specific: the names, times and places involved, and what was actually said.'),
   about: z.array(id).max(8).optional().describe('Ids of the characters, places or things it concerns.'),
   importance: z.number().int().min(1).max(5).optional().describe('1 in passing, 3 worth retelling, 5 never forgotten. Defaults to 2.'),
   told_by: id.optional().describe('Character id of whoever told them, when they did not witness it themselves.'),
@@ -256,9 +256,9 @@ const sceneSection = z
     location_id: id.optional().describe('Where the player is now. Moving the scene moves the player character with it.'),
     time: z.string().optional().describe('In-world time in whatever form fits the setting, e.g. "Dusk, day 3".'),
     weather: z.string().optional(),
-    summary: z.string().optional().describe('One line on the current situation.'),
+    summary: z.string().optional().describe('One line on where things stand now. Rewrite it every turn.'),
   })
-  .describe('Where and when the story is now. Update it every turn in which time passes or the player moves.');
+  .describe('Where and when the story is now. Include it every turn: the summary always, the time whenever any has passed, the location whenever the player has moved.');
 
 const pictureEntry = z.strictObject({
   subject: z
@@ -317,8 +317,16 @@ const PICTURES = z
   .optional()
   .describe('Pictures to paint and show the player. Keep them for moments worth seeing: the opening scene, arriving somewhere striking, an important character\'s first appearance (as their portrait). Painting is slow and costs money, so most turns need none.');
 
-const recordSchema = z.strictObject({ ...RECORD_SECTIONS, suggestions });
-const recordSchemaWithPictures = z.strictObject({ ...RECORD_SECTIONS, pictures: PICTURES, suggestions });
+// What the model is shown. The scene is marked required here so that it is
+// restated every turn and the header never goes stale; a record that leaves
+// it out is still applied, since rejecting it would cost a round trip.
+const recordSchema = z.strictObject({ ...RECORD_SECTIONS, scene: sceneSection, suggestions });
+const recordSchemaWithPictures = z.strictObject({
+  ...RECORD_SECTIONS,
+  scene: sceneSection,
+  pictures: PICTURES,
+  suggestions,
+});
 
 const RECORD_DESCRIPTION =
   'Record everything this turn changed in the world, in one call, and end the turn. The world panels the player sees, and the world state you are given next turn, contain only what has been recorded. Include every section that changed and leave out the rest; suggestions is always required. Call it once, after narrate.';

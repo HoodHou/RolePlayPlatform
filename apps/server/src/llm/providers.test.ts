@@ -8,6 +8,7 @@ import { MockPainter } from '../images/mock';
 import { OpenAIPainter } from '../images/openai';
 import { AnthropicProvider } from './anthropic';
 import { OpenAICompatProvider } from './openaiCompat';
+import { OpenAIResponsesProvider } from './openaiResponses';
 import type { ConversationInit, StepHandlers } from './types';
 
 /**
@@ -149,6 +150,7 @@ test('anthropic: streams text, collects tool calls, and sends results back in on
       baseUrl: api.url,
       model: 'claude-opus-5-5',
       effort: 'medium',
+      maxOutputTokens: null,
     });
     const conversation = provider.startConversation(init);
 
@@ -201,22 +203,183 @@ test('anthropic: a rejected key is reported as an auth failure', async () => {
     },
   ]);
   try {
-    const provider = new AnthropicProvider({ apiKey: 'bad', hasKey: true, baseUrl: api.url, model: 'claude-opus-5-5', effort: null });
+    const provider = new AnthropicProvider({
+      apiKey: 'bad',
+      hasKey: true,
+      baseUrl: api.url,
+      model: 'claude-opus-5-5',
+      effort: null,
+      maxOutputTokens: 2000,
+    });
     await assert.rejects(
       provider.startConversation(init).step(handlers()),
       (err: unknown) => err instanceof AppError && err.code === 'auth_failed',
     );
+    // No effort chosen: nothing is sent, which also suits models that take no such setting.
     assert.equal('output_config' in api.requests[0]!.body, false);
+    assert.equal(api.requests[0]!.body.max_tokens, 2000);
   } finally {
     api.close();
   }
 });
 
+test('openai: the Responses API carries the turn, its tool calls and the chosen effort', async () => {
+  const event = (data: { type: string }) => ({ event: data.type, data });
+  const functionCall = { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'update_world', arguments: '{"title":"Creak"}' };
+  const reasoning = { type: 'reasoning', id: 'rs_1', encrypted_content: 'opaque' };
+  const api = await fakeApi([
+    {
+      body: sse([
+        event({ type: 'response.output_item.added', item: { ...functionCall, arguments: '' } } as { type: string }),
+        event({ type: 'response.function_call_arguments.delta', item_id: 'fc_1', delta: '{"title":' } as { type: string }),
+        event({ type: 'response.function_call_arguments.delta', item_id: 'fc_1', delta: '"Creak"}' } as { type: string }),
+        event({
+          type: 'response.completed',
+          response: {
+            status: 'completed',
+            output: [reasoning, functionCall],
+            usage: { input_tokens: 40, output_tokens: 9, input_tokens_details: { cached_tokens: 30 } },
+          },
+        } as { type: string }),
+      ]),
+    },
+    {
+      body: sse([
+        event({ type: 'response.output_text.delta', delta: 'Done.' } as { type: string }),
+        event({ type: 'response.completed', response: { status: 'completed', output: [] } } as { type: string }),
+      ]),
+    },
+  ]);
+  try {
+    const provider = new OpenAIResponsesProvider({
+      apiKey: 'test-key',
+      baseUrl: `${api.url}/v1`,
+      model: 'gpt-6.1-sol',
+      effort: 'low',
+      maxOutputTokens: 4000,
+    });
+    const conversation = provider.startConversation(init);
+
+    const h = handlers();
+    const first = await conversation.step(h);
+    assert.deepEqual(first.toolCalls, [{ id: 'call_1', name: 'update_world', input: { title: 'Creak' } }]);
+    assert.deepEqual(h.toolInput, ['call_1/update_world:{"title":', 'call_1/update_world:"Creak"}']);
+    assert.deepEqual(first.usage, { inputTokens: 40, outputTokens: 9, cachedInputTokens: 30 });
+
+    const sent = api.requests[0]!;
+    assert.equal(sent.url, '/v1/responses');
+    assert.equal(sent.body.instructions, init.system);
+    assert.deepEqual(sent.body.reasoning, { effort: 'low' });
+    assert.equal(sent.body.max_output_tokens, 4000);
+    // Nothing is kept on OpenAI's side; the turn carries its own history.
+    assert.equal(sent.body.store, false);
+    assert.deepEqual(sent.body.tools[0], {
+      type: 'function',
+      name: 'update_world',
+      description: 'Set the title.',
+      parameters: init.tools[0]!.inputSchema,
+      strict: false,
+    });
+
+    conversation.submitToolResults([{ id: 'call_1', content: 'ok', isError: false }]);
+    const second = await conversation.step(handlers());
+    assert.equal(second.text, 'Done.');
+    assert.equal(second.stop, 'end');
+    // The model's own items, reasoning included, go back ahead of the answer to its call.
+    assert.deepEqual(api.requests[1]!.body.input.slice(-3), [
+      reasoning,
+      functionCall,
+      { type: 'function_call_output', call_id: 'call_1', output: 'ok' },
+    ]);
+  } finally {
+    api.close();
+  }
+});
+
+/** A custom endpoint with nothing optional switched on. */
+const plainCompat = {
+  kind: 'custom' as const,
+  apiKey: null,
+  baseUrl: '',
+  model: 'some-model',
+  effort: null,
+  temperature: null,
+  maxOutputTokens: null,
+};
+
 const chunk = (delta: object, finish: string | null = null) => ({
   data: { choices: [{ index: 0, delta, finish_reason: finish }] },
 });
 
-test('openai-compatible: assembles streamed tool calls and replays them with their results', async () => {
+test('chat completions: thinking effort, temperature and length are sent only when chosen', async () => {
+  const done = { body: sse([chunk({ content: 'Done.' }), chunk({}, 'stop'), { data: '[DONE]' }]) };
+  const api = await fakeApi([done, done]);
+  try {
+    // Left alone, nothing optional goes out: many servers reject fields they do not know.
+    await new OpenAICompatProvider({ ...plainCompat, baseUrl: api.url }).startConversation(init).step(handlers());
+    const plain = api.requests[0]!.body;
+    for (const field of ['reasoning_effort', 'temperature', 'max_tokens']) assert.equal(field in plain, false, field);
+
+    await new OpenAICompatProvider({
+      ...plainCompat,
+      kind: 'gemini',
+      baseUrl: api.url,
+      effort: 'high',
+      temperature: 0,
+      maxOutputTokens: 3000,
+    })
+      .startConversation(init)
+      .step(handlers());
+    const tuned = api.requests[1]!.body;
+    assert.equal(tuned.reasoning_effort, 'high');
+    assert.equal(tuned.temperature, 0, 'a temperature of zero is a choice, not "unset"');
+    assert.equal(tuned.max_tokens, 3000);
+  } finally {
+    api.close();
+  }
+});
+
+test('chat completions: what a server attaches to a tool call is sent back with it', async () => {
+  // Gemini signs its tool calls and refuses the next request if the signature is missing.
+  const signature = { google: { thought_signature: 'c2lnbmVk' } };
+  const api = await fakeApi([
+    {
+      body: sse([
+        chunk({
+          tool_calls: [
+            { id: 'call_1', type: 'function', function: { name: 'update_world', arguments: '{"title":"Creak"}' }, extra_content: signature },
+          ],
+        }),
+        chunk({}, 'tool_calls'),
+        { data: '[DONE]' },
+      ]),
+    },
+    { body: sse([chunk({ content: 'Done.' }), chunk({}, 'stop'), { data: '[DONE]' }]) },
+  ]);
+  try {
+    const conversation = new OpenAICompatProvider({ ...plainCompat, kind: 'gemini', baseUrl: api.url }).startConversation(init);
+    const first = await conversation.step(handlers());
+    // No index on the call, as Gemini sends it: an id starts a new one.
+    assert.deepEqual(first.toolCalls, [{ id: 'call_1', name: 'update_world', input: { title: 'Creak' } }]);
+
+    conversation.submitToolResults([{ id: 'call_1', content: 'ok', isError: false }]);
+    await conversation.step(handlers());
+    assert.deepEqual(api.requests[1]!.body.messages[4].tool_calls[0].extra_content, signature);
+  } finally {
+    api.close();
+  }
+});
+
+test('chat completions: a custom API with no address or no model is a configuration error', () => {
+  for (const missing of [{ baseUrl: '' }, { baseUrl: 'https://gateway.example/v1', model: '' }]) {
+    assert.throws(
+      () => new OpenAICompatProvider({ ...plainCompat, ...missing }),
+      (err: unknown) => err instanceof AppError && err.code === 'not_configured',
+    );
+  }
+});
+
+test('chat completions: assembles streamed tool calls and replays them with their results', async () => {
   const api = await fakeApi([
     {
       body: sse([
@@ -233,7 +396,7 @@ test('openai-compatible: assembles streamed tool calls and replays them with the
     { body: sse([chunk({ content: 'Done.' }), chunk({}, 'stop'), { data: '[DONE]' }]) },
   ]);
   try {
-    const provider = new OpenAICompatProvider({ apiKey: 'test-key', baseUrl: `${api.url}/v1/`, model: 'some-model' });
+    const provider = new OpenAICompatProvider({ ...plainCompat, apiKey: 'test-key', baseUrl: `${api.url}/v1/` });
     const conversation = provider.startConversation(init);
 
     const h = handlers();
@@ -270,7 +433,7 @@ test('openai-compatible: assembles streamed tool calls and replays them with the
   }
 });
 
-test('openai-compatible: malformed tool arguments are passed on for validation, and errors are mapped', async () => {
+test('chat completions: malformed tool arguments are passed on for validation, and errors are mapped', async () => {
   const api = await fakeApi([
     {
       body: sse([
@@ -282,7 +445,7 @@ test('openai-compatible: malformed tool arguments are passed on for validation, 
     { status: 429, body: '{"error":{"message":"slow down"}}' },
   ]);
   try {
-    const provider = new OpenAICompatProvider({ apiKey: null, baseUrl: api.url, model: 'some-model' });
+    const provider = new OpenAICompatProvider({ ...plainCompat, baseUrl: api.url });
     const conversation = provider.startConversation(init);
 
     const first = await conversation.step(handlers());
@@ -355,11 +518,4 @@ test('the placeholder painter draws a valid picture of the right shape, for free
   });
   assert.equal(painting.extension, 'svg');
   assert.match(painting.data.toString('utf8'), /^<svg [^>]*viewBox="0 0 1024 1536"/);
-});
-
-test('openai-compatible: a missing model is a configuration error', () => {
-  assert.throws(
-    () => new OpenAICompatProvider({ apiKey: 'k', baseUrl: 'http://localhost', model: '' }),
-    (err: unknown) => err instanceof AppError && err.code === 'not_configured',
-  );
 });

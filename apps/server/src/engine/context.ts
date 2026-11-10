@@ -1,4 +1,4 @@
-import type { Message, Session, TurnRequest } from '@roleplay/shared';
+import { GENERATION_DEFAULTS, type Message, type Session, type TurnRequest } from '@roleplay/shared';
 import type { ChatTurn, ConversationInit } from '../llm/types';
 import { gameMasterView } from './memory';
 import { getPrompts, type Exchange, type PromptOptions } from './prompts';
@@ -14,21 +14,35 @@ import { getToolSpecs } from './tools';
  * can be dropped without the model losing track of the world.
  */
 
-// How much story to replay. The window moves in whole chunks rather than one
-// turn at a time, so the transcript prefix stays identical (and cached) for
-// several turns in a row.
-const HISTORY_TURNS = 30;
-const HISTORY_CHUNK = 10;
+/** How much the models are given to work with. Set by the player in the AI settings. */
+export interface Tuning {
+  /** Past turns of story replayed to the game master. */
+  historyTurns: number;
+  /** Memories a character has in mind when they speak. */
+  memoriesRecalled: number;
+}
+
+export const DEFAULT_TUNING: Tuning = {
+  historyTurns: GENERATION_DEFAULTS.historyTurns,
+  memoriesRecalled: GENERATION_DEFAULTS.memoriesRecalled,
+};
+
+export type ContextOptions = PromptOptions & Tuning;
 
 /**
  * Past turns as user/assistant pairs: what the player did or said, then what
  * was told in reply. A line the player said to one character is marked with
  * who it was for, and a character's own answer with who gave it.
+ *
+ * At least `historyTurns` turns are replayed once there are that many. The
+ * window moves in whole chunks rather than one turn at a time, so the
+ * transcript prefix stays identical (and cached) for several turns in a row.
  */
 export function buildHistory(
   messages: Message[],
   openingMarker: string,
   nameOf: (characterId: string) => string = (id) => id,
+  historyTurns: number = DEFAULT_TUNING.historyTurns,
 ): ChatTurn[] {
   const turns = new Map<number, { player: string; told: string[] }>();
   const at = (turn: number) => {
@@ -53,8 +67,9 @@ export function buildHistory(
     .filter(([, turn]) => turn.told.length > 0)
     .map(([, turn]) => turn);
 
-  const excess = pairs.length - HISTORY_TURNS;
-  const start = excess > 0 ? Math.floor(excess / HISTORY_CHUNK) * HISTORY_CHUNK : 0;
+  const chunk = Math.max(1, Math.floor(historyTurns / 3));
+  const excess = pairs.length - historyTurns;
+  const start = excess > 0 ? Math.floor(excess / chunk) * chunk : 0;
 
   return pairs.slice(start).flatMap((turn): ChatTurn[] => [
     { role: 'user', text: turn.player || openingMarker },
@@ -68,16 +83,19 @@ function gameMasterInit(
   ask: string,
   playerText: string,
   turn: number,
-  options: PromptOptions,
+  options: ContextOptions,
   characterId?: string,
 ): ConversationInit {
   const prompts = getPrompts(session.language);
   const { world } = session;
-  const state = `<world_state>\n${JSON.stringify(gameMasterView(world, playerText))}\n</world_state>`;
+  // The game master watches several characters at once, so each gets fewer memories than an actor would.
+  const perCharacter = Math.max(2, Math.round((options.memoriesRecalled * 2) / 3));
+  const state = `<world_state>\n${JSON.stringify(gameMasterView(world, playerText, perCharacter))}\n</world_state>`;
+  const nameOf = (id: string) => world.characters[id]?.name ?? id;
 
   return {
     system: prompts.system(options),
-    history: buildHistory(session.messages, prompts.openingMarker, (id) => world.characters[id]?.name ?? id),
+    history: buildHistory(session.messages, prompts.openingMarker, nameOf, options.historyTurns),
     prompt: `${state}\n\n${ask}`,
     tools: getToolSpecs(options),
     meta: {
@@ -97,7 +115,7 @@ export function buildTurnInit(
   session: Session,
   request: Extract<TurnRequest, { kind: 'start' | 'action' }>,
   turn: number,
-  options: PromptOptions,
+  options: ContextOptions,
 ): ConversationInit {
   if (request.kind === 'start') {
     return gameMasterInit(session, 'start', getPrompts(session.language).opening(session.seed), '', turn, options);
@@ -107,17 +125,17 @@ export function buildTurnInit(
 }
 
 /**
- * The game master ruling on what a character does after answering the player.
+ * The game master ruling on what a conversation changed.
  * The exchange is already the last entry of the transcript; the ask restates
  * it together with the one thing the transcript lacks, what the character
- * means to do.
+ * says it changes.
  */
 export function buildRefereeInit(
   session: Session,
   characterId: string,
   exchange: Exchange,
   turn: number,
-  options: PromptOptions,
+  options: ContextOptions,
 ): ConversationInit {
   const ask = getPrompts(session.language).referee(exchange);
   return gameMasterInit(session, 'referee', ask, exchange.said, turn, options, characterId);

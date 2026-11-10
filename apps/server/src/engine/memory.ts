@@ -84,21 +84,18 @@ export function sceneFocus(world: WorldState, text = ''): RecallFocus {
   return { cues: new Set(mentionedIds(world, text)), around, turn: world.turn };
 }
 
-// Memories shown to the game master per character in play.
-const GAME_MASTER_RECALL = 8;
-
 /**
  * The world as the game master is shown it. Everything is there except the
  * full memory of every character, which would grow without bound: characters
- * in play (present, or named in the player's words) come with the memories
- * that bear on this moment, and the rest only with a count.
+ * in play (present, or named in the player's words) come with up to
+ * `perCharacter` memories that bear on this moment, and the rest only with a count.
  */
-export function gameMasterView(world: WorldState, playerText: string): unknown {
+export function gameMasterView(world: WorldState, playerText: string, perCharacter = 8): unknown {
   const focus = sceneFocus(world, playerText);
   const characters = Object.fromEntries(
     Object.values(world.characters).map((character) => {
       const inPlay = focus.around.has(character.id) || focus.cues.has(character.id);
-      const memories = inPlay ? recall(character.memories, focus, GAME_MASTER_RECALL) : [];
+      const memories = inPlay ? recall(character.memories, focus, perCharacter) : [];
       const omitted = character.memories.length - memories.length;
       return [character.id, { ...character, memories, ...(omitted > 0 ? { memories_not_shown: omitted } : {}) }];
     }),

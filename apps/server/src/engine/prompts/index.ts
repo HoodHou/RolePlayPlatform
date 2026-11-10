@@ -7,7 +7,7 @@ export interface PromptOptions {
   illustrations: boolean;
 }
 
-/** A character's reply to the player, and what that character means to do next. */
+/** A character's reply to the player, and what that character says it changes. */
 export interface Exchange {
   /** The character's name. */
   name: string;
@@ -15,8 +15,8 @@ export interface Exchange {
   said: string;
   /** What they answered. */
   reply: string;
-  /** What they now do beyond talking. */
-  intent: string;
+  /** What the exchange changes, by the character's account: something they do, promise or reveal. */
+  changes: string;
 }
 
 /** Everything the models are told, in one story language. */
@@ -34,7 +34,7 @@ export interface PromptPack {
   recordReminder: string;
   /** Sent when the model stopped without telling the player anything. */
   narrateReminder: string;
-  /** Asks the game master to rule on what a character does after answering the player. */
+  /** Asks the game master to rule on and record what a conversation changed. */
   referee(exchange: Exchange): string;
 
   /** Instructions for a model playing one character in conversation. Byte-stable, like `system`. */

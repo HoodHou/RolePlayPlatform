@@ -56,11 +56,6 @@ export interface ConversationInit {
   prompt: string;
   tools: ToolSpec[];
   meta: TurnMeta;
-  /**
-   * `quick` asks for a fast answer where the provider has a setting for it: a
-   * line of dialogue should not take as long to arrive as a turn of the story.
-   */
-  pace?: 'quick';
 }
 
 export type StopReason = 'end' | 'tool_use' | 'max_tokens' | 'refusal';

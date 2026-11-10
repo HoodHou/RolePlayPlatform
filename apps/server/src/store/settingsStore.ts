@@ -1,25 +1,32 @@
 import path from 'node:path';
 import {
-  DEFAULT_ANTHROPIC_MODEL,
+  CONNECTION_DEFAULTS,
+  CONNECTION_KINDS,
   DEFAULT_IMAGE_MODEL,
   DEFAULT_OPENAI_BASE_URL,
-  DEFAULT_OPENAI_MODEL,
+  GENERATION_DEFAULTS,
+  PROVIDER_EFFORTS,
   PROVIDER_KINDS,
-  type AnthropicSettings,
+  type ActorSettings,
+  type ConnectionKind,
+  type ConnectionSettings,
+  type Effort,
+  type GenerationSettings,
   type ImageSettings,
   type KeySource,
-  type OpenAICompatSettings,
   type ProviderKind,
   type PublicSettings,
+  type RoleSettings,
   type UpdateSettingsRequest,
 } from '@roleplay/shared';
 import { readJson, writeJson } from './jsonFile';
 
 /** What is written to disk: only what the user changed in the app. */
 interface StoredSettings {
-  activeProvider?: ProviderKind;
-  anthropic?: Partial<AnthropicSettings> & { apiKey?: string };
-  openaiCompatible?: Partial<OpenAICompatSettings> & { apiKey?: string };
+  gameMaster?: Partial<RoleSettings>;
+  actor?: Partial<ActorSettings>;
+  connections?: Partial<Record<ConnectionKind, Partial<ConnectionSettings> & { apiKey?: string }>>;
+  generation?: Partial<GenerationSettings>;
   image?: Partial<ImageSettings> & { apiKey?: string };
 }
 
@@ -28,17 +35,31 @@ interface ResolvedKey {
   apiKeySource: KeySource;
 }
 
+export type ResolvedConnection = ConnectionSettings & ResolvedKey;
+
 /** Saved settings layered over environment variables over defaults. */
 export interface ResolvedSettings {
-  activeProvider: ProviderKind;
-  /** apiKey is only set when saved in the app; otherwise the SDK reads the environment itself. */
-  anthropic: AnthropicSettings & ResolvedKey;
-  openaiCompatible: OpenAICompatSettings & ResolvedKey;
+  gameMaster: RoleSettings;
+  actor: ActorSettings;
+  /**
+   * For Anthropic, apiKey is only set when saved in the app; an environment
+   * key is left for the SDK to read. The others carry the key whatever its source.
+   */
+  connections: Record<ConnectionKind, ResolvedConnection>;
+  generation: GenerationSettings;
   image: ImageSettings & ResolvedKey;
   illustrationsActive: boolean;
 }
 
+/** What one role actually runs on, once "same as the game master" and empty models are filled in. */
+export interface ResolvedRole {
+  provider: ProviderKind;
+  model: string;
+  effort: Effort | null;
+}
+
 const NO_KEY: ResolvedKey = { apiKey: null, apiKeySource: 'none' };
+const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com';
 
 function isProviderKind(value: unknown): value is ProviderKind {
   return PROVIDER_KINDS.includes(value as ProviderKind);
@@ -49,52 +70,97 @@ function sameEndpoint(a: string, b: string): boolean {
   return normalize(a) === normalize(b);
 }
 
-/**
- * OPENAI_API_KEY belongs to the endpoint the environment names. It is never
- * handed to a different base URL the user typed into the app, which would
- * send one vendor's key to another.
- */
-function openAiEnvKey(baseUrl: string, env: NodeJS.ProcessEnv): ResolvedKey {
-  const envEndpoint = env.OPENAI_BASE_URL || DEFAULT_OPENAI_BASE_URL;
-  return env.OPENAI_API_KEY && sameEndpoint(baseUrl, envEndpoint)
-    ? { apiKey: env.OPENAI_API_KEY, apiKeySource: 'env' }
-    : NO_KEY;
+/** The environment variables that configure each connection. */
+function environment(kind: ConnectionKind, env: NodeJS.ProcessEnv) {
+  switch (kind) {
+    case 'anthropic':
+      return { key: env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN, baseUrl: env.ANTHROPIC_BASE_URL, model: env.ANTHROPIC_MODEL };
+    case 'openai':
+      return { key: env.OPENAI_API_KEY, baseUrl: env.OPENAI_BASE_URL, model: env.OPENAI_MODEL };
+    case 'gemini':
+      return { key: env.GEMINI_API_KEY || env.GOOGLE_API_KEY, baseUrl: env.GEMINI_BASE_URL, model: env.GEMINI_MODEL };
+    case 'custom':
+      return { key: env.RP_CUSTOM_API_KEY, baseUrl: env.RP_CUSTOM_BASE_URL, model: env.RP_CUSTOM_MODEL };
+  }
+}
+
+function resolveConnection(
+  kind: ConnectionKind,
+  stored: Partial<ConnectionSettings> & { apiKey?: string },
+  env: NodeJS.ProcessEnv,
+): ResolvedConnection {
+  const fromEnv = environment(kind, env);
+  const defaults = CONNECTION_DEFAULTS[kind];
+  // The endpoint the environment's key was issued for.
+  const envEndpoint = fromEnv.baseUrl || defaults.baseUrl;
+  const baseUrl = (kind === 'anthropic' ? stored.baseUrl : stored.baseUrl || undefined) ?? envEndpoint;
+  // For Claude an empty base URL and the official address are the same place.
+  const place = (url: string) => (kind === 'anthropic' && !url.trim() ? ANTHROPIC_ENDPOINT : url);
+  const same = (a: string, b: string) => sameEndpoint(place(a), place(b));
+
+  let key: ResolvedKey = NO_KEY;
+  if (stored.apiKey) {
+    key = { apiKey: stored.apiKey, apiKeySource: 'settings' };
+  } else if (fromEnv.key && same(baseUrl, envEndpoint)) {
+    // An environment key is never handed to a different base URL typed into
+    // the app, which would send one vendor's key to another.
+    key = { apiKey: kind === 'anthropic' ? null : fromEnv.key, apiKeySource: 'env' };
+  }
+
+  // A default model is only known for the provider's own endpoint.
+  const model = stored.model || fromEnv.model || (same(baseUrl, defaults.baseUrl) ? defaults.model : '');
+  return { baseUrl, model, ...key };
+}
+
+function supportedEffort(provider: ProviderKind, effort: Effort | null | undefined): Effort | null {
+  if (!effort || provider === 'mock') return null;
+  return PROVIDER_EFFORTS[provider].includes(effort) ? effort : null;
 }
 
 export function resolveSettings(stored: StoredSettings, env: NodeJS.ProcessEnv): ResolvedSettings {
-  const a = stored.anthropic ?? {};
-  const o = stored.openaiCompatible ?? {};
+  const connections = Object.fromEntries(
+    CONNECTION_KINDS.map((kind) => [kind, resolveConnection(kind, stored.connections?.[kind] ?? {}, env)]),
+  ) as Record<ConnectionKind, ResolvedConnection>;
+
+  // Without any choice, use the first connection that has a key, and fall back
+  // to the offline game master so a fresh checkout is playable straight away.
+  let provider: ProviderKind = CONNECTION_KINDS.find((kind) => connections[kind].apiKeySource !== 'none') ?? 'mock';
+  if (stored.gameMaster?.provider) provider = stored.gameMaster.provider;
+  else if (isProviderKind(env.RP_PROVIDER)) provider = env.RP_PROVIDER;
+
+  const gameMaster: RoleSettings = {
+    provider,
+    model: stored.gameMaster?.model ?? '',
+    effort: supportedEffort(provider, stored.gameMaster?.effort),
+  };
+
+  const actorProvider = stored.actor?.provider ?? 'same';
+  const actorRunsOn = actorProvider === 'same' ? provider : actorProvider;
+  const actor: ActorSettings = {
+    provider: actorProvider,
+    model: stored.actor?.model ?? '',
+    // A line of dialogue should not take as long as a turn of the story. Claude
+    // takes a low effort on every current model; elsewhere the model decides.
+    effort:
+      stored.actor?.effort !== undefined
+        ? supportedEffort(actorRunsOn, stored.actor.effort)
+        : actorRunsOn === 'anthropic'
+          ? 'low'
+          : null,
+  };
+
   const i = stored.image ?? {};
-
-  const anthropic: ResolvedSettings['anthropic'] = {
-    model: a.model || env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL,
-    baseUrl: a.baseUrl ?? env.ANTHROPIC_BASE_URL ?? '',
-    // null is a real choice here ("let the model decide"), so only default when unset.
-    effort: a.effort !== undefined ? a.effort : 'medium',
-    ...(a.apiKey
-      ? { apiKey: a.apiKey, apiKeySource: 'settings' }
-      : env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN
-        ? { apiKey: null, apiKeySource: 'env' }
-        : NO_KEY),
-  };
-
-  const compatUrl = o.baseUrl || env.OPENAI_BASE_URL || DEFAULT_OPENAI_BASE_URL;
-  const openaiCompatible: ResolvedSettings['openaiCompatible'] = {
-    baseUrl: compatUrl,
-    // Only OpenAI itself has a model we can name in advance.
-    model:
-      o.model ||
-      env.OPENAI_MODEL ||
-      (sameEndpoint(compatUrl, DEFAULT_OPENAI_BASE_URL) ? DEFAULT_OPENAI_MODEL : ''),
-    ...(o.apiKey ? { apiKey: o.apiKey, apiKeySource: 'settings' } : openAiEnvKey(compatUrl, env)),
-  };
-
   const imageUrl = i.baseUrl || env.OPENAI_BASE_URL || DEFAULT_OPENAI_BASE_URL;
-  let imageKey: ResolvedKey;
-  if (i.apiKey) imageKey = { apiKey: i.apiKey, apiKeySource: 'settings' };
-  // Painting on the same endpoint as the text provider reuses the key saved for it.
-  else if (o.apiKey && sameEndpoint(imageUrl, compatUrl)) imageKey = { apiKey: o.apiKey, apiKeySource: 'shared' };
-  else imageKey = openAiEnvKey(imageUrl, env);
+  let imageKey: ResolvedKey = NO_KEY;
+  if (i.apiKey) {
+    imageKey = { apiKey: i.apiKey, apiKeySource: 'settings' };
+  } else {
+    // Painting on the same endpoint as a connection reuses that connection's key.
+    const host = (['openai', 'custom'] as const)
+      .map((kind) => connections[kind])
+      .find((connection) => connection.apiKey && connection.baseUrl && sameEndpoint(imageUrl, connection.baseUrl));
+    if (host) imageKey = { apiKey: host.apiKey, apiKeySource: host.apiKeySource === 'settings' ? 'shared' : 'env' };
+  }
   const image: ResolvedSettings['image'] = {
     enabled: i.enabled ?? false,
     baseUrl: imageUrl,
@@ -103,31 +169,49 @@ export function resolveSettings(stored: StoredSettings, env: NodeJS.ProcessEnv):
     ...imageKey,
   };
 
-  // Without any choice, use whichever provider has a key, and fall back to the
-  // offline game master so a fresh checkout is playable straight away.
-  let activeProvider: ProviderKind = 'mock';
-  if (stored.activeProvider) activeProvider = stored.activeProvider;
-  else if (isProviderKind(env.RP_PROVIDER)) activeProvider = env.RP_PROVIDER;
-  else if (anthropic.apiKeySource !== 'none') activeProvider = 'anthropic';
-  else if (openaiCompatible.apiKeySource !== 'none') activeProvider = 'openai-compatible';
-
   // Demo mode paints with a free placeholder painter; otherwise painting needs
   // to be switched on and able to authenticate (a self-hosted endpoint may need no key).
   const canPaint = image.apiKeySource !== 'none' || !sameEndpoint(image.baseUrl, DEFAULT_OPENAI_BASE_URL);
-  const illustrationsActive = activeProvider === 'mock' || (image.enabled && canPaint);
+  const illustrationsActive = provider === 'mock' || (image.enabled && canPaint);
 
-  return { activeProvider, anthropic, openaiCompatible, image, illustrationsActive };
+  return {
+    gameMaster,
+    actor,
+    connections,
+    generation: { ...GENERATION_DEFAULTS, ...stored.generation },
+    image,
+    illustrationsActive,
+  };
+}
+
+/** The connection, model and effort a role runs on. */
+export function resolveRole(settings: ResolvedSettings, role: 'gameMaster' | 'actor'): ResolvedRole {
+  const { gameMaster, actor, connections } = settings;
+  const connectionModel = (provider: ProviderKind) => (provider === 'mock' ? '' : connections[provider].model);
+
+  if (role === 'gameMaster') {
+    return { ...gameMaster, model: gameMaster.model || connectionModel(gameMaster.provider) };
+  }
+  if (actor.provider === 'same') {
+    // Following the game master means its connection and its model; only the
+    // effort is the actor's own. A model saved for the actor earlier is kept
+    // for when it gets a provider of its own again, but not used here.
+    const model = gameMaster.model || connectionModel(gameMaster.provider);
+    return { provider: gameMaster.provider, model, effort: actor.effort };
+  }
+  return { provider: actor.provider, model: actor.model || connectionModel(actor.provider), effort: actor.effort };
 }
 
 export function toPublicSettings(settings: ResolvedSettings): PublicSettings {
-  const { apiKey: _a, ...anthropic } = settings.anthropic;
-  const { apiKey: _o, ...openaiCompatible } = settings.openaiCompatible;
-  const { apiKey: _i, ...image } = settings.image;
+  const withoutKey = <T extends ResolvedKey>({ apiKey: _, ...rest }: T) => rest;
   return {
-    activeProvider: settings.activeProvider,
-    anthropic,
-    openaiCompatible,
-    image,
+    gameMaster: settings.gameMaster,
+    actor: settings.actor,
+    connections: Object.fromEntries(
+      CONNECTION_KINDS.map((kind) => [kind, withoutKey(settings.connections[kind])]),
+    ) as PublicSettings['connections'],
+    generation: settings.generation,
+    image: withoutKey(settings.image),
     illustrationsActive: settings.illustrationsActive,
   };
 }
@@ -148,6 +232,38 @@ function merge<T extends { apiKey?: string }>(
   return next;
 }
 
+/** Settings as written before connections and roles existed. */
+interface LegacySettings {
+  activeProvider?: 'anthropic' | 'openai-compatible' | 'mock';
+  anthropic?: { model?: string; baseUrl?: string; effort?: Effort | null; apiKey?: string };
+  openaiCompatible?: { model?: string; baseUrl?: string; apiKey?: string };
+  image?: StoredSettings['image'];
+}
+
+/**
+ * Brings a settings file from the earlier layout up to this one. The single
+ * "OpenAI-compatible" provider became two: OpenAI itself, or a custom endpoint.
+ */
+export function upgradeSettings(raw: StoredSettings | LegacySettings): StoredSettings {
+  if (!('activeProvider' in raw || 'anthropic' in raw || 'openaiCompatible' in raw)) return raw;
+  const legacy: LegacySettings = raw;
+  const { effort, ...anthropic } = legacy.anthropic ?? {};
+  const compat = legacy.openaiCompatible ?? {};
+  const compatKind: ConnectionKind =
+    !compat.baseUrl || sameEndpoint(compat.baseUrl, DEFAULT_OPENAI_BASE_URL) ? 'openai' : 'custom';
+  const provider = legacy.activeProvider === 'openai-compatible' ? compatKind : legacy.activeProvider;
+
+  const connections: NonNullable<StoredSettings['connections']> = {};
+  if (Object.keys(anthropic).length > 0) connections.anthropic = anthropic;
+  if (Object.keys(compat).length > 0) connections[compatKind] = compat;
+
+  return {
+    ...(provider ? { gameMaster: { provider, ...(provider === 'anthropic' && effort !== undefined ? { effort } : {}) } } : {}),
+    connections,
+    ...(legacy.image ? { image: legacy.image } : {}),
+  };
+}
+
 export class SettingsStore {
   private readonly file: string;
   private readonly env: NodeJS.ProcessEnv;
@@ -158,7 +274,7 @@ export class SettingsStore {
   }
 
   private async read(): Promise<StoredSettings> {
-    return (await readJson<StoredSettings>(this.file)) ?? {};
+    return upgradeSettings((await readJson<StoredSettings | LegacySettings>(this.file)) ?? {});
   }
 
   async get(): Promise<ResolvedSettings> {
@@ -167,9 +283,13 @@ export class SettingsStore {
 
   async update(patch: UpdateSettingsRequest): Promise<ResolvedSettings> {
     const stored = await this.read();
-    if (patch.activeProvider) stored.activeProvider = patch.activeProvider;
-    stored.anthropic = merge(stored.anthropic, patch.anthropic);
-    stored.openaiCompatible = merge(stored.openaiCompatible, patch.openaiCompatible);
+    if (patch.gameMaster) stored.gameMaster = { ...stored.gameMaster, ...patch.gameMaster };
+    if (patch.actor) stored.actor = { ...stored.actor, ...patch.actor };
+    if (patch.generation) stored.generation = { ...stored.generation, ...patch.generation };
+    for (const kind of CONNECTION_KINDS) {
+      const merged = merge(stored.connections?.[kind], patch.connections?.[kind]);
+      if (merged) stored.connections = { ...stored.connections, [kind]: merged };
+    }
     stored.image = merge(stored.image, patch.image);
 
     await writeJson(this.file, stored);

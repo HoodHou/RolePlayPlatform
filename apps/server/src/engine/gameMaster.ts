@@ -14,7 +14,7 @@ import { AppError, toAppError } from '../errors';
 import type { PaintRequest } from '../images/types';
 import { NO_USAGE, type ConversationInit, type LLMProvider, type ToolCall, type ToolResult } from '../llm/types';
 import { buildActorInit, playCharacter } from './actor';
-import { buildRefereeInit, buildTurnInit } from './context';
+import { buildRefereeInit, buildTurnInit, DEFAULT_TUNING, type Tuning } from './context';
 import { isPresent } from './memory';
 import { getPrompts } from './prompts';
 import { StreamingStringField } from './streamingField';
@@ -46,7 +46,12 @@ const MAX_PICTURES_PER_TURN = 2;
 const FALLBACK_MEMORY_LENGTH = 600;
 
 export interface TurnDeps {
+  /** The game master: tells the story and keeps the world. */
   provider: LLMProvider;
+  /** Speaks for characters in conversation. Defaults to the game master's model. */
+  actorProvider?: LLMProvider;
+  /** How much story and memory the models are given. */
+  tuning?: Tuning;
   emit(event: TurnEvent): void;
   signal: AbortSignal;
   random?: () => number;
@@ -168,7 +173,8 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
   };
 
   const { illustrate } = deps;
-  const promptOptions = { illustrations: illustrate !== undefined };
+  const tuning = deps.tuning ?? DEFAULT_TUNING;
+  const contextOptions = { illustrations: illustrate !== undefined, ...tuning };
   const requestPicture = illustrate
     ? (picture: PictureRequest): void => {
         if (pictures.length >= MAX_PICTURES_PER_TURN) {
@@ -334,7 +340,7 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
     if (!character) throw new AppError('bad_request', 'There is no such character.');
     const said = request.text.trim();
 
-    const init = buildActorInit(session, character, said, turn);
+    const init = buildActorInit(session, character, said, turn, tuning.memoriesRecalled);
     world.turn = turn;
     push({ ...stamp(), kind: 'player', text: said, to: character.id });
 
@@ -348,7 +354,7 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
     };
     deps.emit({ type: 'message', message: line });
     const reply = await playCharacter(
-      deps.provider,
+      deps.actorProvider ?? deps.provider,
       init,
       {
         signal: deps.signal,
@@ -375,12 +381,15 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
     if (reply.attitude?.trim()) character.attitude = reply.attitude.trim();
     deps.emit({ type: 'world', world });
 
-    // Talking changes nothing but minds. Anything more is for the game master
-    // to rule on: the actor knows what its character wants, not what the world allows.
-    const intent = reply.intent?.trim();
-    if (!intent) return;
-    const exchange = { name: character.name, said, reply: line.text, intent };
-    await runGameMaster(buildRefereeInit(session, character.id, exchange, turn, promptOptions), true);
+    // Plain talk changes nothing but minds, and costs one quick call. When the
+    // character says the exchange changed something (they acted, promised, or
+    // told the player something that matters), the game master rules on it and
+    // records it, so the world panels keep up with the conversation. The actor
+    // knows what its character did, not what the world makes of it.
+    const changes = reply.changes?.trim();
+    if (!changes) return;
+    const exchange = { name: character.name, said, reply: line.text, changes };
+    await runGameMaster(buildRefereeInit(session, character.id, exchange, turn, contextOptions), true);
   };
 
   try {
@@ -388,7 +397,7 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
       await runConversation(request);
     } else {
       session.world.suggestions = [];
-      const init = buildTurnInit(session, request, turn, promptOptions);
+      const init = buildTurnInit(session, request, turn, contextOptions);
       session.world.turn = turn;
       if (request.kind === 'action') push({ ...stamp(), kind: 'player', text: request.text.trim() });
       // The opening turn is all set-up: the panels filling in say it better than

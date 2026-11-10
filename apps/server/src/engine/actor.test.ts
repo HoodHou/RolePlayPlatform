@@ -79,7 +79,6 @@ test('a character is shown their own mind and what they can perceive, and nothin
   assert.ok(shows(strangerInit.prompt, stranger.secrets));
   assert.ok(!shows(strangerInit.prompt, mara.secrets));
   assert.equal(strangerInit.tools.map((tool) => tool.name).join(), 'respond');
-  assert.equal(strangerInit.pace, 'quick');
 });
 
 test('a character knows the name of someone they remember, not of a stranger', async () => {
@@ -189,6 +188,76 @@ test('when a character acts, the game master rules on it and records the result'
   assert.ok(session.world.characters.npc_mara?.memories.at(-1)?.text.includes('gave them the key'));
 });
 
+test('when a character only reveals something, the world panels still follow: recorded without narration', async () => {
+  const session = await gameInProgress();
+  const asked: string[] = [];
+  // One model speaks for the character; a different one keeps the world.
+  const actor: LLMProvider = {
+    kind: 'mock',
+    startConversation: () => ({
+      step: async () => ({
+        text: '',
+        stop: 'tool_use',
+        usage: { ...NO_USAGE },
+        toolCalls: [
+          {
+            id: 'a',
+            name: 'respond',
+            input: { text: '"He went down to the old mill."', changes: 'I told the traveller the courier went to the old mill.' },
+          },
+        ],
+      }),
+      submitToolResults: () => {},
+      addUserMessage: () => {},
+    }),
+  };
+  const gameMaster: LLMProvider = {
+    kind: 'mock',
+    startConversation: (init) => {
+      asked.push(init.prompt);
+      return {
+        step: async () => ({
+          text: '',
+          stop: 'tool_use',
+          usage: { ...NO_USAGE },
+          toolCalls: [
+            {
+              id: 'r',
+              name: 'record',
+              input: {
+                quests: [{ id: 'quest_missing_courier', progress: 'Mara says he went to the old mill.' }],
+                lore: [{ id: 'lore_old_mill', title: 'The old mill', content: 'Where the courier was headed.' }],
+                scene: { summary: 'Mara has pointed you to the old mill.' },
+                suggestions: ['Go to the old mill'],
+              },
+            },
+          ],
+        }),
+        submitToolResults: () => assert.fail('the record was clean; nothing to answer'),
+        addUserMessage: () => assert.fail('the game master need not narrate a revelation'),
+      };
+    },
+  };
+  const { deps } = harness(gameMaster);
+
+  const outcome = await runTurn(
+    session,
+    { kind: 'talk', characterId: 'npc_mara', text: 'Where did he go?' },
+    { ...deps, actorProvider: actor },
+  );
+
+  assert.equal(outcome.error, null);
+  assert.deepEqual(
+    session.messages.filter((m) => m.turn === 3).map((m) => (m.kind === 'event' ? m.event.type : m.kind)),
+    ['player', 'dialogue', 'quest_updated', 'lore_added'],
+  );
+  assert.equal(session.world.quests.quest_missing_courier?.progress, 'Mara says he went to the old mill.');
+  assert.equal(session.world.scene.summary, 'Mara has pointed you to the old mill.');
+  assert.deepEqual(session.world.suggestions, ['Go to the old mill']);
+  // The game master was told what the character said it changed.
+  assert.ok(asked[0]?.includes('I told the traveller the courier went to the old mill.'));
+});
+
 test('you can only speak to someone who is there to hear it', async () => {
   const session = await gameInProgress();
   const { deps } = harness();
@@ -278,9 +347,9 @@ test('a model that just talks has still answered', async () => {
 test('a malformed answer is sent back once with what was wrong', async () => {
   const { reply, seen } = await play([
     { stop: 'tool_use', toolCalls: [{ id: 'a', name: 'respond', input: { memory: 'No text.' } }] },
-    { stop: 'tool_use', toolCalls: [{ id: 'b', name: 'respond', input: { text: '"Evening."', intent: 'Leaves.' } }] },
+    { stop: 'tool_use', toolCalls: [{ id: 'b', name: 'respond', input: { text: '"Evening."', changes: 'Leaves.' } }] },
   ]);
-  assert.deepEqual(reply, { text: '"Evening."', intent: 'Leaves.' });
+  assert.deepEqual(reply, { text: '"Evening."', changes: 'Leaves.' });
   assert.equal(seen.results.length, 1);
   assert.match(seen.results[0]?.[0]?.content ?? '', /invalid_input/);
 });

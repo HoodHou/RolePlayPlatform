@@ -227,7 +227,16 @@
 }
 
 .provider-badge__name {
+  flex: none;
+  white-space: nowrap;
+}
+
+.provider-badge__model {
+  min-width: 0;
   overflow: hidden;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

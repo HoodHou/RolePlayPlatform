@@ -8,6 +8,8 @@ interface ModalProps {
   variant?: 'dialog' | 'drawer-left' | 'drawer-right' | 'lightbox';
   /** Close when the backdrop is clicked. Off for forms, where a stray click would lose input. */
   dismissOnBackdrop?: boolean;
+  /** A wider centered dialog, for forms with sections. */
+  wide?: boolean;
   children: ReactNode;
 }
 
@@ -17,7 +19,15 @@ interface ModalProps {
  * Esc closes; focus moves to `[data-autofocus]` (or the first focusable
  * element) and returns to the opener afterwards.
  */
-export function Modal({ onClose, labelledBy, label, variant = 'dialog', dismissOnBackdrop = false, children }: ModalProps) {
+export function Modal({
+  onClose,
+  labelledBy,
+  label,
+  variant = 'dialog',
+  dismissOnBackdrop = false,
+  wide = false,
+  children,
+}: ModalProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const onCloseRef = useRef(onClose);
   const pressedOnBackdrop = useRef(false);
@@ -60,7 +70,7 @@ export function Modal({ onClose, labelledBy, label, variant = 'dialog', dismissO
       aria-modal="true"
       aria-labelledby={labelledBy}
       aria-label={labelledBy ? undefined : label}
-      className={`modal modal--${variant}`}
+      className={`modal modal--${variant}${wide ? ' modal--wide' : ''}`}
       onPointerDown={(event) => {
         pressedOnBackdrop.current = event.target === event.currentTarget;
       }}

@@ -1,9 +1,8 @@
 import { DEFAULT_IMAGE_MODEL, DEFAULT_OPENAI_BASE_URL, IMAGE_QUALITIES, type ImageQuality, type PublicSettings } from '@roleplay/shared';
 import { useTranslation } from 'react-i18next';
 import { ApiKeyField } from './ApiKeyField';
-import { ModelField } from './ModelField';
-import type { ModelListProps } from './ProviderSections';
 import type { SettingsFormState } from './formState';
+import { ModelField, type ModelListProps } from './ModelField';
 
 function isQuality(value: string): value is ImageQuality {
   return (IMAGE_QUALITIES as readonly string[]).includes(value);
@@ -12,7 +11,7 @@ function isQuality(value: string): value is ImageQuality {
 /** What the saved settings mean for painting right now, or that the switch takes effect on save. */
 function paintingStatus(saved: PublicSettings, enabled: boolean) {
   if (enabled !== saved.image.enabled) return enabled ? 'pendingOn' : 'pendingOff';
-  if (saved.illustrationsActive) return saved.activeProvider === 'mock' ? 'demo' : 'active';
+  if (saved.illustrationsActive) return saved.gameMaster.provider === 'mock' ? 'demo' : 'active';
   return saved.image.enabled ? 'notReady' : 'off';
 }
 
@@ -29,10 +28,7 @@ export function IllustrationSection({ id, value, saved, onChange, models }: Illu
   const status = paintingStatus(saved, value.enabled);
 
   return (
-    <section className="settings-section" aria-labelledby={`${id}-title`}>
-      <h3 id={`${id}-title`} className="settings-section__title">
-        {t('settings.illustrations.legend')}
-      </h3>
+    <section className="settings-panel" aria-label={t('settings.illustrations.legend')}>
       <p className="field__hint">{t('settings.illustrations.intro')}</p>
 
       <label className="switch">

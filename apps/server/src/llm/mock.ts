@@ -39,7 +39,7 @@ interface RespondInput {
   memory?: string;
   importance?: number;
   attitude?: string;
-  intent?: string;
+  changes?: string;
 }
 
 interface ScriptedStep {
@@ -536,7 +536,7 @@ function answer(meta: TurnMeta, script: Script): ScriptedStep {
 
   if (character.id === MARA && said.toLowerCase().includes(script.cellar.word)) {
     const { line, remember, intent } = script.cellar;
-    return { respond: { text: line, memory: remember, importance: 4, intent } };
+    return { respond: { text: line, memory: remember, importance: 4, changes: intent } };
   }
 
   const part = script.parts[character.id] ?? script.anyone(character);

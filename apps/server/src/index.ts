@@ -3,7 +3,7 @@ import { createApp } from './app';
 import { loadConfig, loadEnvFile } from './config';
 import { ImageStore } from './store/imageStore';
 import { SessionStore } from './store/sessionStore';
-import { SettingsStore } from './store/settingsStore';
+import { resolveRole, SettingsStore } from './store/settingsStore';
 
 loadEnvFile();
 const config = loadConfig();
@@ -17,7 +17,11 @@ const app = createApp({
 });
 
 serve({ fetch: app.fetch, port: config.port, hostname: config.host }, async (info) => {
-  const { activeProvider, illustrationsActive } = await settings.get();
+  const current = await settings.get();
+  const gameMaster = resolveRole(current, 'gameMaster');
+  const actor = resolveRole(current, 'actor');
+  const describe = (role: typeof gameMaster) => [role.provider, role.model, role.effort].filter(Boolean).join(' · ');
   console.log(`RolePlay server listening on http://${config.host}:${info.port}`);
-  console.log(`Game master: ${activeProvider}. Illustrations: ${illustrationsActive ? 'on' : 'off'}. Data: ${config.dataDir}`);
+  console.log(`Game master: ${describe(gameMaster)}. Characters: ${describe(actor)}.`);
+  console.log(`Illustrations: ${current.illustrationsActive ? 'on' : 'off'}. Data: ${config.dataDir}`);
 });

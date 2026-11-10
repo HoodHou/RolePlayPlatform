@@ -1,27 +1,54 @@
-import { OFFICIAL_SHORTCUTS, PROVIDER_KINDS, type ModelListTarget, type PublicSettings } from '@roleplay/shared';
+import {
+  CONNECTION_KINDS,
+  OFFICIAL_SHORTCUTS,
+  type ConnectionKind,
+  type ModelListTarget,
+  type PublicSettings,
+} from '@roleplay/shared';
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../api/client';
 import { toUiError, type UiError } from '../../api/errors';
 import { describeError } from '../../lib/describe';
 import { useSettings } from '../../store/settings';
-import { IllustrationSection } from './IllustrationSection';
-import type { ModelFetch } from './ModelField';
-import { AnthropicSection, OpenAISection, type ModelListProps } from './ProviderSections';
+import { AdvancedPanel } from './AdvancedPanel';
+import { ConnectionsPanel } from './ConnectionsPanel';
 import {
   applyToForm,
+  connectionIssue,
   formFromSettings,
   formToUpdate,
   modelListNeedsSave,
+  rolesUsing,
+  withValidEfforts,
+  type ActorForm,
+  type ConnectionForm,
+  type ImageForm,
+  type RoleForm,
   type SettingsFormState,
 } from './formState';
+import { IllustrationSection } from './IllustrationSection';
+import type { ModelFetch, ModelListProps } from './ModelField';
+import { RolesPanel } from './RolesPanel';
+import { panelId, SettingsTabs, tabId, type TabSpec } from './SettingsTabs';
 
-type Shortcut = keyof typeof OFFICIAL_SHORTCUTS;
-const SHORTCUTS: Shortcut[] = ['claude', 'openai'];
+type Tab = 'roles' | 'connections' | 'illustrations' | 'advanced';
+type Shortcut = 'claude' | 'openai' | 'gemini' | 'custom';
+
+const SHORTCUTS: readonly Shortcut[] = ['claude', 'openai', 'gemini', 'custom'];
+/** The connection each Quick setup button sets up. */
+const SHORTCUT_CONNECTION: Record<Shortcut, ConnectionKind> = {
+  claude: 'anthropic',
+  openai: 'openai',
+  gemini: 'gemini',
+  custom: 'custom',
+};
 
 const IDLE: Record<ModelListTarget, ModelFetch> = {
   anthropic: { status: 'idle' },
-  'openai-compatible': { status: 'idle' },
+  openai: { status: 'idle' },
+  gemini: { status: 'idle' },
+  custom: { status: 'idle' },
   image: { status: 'idle' },
 };
 
@@ -35,15 +62,14 @@ export function SettingsForm({ settings, header, onClose }: SettingsFormProps) {
   const { t } = useTranslation();
   const save = useSettings((s) => s.save);
   const id = useId();
-  const anthropicKeyId = `${id}-anthropic-key`;
-  const openaiKeyId = `${id}-openai-key`;
 
   const [form, setForm] = useState<SettingsFormState>(() => formFromSettings(settings));
+  const [tab, setTab] = useState<Tab>('roles');
   const [models, setModels] = useState(IDLE);
   const [applied, setApplied] = useState<Shortcut | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<UiError | null>(null);
-  // The key field of a provider only exists once that provider is selected, so focus after render.
+  // A field on another tab only exists after that tab renders, so focus after render.
   const pendingFocus = useRef<string | null>(null);
 
   useEffect(() => {
@@ -52,14 +78,35 @@ export function SettingsForm({ settings, header, onClose }: SettingsFormProps) {
     pendingFocus.current = null;
   });
 
-  const patch = <K extends 'anthropic' | 'openai' | 'image'>(section: K, value: Partial<SettingsFormState[K]>) =>
-    setForm((current) => ({ ...current, [section]: { ...current[section], ...value } }));
+  const fieldId = (kind: ConnectionKind, field: 'key' | 'url' | 'model') => `${id}-conn-${kind}-${field}`;
+
+  const jumpTo = (kind: ConnectionKind, field: 'key' | 'url') => {
+    setTab('connections');
+    pendingFocus.current = fieldId(kind, field);
+  };
 
   const applyShortcut = (shortcut: Shortcut) => {
-    setForm((current) => applyToForm(current, OFFICIAL_SHORTCUTS[shortcut]));
+    if (shortcut === 'custom') {
+      // No official endpoint to fill in: make it the game master and ask for the address.
+      setForm((current) => withValidEfforts({ ...current, gameMaster: { ...current.gameMaster, provider: 'custom' } }));
+      jumpTo('custom', 'url');
+    } else {
+      setForm((current) => applyToForm(current, OFFICIAL_SHORTCUTS[shortcut]));
+      jumpTo(SHORTCUT_CONNECTION[shortcut], 'key');
+    }
     setApplied(shortcut);
-    pendingFocus.current = shortcut === 'claude' ? anthropicKeyId : openaiKeyId;
   };
+
+  const patchGameMaster = (patch: Partial<RoleForm>) =>
+    setForm((current) => withValidEfforts({ ...current, gameMaster: { ...current.gameMaster, ...patch } }));
+  const patchActor = (patch: Partial<ActorForm>) =>
+    setForm((current) => withValidEfforts({ ...current, actor: { ...current.actor, ...patch } }));
+  const patchConnection = (kind: ConnectionKind, patch: Partial<ConnectionForm>) =>
+    setForm((current) => ({
+      ...current,
+      connections: { ...current.connections, [kind]: { ...current.connections[kind], ...patch } },
+    }));
+  const patchImage = (patch: Partial<ImageForm>) => setForm((current) => ({ ...current, image: { ...current.image, ...patch } }));
 
   const persist = async (): Promise<PublicSettings | null> => {
     setBusy(true);
@@ -96,18 +143,31 @@ export function SettingsForm({ settings, header, onClose }: SettingsFormProps) {
     }
   };
 
-  const modelProps = (target: ModelListTarget): ModelListProps => ({
+  const modelList = (target: ModelListTarget): ModelListProps => ({
     fetch: models[target],
     needsSave: modelListNeedsSave(form, settings, target),
     busy,
     onFetch: () => void fetchModels(target),
   });
 
+  // A connection a role depends on that cannot work yet (an optional key aside).
+  const connectionsNeedAttention = CONNECTION_KINDS.some((kind) => {
+    const issue = connectionIssue(kind, form, settings);
+    return rolesUsing(kind, form).length > 0 && (issue === 'noKey' || issue === 'noBaseUrl');
+  });
+
+  const tabs: ReadonlyArray<TabSpec<Tab>> = [
+    { id: 'roles', label: t('settings.tabs.roles') },
+    { id: 'connections', label: t('settings.tabs.connections'), attention: connectionsNeedAttention },
+    { id: 'illustrations', label: t('settings.tabs.illustrations') },
+    { id: 'advanced', label: t('settings.tabs.advanced') },
+  ];
+
   return (
     <form className="dialog" onSubmit={(event) => void submit(event)}>
       {header}
 
-      <div className="dialog__body">
+      <div className="dialog__top">
         <section className="quick-setup" aria-labelledby={`${id}-quick`}>
           <h3 id={`${id}-quick`} className="field__label">
             {t('settings.quickSetup')}
@@ -123,66 +183,43 @@ export function SettingsForm({ settings, header, onClose }: SettingsFormProps) {
             {applied ? t(`settings.shortcutApplied.${applied}`) : t('settings.quickSetupHint')}
           </p>
         </section>
+        <SettingsTabs idBase={id} label={t('settings.tabsLabel')} tabs={tabs} selected={tab} onSelect={setTab} />
+      </div>
 
-        <fieldset className="field">
-          <legend className="field__label">{t('settings.providerLegend')}</legend>
-          <div className="provider-options">
-            {PROVIDER_KINDS.map((kind) => (
-              <label key={kind} className="provider-option">
-                <input
-                  type="radio"
-                  className="provider-option__input"
-                  name={`${id}-provider`}
-                  value={kind}
-                  checked={form.provider === kind}
-                  onChange={() => setForm((current) => ({ ...current, provider: kind }))}
-                />
-                <span className="provider-option__body">
-                  <span className="provider-option__name">{t(`settings.providers.${kind}.name`)}</span>
-                  <span className="provider-option__description">{t(`settings.providers.${kind}.description`)}</span>
-                </span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-
-        {form.provider === 'anthropic' && (
-          <AnthropicSection
-            id={`${id}-anthropic`}
-            keyFieldId={anthropicKeyId}
-            value={form.anthropic}
-            keySource={settings.anthropic.apiKeySource}
-            onChange={(value) => patch('anthropic', value)}
-            models={modelProps('anthropic')}
+      {/* Keyed by tab so each section opens scrolled to its top. */}
+      <div key={tab} className="dialog__body" role="tabpanel" id={panelId(id, tab)} aria-labelledby={tabId(id, tab)}>
+        {tab === 'roles' && (
+          <RolesPanel
+            id={`${id}-roles`}
+            form={form}
+            saved={settings}
+            onGameMaster={patchGameMaster}
+            onActor={patchActor}
+            modelList={modelList}
+            onGoToConnection={(kind) => jumpTo(kind, connectionIssue(kind, form, settings) === 'noBaseUrl' ? 'url' : 'key')}
           />
         )}
-        {form.provider === 'openai-compatible' && (
-          <OpenAISection
-            id={`${id}-openai`}
-            keyFieldId={openaiKeyId}
-            value={form.openai}
-            keySource={settings.openaiCompatible.apiKeySource}
-            onChange={(value) => patch('openai', value)}
-            models={modelProps('openai-compatible')}
-          />
+        {tab === 'connections' && (
+          <ConnectionsPanel form={form} saved={settings} onChange={patchConnection} modelList={modelList} fieldId={fieldId} />
         )}
-        {form.provider === 'mock' && <p className="provider-config provider-config__note">{t('settings.mockNote')}</p>}
-
-        <IllustrationSection
-          id={`${id}-image`}
-          value={form.image}
-          saved={settings}
-          onChange={(value) => patch('image', value)}
-          models={modelProps('image')}
-        />
-
-        {error && (
-          <div className="form-error" role="alert">
-            <p className="form-error__title">{t('settings.saveFailed')}</p>
-            <p>{describeError(t, error)}</p>
-          </div>
+        {tab === 'illustrations' && (
+          <IllustrationSection id={`${id}-image`} value={form.image} saved={settings} onChange={patchImage} models={modelList('image')} />
+        )}
+        {tab === 'advanced' && (
+          <AdvancedPanel
+            id={`${id}-advanced`}
+            value={form.generation}
+            onChange={(generation) => setForm((current) => ({ ...current, generation }))}
+          />
         )}
       </div>
+
+      {error && (
+        <div className="dialog__error form-error" role="alert">
+          <p className="form-error__title">{t('settings.saveFailed')}</p>
+          <p>{describeError(t, error)}</p>
+        </div>
+      )}
 
       <footer className="dialog__foot">
         <button type="button" className="btn btn--ghost" onClick={onClose}>

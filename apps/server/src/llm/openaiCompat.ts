@@ -16,20 +16,34 @@ import {
 
 /**
  * Chat Completions over plain HTTP, for any endpoint that speaks the OpenAI
- * wire format: OpenAI, DeepSeek, OpenRouter, Ollama, vLLM and the like. Plain
- * fetch keeps it independent of any one vendor's SDK.
+ * wire format: a company gateway, DeepSeek, OpenRouter, Ollama, vLLM, and
+ * Google's Gemini through its OpenAI-compatible endpoint. Plain fetch keeps it
+ * independent of any one vendor's SDK.
  */
 
 export interface OpenAICompatOptions {
+  /** Which connection this is, for error messages and the provider badge. */
+  kind: 'gemini' | 'custom';
   apiKey: string | null;
   baseUrl: string;
   model: string;
+  /** Sent as `reasoning_effort` when set. null sends nothing: many servers do not know the field. */
+  effort: string | null;
+  /** null leaves sampling to the server. */
+  temperature: number | null;
+  /** null leaves the length to the server. */
+  maxOutputTokens: number | null;
 }
 
 interface WireToolCall {
   id: string;
   type: 'function';
   function: { name: string; arguments: string };
+  /**
+   * Whatever else the server attached to the call. Gemini puts a thought
+   * signature here and rejects the next request unless it is sent back.
+   */
+  extra_content?: unknown;
 }
 
 type WireMessage =
@@ -39,6 +53,7 @@ type WireMessage =
       content: string | null;
       tool_calls?: WireToolCall[];
       reasoning_content?: string;
+      extra_content?: unknown;
     }
   | { role: 'tool'; tool_call_id: string; content: string };
 
@@ -47,7 +62,13 @@ interface WireChunk {
     delta?: {
       content?: string | null;
       reasoning_content?: string | null;
-      tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[];
+      extra_content?: unknown;
+      tool_calls?: {
+        index?: number;
+        id?: string;
+        function?: { name?: string; arguments?: string };
+        extra_content?: unknown;
+      }[];
     };
     finish_reason?: string | null;
   }[];
@@ -96,7 +117,7 @@ class OpenAICompatConversation implements Conversation {
   }
 
   private async request(signal: AbortSignal): Promise<ReadableStream<Uint8Array>> {
-    const { apiKey, baseUrl, model } = this.options;
+    const { apiKey, baseUrl, model, effort, temperature, maxOutputTokens } = this.options;
     const url = endpointUrl(baseUrl, '/chat/completions');
 
     const response = await send(url, {
@@ -108,6 +129,11 @@ class OpenAICompatConversation implements Conversation {
         tools: this.tools,
         stream: true,
         stream_options: { include_usage: true },
+        // Optional knobs go out only when chosen, so a server that does not
+        // know one of them is never sent it by default.
+        ...(effort ? { reasoning_effort: effort } : {}),
+        ...(temperature !== null ? { temperature } : {}),
+        ...(maxOutputTokens ? { max_tokens: maxOutputTokens } : {}),
       }),
       signal,
     });
@@ -120,6 +146,7 @@ class OpenAICompatConversation implements Conversation {
 
     let text = '';
     let reasoning = '';
+    let extra: unknown;
     let finishReason: string | null = null;
     const usage: TokenUsage = { ...NO_USAGE };
     const calls: WireToolCall[] = [];
@@ -144,6 +171,7 @@ class OpenAICompatConversation implements Conversation {
         const delta = choice.delta;
         if (!delta) continue;
         if (delta.reasoning_content) reasoning += delta.reasoning_content;
+        if (delta.extra_content !== undefined) extra = delta.extra_content;
         if (delta.content) {
           text += delta.content;
           handlers.onTextDelta(delta.content);
@@ -155,6 +183,7 @@ class OpenAICompatConversation implements Conversation {
           const call = (calls[index] ??= { id: '', type: 'function', function: { name: '', arguments: '' } });
           // Servers that send no ids still need each call told apart within the turn.
           call.id ||= piece.id || `call_${this.messages.length}_${index}`;
+          if (piece.extra_content !== undefined) call.extra_content = piece.extra_content;
           if (piece.function?.name) call.function.name += piece.function.name;
           if (piece.function?.arguments) {
             call.function.arguments += piece.function.arguments;
@@ -170,12 +199,14 @@ class OpenAICompatConversation implements Conversation {
     }
 
     const wireCalls = calls.filter(Boolean);
+    // The assistant turn goes back exactly as it came, extras included: some
+    // models check their own reasoning or signatures on the next request.
     this.messages.push({
       role: 'assistant',
       content: text || null,
       ...(wireCalls.length > 0 ? { tool_calls: wireCalls } : {}),
-      // Reasoning models that return their thinking expect it back within the turn.
       ...(reasoning ? { reasoning_content: reasoning } : {}),
+      ...(extra !== undefined ? { extra_content: extra } : {}),
     });
 
     const toolCalls: ToolCall[] = wireCalls.map((call) => ({
@@ -198,13 +229,13 @@ class OpenAICompatConversation implements Conversation {
 }
 
 export class OpenAICompatProvider implements LLMProvider {
-  readonly kind = 'openai-compatible';
+  readonly kind: 'gemini' | 'custom';
   private readonly options: OpenAICompatOptions;
 
   constructor(options: OpenAICompatOptions) {
-    if (!options.model) {
-      throw new AppError('not_configured', 'No model is set for the OpenAI-compatible provider.');
-    }
+    if (!options.baseUrl) throw new AppError('not_configured', 'The custom API has no base URL yet.');
+    if (!options.model) throw new AppError('not_configured', `No model is set for the ${options.kind} connection.`);
+    this.kind = options.kind;
     this.options = options;
   }
 

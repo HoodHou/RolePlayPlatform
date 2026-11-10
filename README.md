@@ -26,13 +26,15 @@ npm run dev
 
 Open http://localhost:5173. With no API key configured the app starts in **demo mode**: a scripted game master plays a short fixed story, placeholder pictures included, so you can see everything work.
 
-To play with a real model, open **Settings** and use **Quick setup**: one click selects the official Claude or OpenAI API with sensible defaults, and the only thing left is to paste a key. Or put a key in `.env` (copy `.env.example`):
+To play with a real model, open **Settings** and use **Quick setup**: one click selects Claude, OpenAI, Google Gemini or a custom API with sensible defaults, and the only thing left is to paste a key. Or put a key in `.env` (copy `.env.example`):
 
 | In `.env` | Result |
 | --- | --- |
 | `ANTHROPIC_API_KEY` | Claude runs the game |
 | `OPENAI_API_KEY` | OpenAI runs the game |
-| both | Claude runs the game; switch illustrations on in Settings and OpenAI paints it |
+| `GEMINI_API_KEY` | Gemini runs the game |
+| `RP_CUSTOM_BASE_URL` + `RP_CUSTOM_API_KEY` + `RP_CUSTOM_MODEL` | Your own gateway or any OpenAI-compatible service runs the game |
+| several | The first in that order runs the game. With an OpenAI key present, switch illustrations on in Settings and OpenAI paints it |
 
 | Command | What it does |
 | --- | --- |
@@ -84,7 +86,7 @@ The game master knows everything, which makes it a poor actor: a character playe
 - **Memory is knowledge.** Every turn the game master records what each witness will remember, from that character's point of view. A character who was not there gets no memory and does not know it happened, unless somebody tells them later. Hearsay is marked with who said it, and may be wrong.
 - **They are shown only what they have.** The actor's prompt contains who the character is, the memories that come to mind, what they can perceive (the place, the hour, who else is in the room and what those people are visibly doing), and common knowledge. The game master's notes, other characters' secrets and events they missed are not marked secret; they are simply not there. A model cannot leak what it was never shown.
 - **What comes to mind.** A character may hold hundreds of memories and a prompt a dozen. Recall weighs how recent a memory is, how much it mattered and whether it concerns who is present; and being asked about something brings back memories of it however old, so "what's in the cellar?" recalls the cellar.
-- **Talking changes minds, not the world.** The character answers, remembers the exchange in their own words, and may feel differently about you afterwards. If they also *do* something (hand over a key, call the guards, walk out), the game master is brought in to rule on it, narrate the outcome and record what changed, including what every witness makes of it. Plain conversation costs one fast call and never involves the game master; it reads the exchange as part of the story on its next turn.
+- **Talking changes minds; the game master keeps the world.** The character answers, remembers the exchange in their own words, and may feel differently about you afterwards. Small talk costs one fast call and nothing else. When the exchange changes something, because the character does something (hands over a key, calls the guards, walks out), promises something, or tells you something that matters to what you are after, the character says so and the game master is brought in: it narrates anything that now happens, and records what changed, so the quest log, lore and scene keep up with the conversation.
 
 The "Show the game master's secrets" switch in the Characters tab reveals each character's voice, goals, secrets and memories. That view is how you check whether characters are behaving believably.
 
@@ -106,25 +108,46 @@ apps/server          Game engine + HTTP API (Hono)
                        actor.ts      a character answering for themselves, and what they are shown
                        memory.ts     which memories come to mind
                        prompts/      game master and actor instructions, one file per language
-  src/llm              provider interface + Anthropic, OpenAI (Responses), OpenAI-compatible (Chat Completions), mock
+  src/llm              provider interface + Claude, OpenAI (Responses), Gemini and custom APIs (Chat Completions), mock
   src/images           painter interface + OpenAI Images and a free placeholder painter
   src/store            JSON-file persistence for sessions, settings and pictures
 apps/web             React UI: message log, world panels, composer, i18n (en / zh)
 ```
 
-## Model providers
+## AI settings
 
-| Provider | Notes |
+Settings are built from three ideas.
+
+**Connections** are how a provider is reached: an endpoint, a key, and a default model.
+
+| Connection | Notes |
 | --- | --- |
-| **Anthropic** | Official SDK, streaming, prompt caching. Defaults to `claude-opus-5-5` at `medium` effort. On Anthropic's own endpoint, a request the model declines is retried on its default fallback model. |
-| **OpenAI** | OpenAI's own endpoint is driven through the Responses API, which is where current OpenAI models combine reasoning with tools. Defaults to `gpt-6.1-sol`. Nothing is stored on OpenAI's side. |
-| **OpenAI-compatible** | Any other base URL gets Chat Completions with tool calling: DeepSeek, OpenRouter, Ollama, vLLM. Set base URL and model in Settings. |
-| **Images** | OpenAI Images API (or a server that mirrors it). Defaults to `gpt-image-2.5-flare` at low quality; each picture is billed by the image provider. |
-| **Mock** | Scripted, offline, free. Used for demo mode, development and tests. |
+| **Claude (Anthropic)** | Official SDK, streaming, prompt caching. Defaults to `claude-opus-5-5`. On Anthropic's own endpoint, a request the model declines is retried on its default fallback model. |
+| **OpenAI** | Driven through the Responses API, which is where current OpenAI models combine reasoning with tools. Defaults to `gpt-6.1-sol`. Nothing is stored on OpenAI's side. |
+| **Google Gemini** | Through Google's OpenAI-compatible endpoint. Defaults to `gemini-3.8-flash`. The signatures Gemini attaches to its tool calls are sent back as it requires. |
+| **Custom API** | Any service that speaks OpenAI Chat Completions with tool calling: a company gateway (LiteLLM, One API), DeepSeek, OpenRouter, a local Ollama. You give the base URL, key and model. |
+| **Demo** | Scripted, offline, free. Used for demo mode, development and tests. |
 
-Configure them in the Settings dialog (saved to `data/settings.json`) or with environment variables (see `.env.example`). Settings saved in the app take precedence over the environment. **Fetch models** in Settings lists what your key can actually use.
+**Roles** are the jobs models do. The *game master* tells the story and keeps the world; the *actor* speaks for one character at a time. Each role picks a connection, a model and a thinking effort, so the story can run on a strong model while characters answer in a second or two on a faster, cheaper one. By default the actor follows the game master.
 
-API keys stay on the server and are never sent back to the browser. `OPENAI_API_KEY` is only ever sent to `OPENAI_BASE_URL`, never to a different endpoint typed into the app. The server listens on `127.0.0.1` by default.
+**Thinking effort** is how hard a model reasons before it writes. More effort gives better judgement on complicated turns and costs more time and money; low is right for quick dialogue. Each provider has its own levels (Claude: low to max; OpenAI: none to xhigh; Gemini: none to high) and the form only offers the ones that provider has. "Default" sends nothing and lets the model decide.
+
+**Advanced** settings shape what any model is given and may return:
+
+| Setting | What it does |
+| --- | --- |
+| Max output length | Upper bound on one response, in tokens. Empty leaves it to the provider. |
+| Temperature | How freely the model words things. Only sent to Gemini and custom endpoints; current Claude and OpenAI reasoning models reject it. |
+| Story memory | How many past turns the game master rereads each turn. More keeps long stories consistent and costs more per turn. |
+| Character memory | How many memories a character has in mind when they speak. |
+
+Illustrations are configured separately (OpenAI Images API, or a server that mirrors it; `gpt-image-2.5-flare` at low quality by default; each picture is billed by the image provider).
+
+![The settings dialog: quick setup, roles, connections, illustrations and advanced tabs](docs/settings.jpg)
+
+Everything can be set in the Settings dialog (saved to `data/settings.json`) or with environment variables (see `.env.example`); what is saved in the app takes precedence. **Fetch models** lists what a key can actually use.
+
+API keys stay on the server and are never sent back to the browser. A key from the environment is only ever sent to the endpoint the environment names for it, never to a different base URL typed into the app. The server listens on `127.0.0.1` by default.
 
 Adding a provider means implementing two small interfaces in `apps/server/src/llm/types.ts`; the turn loop and game rules are provider-independent.
 
@@ -139,8 +162,8 @@ To add a language: add it to `LOCALES` in `packages/shared/src/world.ts`, add a 
 
 ```
 GET    /api/settings                 current settings (no keys)
-PUT    /api/settings                 update provider, model, keys, illustrations
-GET    /api/settings/models?target=  models the saved key can use (anthropic | openai-compatible | image)
+PUT    /api/settings                 update roles, connections, keys, generation, illustrations
+GET    /api/settings/models?target=  models the saved key can use (anthropic | openai | gemini | custom | image)
 GET    /api/sessions                 saved games
 POST   /api/sessions                 new game { language, premise?, playerName?, playerConcept? }
 GET    /api/sessions/:id             full session: world + messages
@@ -159,7 +182,7 @@ The event stream and every payload type are documented in `packages/shared/src/a
 - A living world: characters who pursue their goals off-screen, news that spreads between people who share a place, characters who start conversations themselves
 - Memory summaries for long games, so a character's early history condenses instead of crowding out
 - Automated believability tests: plant a secret and try to extract it, tell a fact and ask for it thirty turns later, change the world and check the answer changes
-- A separate, cheaper model for playing characters
+- More ways to play: companion chat built around one character, group scenes where characters talk to each other, an observer mode where the world runs itself
 - Regenerate / undo a turn (per-turn world snapshots)
 - Import SillyTavern character cards and world info as a starting world
 - Let the player hand the game master a picture (vision input)

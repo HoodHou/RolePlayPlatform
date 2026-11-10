@@ -8,8 +8,19 @@ export type ModelFetch =
   | { status: 'ready'; models: string[] }
   | { status: 'error'; error: UiError };
 
+/** The fetch-related props every model field for one target shares. */
+export interface ModelListProps {
+  fetch: ModelFetch;
+  /** The list uses saved settings; when the form differs, the button saves first. */
+  needsSave: boolean;
+  busy: boolean;
+  onFetch: () => void;
+}
+
 interface ModelFieldProps {
   id: string;
+  /** Defaults to "Model". */
+  label?: string;
   value: string;
   placeholder: string;
   hint: string;
@@ -24,7 +35,19 @@ interface ModelFieldProps {
 }
 
 /** A free-text model input with a "Fetch models" button that offers the provider's list as suggestions. */
-export function ModelField({ id, value, placeholder, hint, warning, fetch, needsSave, busy, onChange, onFetch }: ModelFieldProps) {
+export function ModelField({
+  id,
+  label,
+  value,
+  placeholder,
+  hint,
+  warning,
+  fetch,
+  needsSave,
+  busy,
+  onChange,
+  onFetch,
+}: ModelFieldProps) {
   const { t } = useTranslation();
   const models = fetch.status === 'ready' ? fetch.models : [];
   const listId = `${id}-models`;
@@ -32,7 +55,7 @@ export function ModelField({ id, value, placeholder, hint, warning, fetch, needs
   return (
     <div className="field">
       <label className="field__label" htmlFor={id}>
-        {t('settings.model')}
+        {label ?? t('settings.model')}
       </label>
       <div className="input-row">
         <input

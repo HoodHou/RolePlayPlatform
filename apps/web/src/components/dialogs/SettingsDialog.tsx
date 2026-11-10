@@ -31,7 +31,7 @@ export function SettingsDialog() {
   );
 
   return (
-    <Modal labelledBy={titleId} onClose={close}>
+    <Modal labelledBy={titleId} onClose={close} wide>
       {settings ? (
         <SettingsForm settings={settings} header={header} onClose={close} />
       ) : (

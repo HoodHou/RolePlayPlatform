@@ -2,6 +2,7 @@ import type { Character, Message, Session, TokenUsage, WorldState } from '@rolep
 import { z } from 'zod';
 import { AppError } from '../errors';
 import type { ChatTurn, ConversationInit, LLMProvider, ToolSpec } from '../llm/types';
+import { DEFAULT_TUNING } from './context';
 import { mentionedIds, recall, type RecallFocus } from './memory';
 import { getPrompts } from './prompts';
 import { StreamingStringField } from './streamingField';
@@ -17,8 +18,9 @@ import { toJsonSchema } from './tools';
  * perceive right now. The game master's notes, other people's secrets and
  * events they were not present for are simply not in the prompt.
  *
- * The actor only speaks. It never changes the world: what it means to do is
- * returned as an intent for the game master to rule on.
+ * The actor only speaks. It never changes the world: when the exchange changes
+ * something (the character acts, promises, or reveals something that matters),
+ * it says so, and the game master rules on it and records it.
  */
 
 export const RESPOND = 'respond';
@@ -37,10 +39,10 @@ const respondSchema = z.strictObject({
     .optional()
     .describe('How much this exchange matters to you: 1 in passing, 3 worth retelling, 5 never forgotten.'),
   attitude: z.string().optional().describe('How you feel about them now, in a few words, if this exchange changed it.'),
-  intent: z
+  changes: z
     .string()
     .optional()
-    .describe('Only if you now do something beyond talking that changes things: hand something over, leave, call for help, strike. Say what you do. Leave out otherwise.'),
+    .describe('Leave out for plain talk. Fill in when this exchange changes more than how the two of you feel: you do something (hand something over, leave, call for help, strike), you agree to or promise something, or you tell them something that matters to what they are after. Say what, in a sentence; the game master records it.'),
 });
 
 export type ActorReply = z.infer<typeof respondSchema>;
@@ -51,8 +53,7 @@ const respondSpec: ToolSpec = {
   inputSchema: toJsonSchema(respondSchema),
 };
 
-// How much the character is given to work with.
-const MEMORIES_RECALLED = 12;
+// How much the character is given to work with, besides the memories they recall.
 const EXCHANGES_REPLAYED = 8;
 const COMMON_KNOWLEDGE_ENTRIES = 20;
 
@@ -81,7 +82,12 @@ function conversationSoFar(messages: Message[], characterId: string): ChatTurn[]
  * would know or could perceive; anything else is left out rather than marked
  * secret, because a model cannot leak what it was never shown.
  */
-export function characterView(world: WorldState, character: Character, said: string) {
+export function characterView(
+  world: WorldState,
+  character: Character,
+  said: string,
+  memoriesRecalled: number = DEFAULT_TUNING.memoriesRecalled,
+) {
   const player = world.playerId ? world.characters[world.playerId] : undefined;
   const place = character.locationId ? world.locations[character.locationId] : undefined;
   const alsoHere = Object.values(world.characters).filter(
@@ -114,7 +120,7 @@ export function characterView(world: WorldState, character: Character, said: str
         .filter((item) => item.ownerId === character.id)
         .map((item) => (item.quantity > 1 ? `${item.name} ×${item.quantity}` : item.name)),
     },
-    your_memories: recall(character.memories, focus, MEMORIES_RECALLED).map((memory) => ({
+    your_memories: recall(character.memories, focus, memoriesRecalled).map((memory) => ({
       when: memory.time,
       where: memory.locationId ? (world.locations[memory.locationId]?.name ?? '') : '',
       memory: memory.text,
@@ -140,8 +146,14 @@ export function characterView(world: WorldState, character: Character, said: str
   };
 }
 
-export function buildActorInit(session: Session, character: Character, said: string, turn: number): ConversationInit {
-  const view = characterView(session.world, character, said);
+export function buildActorInit(
+  session: Session,
+  character: Character,
+  said: string,
+  turn: number,
+  memoriesRecalled: number = DEFAULT_TUNING.memoriesRecalled,
+): ConversationInit {
+  const view = characterView(session.world, character, said, memoriesRecalled);
   const section = (tag: string, value: unknown) => `<${tag}>\n${JSON.stringify(value)}\n</${tag}>`;
 
   return {
@@ -165,7 +177,6 @@ export function buildActorInit(session: Session, character: Character, said: str
       world: structuredClone(session.world),
       characterId: character.id,
     },
-    pace: 'quick',
   };
 }
 
