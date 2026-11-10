@@ -1,0 +1,14 @@
+{
+  "name": "@roleplay/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The contract between server and web: world model, messages, API and settings types.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

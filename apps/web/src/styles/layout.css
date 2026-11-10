@@ -1,0 +1,36 @@
+/* The three-column console. Below 960px the side columns become drawers (see NARROW_QUERY). */
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--world-w);
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.app__sidebar,
+.app__world {
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-panel);
+}
+
+.app__sidebar {
+  border-right: 1px solid var(--border);
+}
+
+.app__world {
+  border-left: 1px solid var(--border);
+}
+
+.app__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+@media (max-width: 959.98px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

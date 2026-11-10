@@ -1,0 +1,25 @@
+{
+  "name": "roleplay-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An AI-driven role-play platform: the model simulates the world, the UI only renders it.",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c blue,magenta \"npm run dev -w @roleplay/server\" \"npm run dev -w @roleplay/web\"",
+    "build": "npm run build -w @roleplay/web",
+    "start": "npm run start -w @roleplay/server",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.7",
+    "typescript": "^7.0.2"
+  }
+}

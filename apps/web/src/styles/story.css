@@ -1,0 +1,644 @@
+/* Center column: scene header, story log, composer. Typeset like a book, not a chat. */
+.story {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background:
+    radial-gradient(120% 55% at 50% 0%, var(--glow), transparent 70%),
+    var(--bg);
+}
+
+.story__bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.9rem 1.25rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.story__bar-title {
+  flex: 1;
+  font-family: var(--font-serif);
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.scene {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+.scene__title {
+  font-family: var(--font-serif);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
+}
+
+.scene__where {
+  margin-top: 0.2rem;
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.scene__where:lang(zh) {
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+}
+
+.scene__summary {
+  max-width: var(--measure);
+  margin: 0.3rem auto 0;
+  color: var(--text-muted);
+  font-family: var(--font-serif);
+  font-size: 0.95rem;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.scene__summary:lang(zh) {
+  font-style: normal;
+}
+
+.demo-banner {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem 0.6rem;
+  padding: 0.45rem 1rem;
+  border-bottom: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.demo-banner__icon {
+  color: var(--accent);
+}
+
+.story__placeholder {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 2rem 1.25rem;
+  overflow-y: auto;
+}
+
+.story__placeholder .notice {
+  max-width: 32rem;
+}
+
+/* Log */
+.log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.log__inner {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 2.75rem 1.5rem 2.5rem;
+}
+
+.narration {
+  margin-bottom: 1.5rem;
+  color: var(--text);
+  font-family: var(--font-serif);
+  font-size: 1.125rem;
+  font-kerning: normal;
+  line-height: 1.78;
+  overflow-wrap: break-word;
+  hanging-punctuation: first allow-end;
+}
+
+.narration p + p {
+  margin-top: 0.85em;
+}
+
+/* CJK reads better a little looser and justified. */
+.narration:lang(zh) {
+  line-height: 1.95;
+  letter-spacing: 0.02em;
+  text-align: justify;
+}
+
+.narration em {
+  font-style: italic;
+}
+
+/* Chinese has no true italics; use emphasis dots (着重号) instead of a synthetic slant. */
+.narration:lang(zh) em {
+  font-style: normal;
+  -webkit-text-emphasis: filled dot;
+  text-emphasis: filled dot;
+  -webkit-text-emphasis-position: under;
+  text-emphasis-position: under right;
+  -webkit-text-emphasis-color: var(--accent);
+  text-emphasis-color: var(--accent);
+}
+
+.narration strong {
+  font-weight: 700;
+}
+
+.speech {
+  color: var(--speech);
+}
+
+.scene-break {
+  height: auto;
+  margin: 1.75em 0;
+  overflow: visible;
+  border: 0;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.scene-break::after {
+  content: '⁂';
+  font-size: 1.1rem;
+}
+
+.caret {
+  display: inline-block;
+  width: 0.45em;
+  height: 1.05em;
+  margin-left: 0.12em;
+  border-radius: 1px;
+  background: var(--accent);
+  vertical-align: -0.16em;
+  animation: caret-blink 1.05s steps(1, end) infinite;
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.player-action {
+  margin: 2.1rem 0 1.75rem;
+  padding: 0.15rem 0 0.15rem 1rem;
+  border-left: 2px solid var(--accent);
+}
+
+.player-action__who {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.player-action__who:lang(zh) {
+  font-size: 0.78rem;
+}
+
+.player-action__text {
+  color: var(--text-soft);
+  font-size: 1rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.player-action.is-pending {
+  opacity: 0.65;
+}
+
+.events {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+  margin: 1.1rem 0 1.5rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  max-width: 100%;
+  padding: 0.2rem 0.75rem 0.22rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-panel);
+  color: var(--text-soft);
+  font-size: 0.79rem;
+  line-height: 1.45;
+}
+
+.chip__glyph {
+  flex: none;
+  color: var(--accent);
+  font-variant-emoji: text;
+}
+
+.chip--good .chip__glyph {
+  color: var(--good);
+}
+
+.chip--bad .chip__glyph {
+  color: var(--bad);
+}
+
+.chip__text {
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.thinking {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0.5rem 0 1.5rem;
+  color: var(--text-muted);
+  font-family: var(--font-serif);
+  font-style: italic;
+}
+
+.thinking:lang(zh) {
+  font-style: normal;
+}
+
+.thinking__dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.thinking__dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.3;
+  animation: thinking-pulse 1.2s ease-in-out infinite;
+}
+
+.thinking__dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.thinking__dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes thinking-pulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: none;
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+.begin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 3rem 1rem;
+  text-align: center;
+}
+
+.begin__text {
+  color: var(--text-muted);
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+}
+
+.turn-error {
+  margin: 1.5rem 0;
+}
+
+/* Illustrations: aspect by subject; portraits and items stay modest so they don't dominate the column. */
+.illustration {
+  width: 100%;
+  margin: 1.75rem auto;
+}
+
+.illustration--character {
+  max-width: 280px;
+}
+
+.illustration--item {
+  max-width: 240px;
+}
+
+.illustration__frame {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  box-shadow: 0 12px 32px -16px rgba(0, 0, 0, 0.55);
+}
+
+.illustration--character .illustration__frame {
+  aspect-ratio: 2 / 3;
+}
+
+.illustration--item .illustration__frame {
+  aspect-ratio: 1;
+}
+
+button.illustration__frame {
+  cursor: zoom-in;
+}
+
+button.illustration__frame:hover {
+  border-color: var(--accent-line);
+}
+
+.illustration__frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.illustration__frame.is-pending {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(110deg, var(--bg-sunken) 30%, var(--bg-raised) 50%, var(--bg-sunken) 70%) 0 0 / 250% 100%;
+  animation: painting-shimmer 2.4s ease-in-out infinite;
+}
+
+@keyframes painting-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+
+.illustration__status {
+  color: var(--text-muted);
+  font-family: var(--font-serif);
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+.illustration__caption {
+  margin-top: 0.55rem;
+  color: var(--text-muted);
+  font-family: var(--font-serif);
+  font-size: 0.88rem;
+  font-style: italic;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.illustration__status:lang(zh),
+.illustration__caption:lang(zh) {
+  font-style: normal;
+}
+
+.illustration-failed {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 1rem 0 1.4rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.illustration-failed__glyph {
+  color: var(--text-faint);
+}
+
+/* Composer */
+.composer-area {
+  flex: none;
+  padding: 0.75rem 1.5rem 0.9rem;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-panel) 80%, transparent);
+}
+
+.composer-area__inner {
+  max-width: var(--measure);
+  margin: 0 auto;
+}
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.65rem;
+}
+
+.suggestion {
+  max-width: 100%;
+  padding: 0.32rem 0.8rem;
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 0.84rem;
+  line-height: 1.4;
+  text-align: left;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.suggestion:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.4rem 0.4rem 0.4rem 0.95rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.composer:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.composer__input {
+  flex: 1;
+  min-width: 0;
+  max-height: 12rem;
+  padding: 0.45rem 0;
+  border: 0;
+  background: transparent;
+  font-size: 0.98rem;
+  line-height: 1.55;
+  resize: none;
+}
+
+.composer__input:focus {
+  outline: none;
+}
+
+.composer__input::placeholder {
+  color: var(--text-faint);
+}
+
+.composer__input:disabled {
+  cursor: not-allowed;
+}
+
+.composer__button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-width: 2.35rem;
+  height: 2.35rem;
+  padding: 0 0.65rem;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-lg) - 5px);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.84rem;
+  font-weight: 650;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s,
+    opacity 0.15s;
+}
+
+.composer__button:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.composer__button:disabled {
+  opacity: 0.35;
+}
+
+.composer__button--stop {
+  border-color: var(--border-strong);
+  background: var(--bg-panel);
+  color: var(--text);
+}
+
+.composer__button--stop:hover:not(:disabled) {
+  border-color: var(--bad);
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.composer__hint {
+  margin-top: 0.4rem;
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  text-align: right;
+}
+
+/* Empty state */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  max-width: 34rem;
+  text-align: center;
+}
+
+.empty-state__mark {
+  color: var(--accent);
+}
+
+.empty-state__title {
+  font-family: var(--font-serif);
+  font-size: clamp(1.6rem, 3vw, 2.1rem);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.empty-state__lead {
+  color: var(--text-soft);
+  font-family: var(--font-serif);
+  font-size: 1.12rem;
+  line-height: 1.75;
+}
+
+.empty-state__lead:lang(zh) {
+  line-height: 1.95;
+}
+
+.empty-state__detail {
+  margin-bottom: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+@media (max-width: 959.98px) {
+  .story__bar {
+    padding: 0.6rem 0.6rem 0.55rem;
+  }
+
+  .scene__summary {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+}
+
+@media (max-width: 600px) {
+  .log__inner {
+    padding: 1.75rem 1.1rem 2rem;
+  }
+
+  .narration {
+    font-size: 1.06rem;
+  }
+
+  .composer-area {
+    padding: 0.6rem 0.75rem 0.75rem;
+  }
+
+  .composer__hint {
+    display: none;
+  }
+}
+
+@media (hover: none) {
+  .composer__hint {
+    display: none;
+  }
+}
