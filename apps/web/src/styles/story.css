@@ -1685,6 +1685,154 @@ button.illustration__frame:hover {
   color: var(--text);
 }
 
+/* Rich talk-stage card above the composer during direct NPC / minister dialogue. */
+.talk-stage {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.55rem;
+  padding: 0.45rem 0.65rem 0.45rem 0.48rem;
+  border: 1px solid color-mix(in srgb, var(--speech) 42%, transparent);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--speech) 11%, transparent), transparent 65%),
+    var(--bg-raised);
+  box-shadow: var(--shadow-sm);
+}
+
+.talk-stage__portrait {
+  position: relative;
+  flex: none;
+  width: 3.1rem;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--speech) 45%, var(--border-strong));
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+}
+
+.talk-stage__portrait.is-painting {
+  background: linear-gradient(110deg, var(--bg-sunken) 30%, var(--bg-raised) 50%, var(--bg-sunken) 70%) 0 0 / 250% 100%;
+  animation: painting-shimmer 2.4s ease-in-out infinite;
+}
+
+.talk-stage__img-btn,
+.talk-stage__paint-btn,
+.talk-stage__monogram {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.talk-stage__img-btn {
+  cursor: zoom-in;
+}
+
+.talk-stage__img-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 18%;
+}
+
+.talk-stage__initial {
+  color: var(--speech);
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+.talk-stage__sparkle {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  display: grid;
+  place-items: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.talk-stage__main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.talk-stage__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.55rem;
+}
+
+.talk-stage__title {
+  color: var(--text);
+  font-family: var(--font-serif);
+  font-size: 0.96rem;
+  font-weight: 600;
+}
+
+.talk-stage__standing {
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 550;
+}
+
+.talk-stage__facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.talk-stage__chip {
+  padding: 0.05rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--speech) 35%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--speech) 8%, transparent);
+  color: var(--text-soft);
+  font-size: 0.73rem;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.talk-stage__chip--muted {
+  border-color: var(--border);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+}
+
+.talk-stage__actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+@container (max-width: 30rem) {
+  .talk-stage {
+    flex-wrap: wrap;
+  }
+
+  .talk-stage__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
 .composer {
   display: flex;
   align-items: flex-end;

@@ -1,5 +1,6 @@
 import type {
   CreateSessionRequest,
+  GeneratePortraitResponse,
   ModelListResponse,
   ModelListTarget,
   ModuleLibraryEntry,
@@ -78,6 +79,14 @@ export const api = {
     request<RetryImageResponse>(`${sessionPath(id)}/images/${encodeURIComponent(messageId)}/retry`, {
       method: 'POST',
     }),
+  generateCharacterPortrait: (id: string, characterId: string, prompt?: string) =>
+    request<GeneratePortraitResponse>(
+      `${sessionPath(id)}/characters/${encodeURIComponent(characterId)}/portrait`,
+      {
+        method: 'POST',
+        body: prompt ? { prompt } : {},
+      },
+    ),
   /** Refused with `turn_in_progress` while a turn is being generated. */
   updateSession: (id: string, update: UpdateSessionRequest) =>
     request<Session>(sessionPath(id), { method: 'PATCH', body: update }),

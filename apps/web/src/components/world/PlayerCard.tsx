@@ -1,5 +1,7 @@
 import type { DiceSystem, WorldState } from '@roleplay/shared';
 import { useTranslation } from 'react-i18next';
+import { useUi } from '../../store/ui';
+import { Icon } from '../Icon';
 import { StatList } from './StatList';
 import { Thumb } from './Thumb';
 
@@ -26,13 +28,26 @@ interface PlayerCardProps {
 
 export function PlayerCard({ world, diceSystem, lang }: PlayerCardProps) {
   const { t } = useTranslation();
+  const openDossier = useUi((s) => s.openDossier);
   const player = world.playerId ? world.characters[world.playerId] : undefined;
 
   return (
     <section className="player-card" aria-labelledby="player-card-heading">
-      <h3 id="player-card-heading" className="eyebrow">
-        {t('world.playerHeading')}
-      </h3>
+      <div className="player-card__head">
+        <h3 id="player-card-heading" className="eyebrow">
+          {t('world.playerHeading')}
+        </h3>
+        {player && (
+          <button
+            type="button"
+            className="player-card__dossier"
+            onClick={() => openDossier(player.id)}
+          >
+            <Icon name="portrait" size={13} />
+            <span>{t('world.dossier.open')}</span>
+          </button>
+        )}
+      </div>
       {player ? (
         <>
           <div className="with-media">

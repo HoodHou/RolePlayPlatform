@@ -17,13 +17,18 @@ import { CharactersTab } from './CharactersTab';
 import { ClocksTab } from './ClocksTab';
 import { CluesTab, visibleClues } from './CluesTab';
 import { CombatTab } from './CombatTab';
+import { CourtTab, hasCourtContent, pendingMemorialCount } from './CourtTab';
 import { CustomModuleTab } from './CustomModuleTab';
 import { DeckTab } from './DeckTab';
+import { DomainTab, hasDomainContent } from './DomainTab';
+import { EspionageTab, hasEspionageContent } from './EspionageTab';
 import { InventoryTab } from './InventoryTab';
+import { LineageTab, hasLineageContent, lineageMemberCount } from './LineageTab';
 import { LoreTab } from './LoreTab';
 import { MarketTab } from './MarketTab';
 import { ModuleNote } from './ModuleNote';
 import { PlacesTab } from './PlacesTab';
+import { ProgressionTab, hasProgressionContent } from './ProgressionTab';
 import { QuestsTab } from './QuestsTab';
 import { ReputationTab } from './ReputationTab';
 import { SandboxTab } from './SandboxTab';
@@ -34,6 +39,16 @@ function hasView(view: ModuleView, world: WorldState, showSecrets: boolean): boo
   switch (view) {
     case 'combat':
       return fightOf(world) !== undefined;
+    case 'court':
+      return hasCourtContent(world);
+    case 'lineage':
+      return hasLineageContent(world);
+    case 'domain':
+      return hasDomainContent(world);
+    case 'espionage':
+      return hasEspionageContent(world, showSecrets);
+    case 'progression':
+      return hasProgressionContent(world);
     case 'clocks':
       return visibleClocks(world, showSecrets).length > 0;
     case 'calendar':
@@ -72,7 +87,18 @@ function countFor(tab: WorldTab, world: WorldState, showSecrets: boolean): numbe
   switch (tab) {
     case 'combat':
     case 'sandbox':
+    case 'progression':
       return 0;
+    case 'court': {
+      const pending = pendingMemorialCount(world);
+      return pending > 0 ? pending : Object.keys(world.modules?.court?.officials ?? {}).length;
+    }
+    case 'lineage':
+      return lineageMemberCount(world);
+    case 'domain':
+      return Object.keys(world.modules?.domain?.facilities ?? {}).length;
+    case 'espionage':
+      return Object.keys(world.modules?.espionage?.agents ?? {}).length;
     case 'clocks':
       return visibleClocks(world, showSecrets).length;
     case 'calendar': {
@@ -141,9 +167,10 @@ export function WorldTabs({ session, subscriptions, lang }: WorldTabsProps) {
   const board = boardOf(world);
   const calendar = calendarOf(world);
 
-  // Until the player picks a tab, a story opens on a fight that is on, then on its board.
+  // Until the player picks a tab, a story opens on a fight that is on, then on its court or board.
   let fallback: WorldTab = 'characters';
   if (fighting) fallback = 'combat';
+  else if (hasCourtContent(world)) fallback = 'court';
   else if (board) fallback = 'sandbox';
   const selected = picked !== null && tabs.includes(picked) ? picked : fallback;
 
@@ -187,10 +214,11 @@ export function WorldTabs({ session, subscriptions, lang }: WorldTabsProps) {
   const count = (tab: WorldTab) => {
     const n = countFor(tab, world, showSecrets);
     if (n <= 0) return null;
+    const due = tab === 'calendar' || (tab === 'court' && pendingMemorialCount(world) > 0);
     return (
       <>
         <span className="sr-only"> </span>
-        <span className={tab === 'calendar' ? 'tabs__count tabs__count--due' : 'tabs__count'}>{n}</span>
+        <span className={due ? 'tabs__count tabs__count--due' : 'tabs__count'}>{n}</span>
       </>
     );
   };
@@ -268,6 +296,11 @@ export function WorldTabs({ session, subscriptions, lang }: WorldTabsProps) {
         )}
         {selectedCustomState && <CustomModuleTab state={selectedCustomState} lang={lang} />}
         {selected === 'combat' && fight && <CombatTab fight={fight} world={world} lang={lang} />}
+        {selected === 'court' && <CourtTab session={session} lang={lang} />}
+        {selected === 'lineage' && <LineageTab session={session} lang={lang} />}
+        {selected === 'domain' && <DomainTab world={world} lang={lang} />}
+        {selected === 'espionage' && <EspionageTab world={world} lang={lang} />}
+        {selected === 'progression' && <ProgressionTab world={world} lang={lang} />}
         {selected === 'clocks' && <ClocksTab world={world} lang={lang} />}
         {selected === 'calendar' && calendar && <CalendarTab calendar={calendar} lang={lang} />}
         {selected === 'bonds' && <BondsTab world={world} lang={lang} />}

@@ -770,7 +770,17 @@ interface StoryModules {
   offered: string[];
 }
 
-const MODULE_TOOLS: Record<string, string> = { oracle: 'ask_fate', sandbox: 'simulate', combat: 'fight', calendar: 'pass_time' };
+const MODULE_TOOLS: Record<string, string> = {
+  oracle: 'ask_fate',
+  sandbox: 'simulate',
+  combat: 'fight',
+  calendar: 'pass_time',
+  court: 'hold_court',
+  lineage: 'nurture_heir',
+  domain: 'develop_domain',
+  espionage: 'run_operation',
+  progression: 'breakthrough',
+};
 
 function readModules(init: ConversationInit): StoryModules {
   const names = new Set(init.tools.map((tool) => tool.name));

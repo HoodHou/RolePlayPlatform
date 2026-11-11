@@ -141,6 +141,7 @@ export function characterView(
       name: character.name,
       role: character.role,
       description: character.description,
+      ...(character.appearance ? { appearance: character.appearance } : {}),
       personality: character.personality,
       voice: character.voice,
       goals: character.goals,

@@ -222,6 +222,7 @@ export function resolveSettings(stored: StoredSettings, env: NodeJS.ProcessEnv):
     baseUrl: imageUrl,
     model: imageModel,
     quality: i.quality ?? 'low',
+    autoCharacterPortraits: i.autoCharacterPortraits ?? false,
     ...imageKey,
   };
 

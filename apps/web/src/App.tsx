@@ -7,6 +7,7 @@ import { SettingsDialog } from './components/dialogs/SettingsDialog';
 import { ModuleLibrary } from './components/library/ModuleLibrary';
 import { Sidebar } from './components/sidebar/Sidebar';
 import { StoryView } from './components/story/StoryView';
+import { CharacterDossierModal } from './components/world/CharacterDossierModal';
 import { WorldPanel } from './components/world/WorldPanel';
 import { NARROW_QUERY, useMediaQuery } from './lib/useMediaQuery';
 import { useGame } from './store/game';
@@ -63,6 +64,7 @@ export function App() {
       {dialog === 'settings' && <SettingsDialog />}
       {/* After the dialogs, so it opens on top of the one it was opened from. */}
       {library && <ModuleLibrary />}
+      <CharacterDossierModal />
       {lightbox && <Lightbox key={lightbox.url} image={lightbox} />}
     </div>
   );

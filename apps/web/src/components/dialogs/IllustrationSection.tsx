@@ -154,6 +154,21 @@ export function IllustrationSection({ id, form, saved, onChange, models }: Illus
             </select>
             <p className="field__hint">{t('settings.illustrations.qualityHint')}</p>
           </div>
+
+          <div className="field">
+            <label className="switch">
+              <input
+                type="checkbox"
+                role="switch"
+                className="switch__input"
+                checked={value.autoCharacterPortraits}
+                onChange={(event) => onChange({ autoCharacterPortraits: event.target.checked })}
+              />
+              <span className="switch__track" aria-hidden="true" />
+              <span className="switch__label">{t('settings.illustrations.autoCharacterPortraits')}</span>
+            </label>
+            <p className="field__hint">{t('settings.illustrations.autoCharacterPortraitsHint')}</p>
+          </div>
         </div>
       )}
     </section>

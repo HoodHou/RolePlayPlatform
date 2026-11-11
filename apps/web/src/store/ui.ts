@@ -9,6 +9,11 @@ export type DrawerKind = 'sessions' | 'world';
  */
 export const MODULE_VIEWS = [
   'combat',
+  'court',
+  'lineage',
+  'domain',
+  'espionage',
+  'progression',
   'clocks',
   'calendar',
   'bonds',
@@ -40,6 +45,8 @@ interface UiState {
   dialog: DialogKind | null;
   drawer: DrawerKind | null;
   lightbox: LightboxImage | null;
+  /** Character id currently open in the full portrait & dossier modal. */
+  dossierCharacterId: string | null;
   /** Stacks on top of a dialog, so the new-game form keeps what was typed while the player subscribes. */
   library: LibraryView | null;
   /** The world tab the player picked; null until they pick one, which shows the first tab the story has. */
@@ -51,6 +58,8 @@ interface UiState {
   closeDrawer: () => void;
   openLightbox: (image: LightboxImage) => void;
   closeLightbox: () => void;
+  openDossier: (characterId: string) => void;
+  closeDossier: () => void;
   openLibrary: (moduleId?: ModuleId) => void;
   closeLibrary: () => void;
   setWorldTab: (tab: WorldTab) => void;
@@ -61,18 +70,21 @@ export const useUi = create<UiState>()((set) => ({
   dialog: null,
   drawer: null,
   lightbox: null,
+  dossierCharacterId: null,
   library: null,
   worldTab: null,
   showSecrets: false,
   // A dialog opened from inside a drawer replaces it rather than stacking on top.
-  openDialog: (dialog) => set({ dialog, drawer: null }),
+  openDialog: (dialog) => set({ dialog, drawer: null, dossierCharacterId: null }),
   closeDialog: () => set({ dialog: null }),
   openDrawer: (drawer) => set({ drawer }),
   closeDrawer: () => set({ drawer: null }),
-  // The lightbox may stack on a drawer (e.g. a portrait in the world drawer); closing it returns there.
+  // The lightbox may stack on a drawer or dossier modal; closing it returns there.
   openLightbox: (lightbox) => set({ lightbox }),
   closeLightbox: () => set({ lightbox: null }),
-  openLibrary: (moduleId) => set({ library: { moduleId: moduleId ?? null }, drawer: null }),
+  openDossier: (characterId) => set({ dossierCharacterId: characterId }),
+  closeDossier: () => set({ dossierCharacterId: null }),
+  openLibrary: (moduleId) => set({ library: { moduleId: moduleId ?? null }, drawer: null, dossierCharacterId: null }),
   closeLibrary: () => set({ library: null }),
   setWorldTab: (worldTab) => set({ worldTab }),
   setShowSecrets: (showSecrets) => set({ showSecrets }),

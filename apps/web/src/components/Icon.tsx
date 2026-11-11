@@ -83,6 +83,34 @@ const PATHS = {
       <path d="M19.5 6A2.5 2.5 0 0 0 17 3.5h-5v16h5A2.5 2.5 0 0 1 19.5 22z" />
     </>
   ),
+  portrait: (
+    <>
+      <rect x="4.5" y="3.5" width="15" height="17" rx="2" />
+      <circle cx="12" cy="10" r="2.6" />
+      <path d="M7.8 17.8c.9-2.2 2.4-3.3 4.2-3.3s3.3 1.1 4.2 3.3" />
+    </>
+  ),
+  dossier: (
+    <>
+      <rect x="4.5" y="3.5" width="15" height="17" rx="2" />
+      <path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4.5" />
+    </>
+  ),
+  sparkle: (
+    <>
+      <path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1-5.1-1.9 5.1-1.9z" />
+      <path d="M18.5 16v4M16.5 18h4" />
+    </>
+  ),
+  grid: (
+    <>
+      <rect x="4.5" y="4.5" width="6.2" height="6.2" rx="1.2" />
+      <rect x="13.3" y="4.5" width="6.2" height="6.2" rx="1.2" />
+      <rect x="4.5" y="13.3" width="6.2" height="6.2" rx="1.2" />
+      <rect x="13.3" y="13.3" width="6.2" height="6.2" rx="1.2" />
+    </>
+  ),
+  list: <path d="M8.5 7h11M8.5 12h11M8.5 17h11M4.8 7h.01M4.8 12h.01M4.8 17h.01" />,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;

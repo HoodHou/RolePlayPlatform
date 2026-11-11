@@ -19,6 +19,7 @@ import type { Locale, WorldState } from './world';
  *   POST   /api/sessions/:id/rollback  RollbackSessionRequest -> Session
  *   POST   /api/sessions/:id/fork      ForkSessionRequest -> Session
  *   POST   /api/sessions/:id/images/:messageId/retry -> RetryImageResponse
+ *   POST   /api/sessions/:id/characters/:characterId/portrait -> GeneratePortraitResponse
  *   PATCH  /api/sessions/:id           UpdateSessionRequest -> Session
  *   DELETE /api/sessions/:id           -> { ok: true }
  *   POST   /api/sessions/:id/turns     TurnRequest -> text/event-stream of TurnEvent
@@ -99,6 +100,17 @@ export interface ForkSessionRequest {
 
 export interface RetryImageResponse {
   message: ImageMessage;
+  world: WorldState;
+}
+
+export interface GeneratePortraitRequest {
+  /** Optional extra art direction or outfit override for this portrait. */
+  prompt?: string;
+}
+
+export interface GeneratePortraitResponse {
+  characterId: string;
+  url: string;
   world: WorldState;
 }
 

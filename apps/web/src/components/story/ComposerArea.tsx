@@ -2,12 +2,16 @@ import type { Session } from '@roleplay/shared';
 import { useLayoutEffect, useRef, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { languageTag, useLocale } from '../../i18n';
+import { bondOf } from '../../lib/bonds';
+import { primaryStandingOf } from '../../lib/characterRoles';
 import { COMPOSER_INPUT_ID } from '../../lib/composer';
 import { formatNumber } from '../../lib/text';
 import { canTalkTo } from '../../lib/world';
-import { useGame } from '../../store/game';
-import { CharacterAvatar } from '../CharacterAvatar';
+import { portraitKey, useGame } from '../../store/game';
+import { useSettings } from '../../store/settings';
+import { useUi } from '../../store/ui';
 import { Icon } from '../Icon';
+import { BondBadge } from '../world/BondMeter';
 import { ModulesMenu } from './ModulesMenu';
 
 function compactTokens(n: number, uiTag: string): string {
@@ -33,6 +37,11 @@ export function ComposerArea({ session }: { session: Session }) {
   const undoTurn = useGame((s) => s.undoTurn);
   const rerollTurn = useGame((s) => s.rerollTurn);
   const forkSession = useGame((s) => s.forkSession);
+  const paintCharacterPortrait = useGame((s) => s.paintCharacterPortrait);
+  const paintingCharacters = useGame((s) => s.paintingCharacters);
+  const illustrationsActive = useSettings((s) => s.settings?.illustrationsActive ?? false);
+  const openLightbox = useUi((s) => s.openLightbox);
+  const openDossier = useUi((s) => s.openDossier);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
 
@@ -100,25 +109,100 @@ export function ComposerArea({ session }: { session: Session }) {
           </ul>
         )}
 
-        {partner && (
-          <div className="talk-bar">
-            <CharacterAvatar name={partner.name} imageUrl={partner.imageUrl} size="small" />
-            <span className="talk-bar__label">
-              {t('story.speakingTo', { name: partner.name })}
-            </span>
-            <button
-              type="button"
-              className="talk-bar__stop"
-              onClick={() => {
-                stopTalking();
-                textareaRef.current?.focus();
-              }}
-            >
-              <Icon name="close" size={14} />
-              {t('story.actInstead')}
-            </button>
-          </div>
-        )}
+        {partner && (() => {
+          const standing = primaryStandingOf(session.world, partner);
+          const bond = bondOf(session.world, partner.id);
+          const paintingPartner = Boolean(paintingCharacters[portraitKey(session.id, partner.id)]);
+          const partnerInitial = Array.from(partner.name.trim())[0]?.toUpperCase() ?? '?';
+          return (
+            <div className="talk-stage">
+              <div className={`talk-stage__portrait${paintingPartner ? ' is-painting' : ''}`}>
+                {partner.imageUrl ? (
+                  <button
+                    type="button"
+                    className="talk-stage__img-btn"
+                    aria-label={t('story.viewLarger')}
+                    onClick={() =>
+                      openLightbox({ url: partner.imageUrl!, caption: partner.name, lang: storyLang })
+                    }
+                  >
+                    <img src={partner.imageUrl} alt={t('world.portraitOf', { name: partner.name })} />
+                  </button>
+                ) : illustrationsActive ? (
+                  <button
+                    type="button"
+                    className="talk-stage__paint-btn"
+                    disabled={paintingPartner}
+                    title={t('world.dossier.paintPortrait')}
+                    aria-label={t('world.dossier.paintFor', { name: partner.name })}
+                    onClick={() => void paintCharacterPortrait(partner.id)}
+                  >
+                    <span className="talk-stage__initial" aria-hidden="true">
+                      {partnerInitial}
+                    </span>
+                    <span className="talk-stage__sparkle" aria-hidden="true">
+                      <Icon name="sparkle" size={12} />
+                    </span>
+                  </button>
+                ) : (
+                  <div className="talk-stage__monogram" aria-hidden="true">
+                    <span className="talk-stage__initial">{partnerInitial}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="talk-stage__main">
+                <div className="talk-stage__head">
+                  <span className="talk-stage__title">
+                    {t('story.speakingTo', { name: partner.name })}
+                  </span>
+                  {standing && (
+                    <span className="talk-stage__standing" lang={storyLang}>
+                      {standing}
+                    </span>
+                  )}
+                </div>
+                {(partner.attitude || partner.status || bond) && (
+                  <div className="talk-stage__facts">
+                    {partner.attitude && (
+                      <span className="talk-stage__chip" lang={storyLang}>
+                        {partner.attitude}
+                      </span>
+                    )}
+                    {partner.status && (
+                      <span className="talk-stage__chip talk-stage__chip--muted" lang={storyLang}>
+                        {partner.status}
+                      </span>
+                    )}
+                    {bond && <BondBadge score={bond.score} name={partner.name} />}
+                  </div>
+                )}
+              </div>
+
+              <div className="talk-stage__actions">
+                <button
+                  type="button"
+                  className="talk-bar__stop"
+                  onClick={() => openDossier(partner.id)}
+                >
+                  <Icon name="dossier" size={14} />
+                  <span>{t('world.dossier.open')}</span>
+                </button>
+                <button
+                  type="button"
+                  className="talk-bar__stop"
+                  onClick={() => {
+                    stopTalking();
+                    textareaRef.current?.focus();
+                  }}
+                >
+                  <Icon name="close" size={14} />
+                  <span>{t('story.actInstead')}</span>
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
         <form
           className={`composer${running ? ' is-running' : ''}${partner ? ' is-talking' : ''}`}

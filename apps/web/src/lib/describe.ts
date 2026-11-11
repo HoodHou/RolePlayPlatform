@@ -348,6 +348,217 @@ export function describeEvent(t: TFunction, event: WorldEvent, context: Describe
           : t('events.reputation_changed', { name: event.name, change, tier }),
       };
     }
+    case 'official_appointed':
+      return {
+        glyph: MODULE_GLYPH.court,
+        tone: 'notice',
+        text: event.department
+          ? t('events.official_appointed_dept', {
+              name: event.characterName,
+              office: event.office,
+              department: event.department,
+            })
+          : t('events.official_appointed', { name: event.characterName, office: event.office }),
+      };
+    case 'memorial_submitted':
+      return {
+        glyph: MODULE_GLYPH.court,
+        tone: event.urgency === 'urgent' || event.urgency === 'secret' ? 'notice' : 'neutral',
+        text: event.authorName
+          ? t('events.memorial_submitted_author', {
+              title: event.title,
+              author: event.authorName,
+              urgency: t(`world.court.urgency.${event.urgency}`),
+            })
+          : t('events.memorial_submitted', {
+              title: event.title,
+              urgency: t(`world.court.urgency.${event.urgency}`),
+            }),
+      };
+    case 'memorial_ruled':
+      return {
+        glyph: MODULE_GLYPH.court,
+        tone: event.status === 'approved' ? 'good' : event.status === 'rejected' ? 'bad' : 'neutral',
+        text: event.ruling
+          ? t('events.memorial_ruled_rescript', {
+              title: event.title,
+              status: t(`world.court.memorialStatus.${event.status}`),
+              ruling: event.ruling,
+            })
+          : t('events.memorial_ruled', {
+              title: event.title,
+              status: t(`world.court.memorialStatus.${event.status}`),
+            }),
+      };
+    case 'edict_issued':
+      return {
+        glyph: MODULE_GLYPH.court,
+        tone: 'notice',
+        text: event.effect
+          ? t('events.edict_issued_effect', { title: event.title, effect: event.effect })
+          : t('events.edict_issued', { title: event.title }),
+      };
+    case 'court_session': {
+      const changes = event.changes
+        .map((c) => `${c.metric} ${formatSigned(c.to - c.from, locale)}`)
+        .join(t('common.listSeparator'));
+      const base = t('events.court_session', {
+        agenda: event.agenda,
+        outcome: t(`world.court.outcome.${event.outcome}`),
+        total: event.total,
+        target: event.target,
+      });
+      return {
+        glyph: MODULE_GLYPH.court,
+        tone:
+          event.outcome === 'smooth'
+            ? 'good'
+            : event.outcome === 'backlash' || event.outcome === 'deadlock'
+              ? 'bad'
+              : 'notice',
+        text: changes ? `${base} · ${changes}` : base,
+      };
+    }
+    case 'consort_invested':
+      return {
+        glyph: MODULE_GLYPH.lineage,
+        tone: 'notice',
+        text: event.palace
+          ? t('events.consort_invested_palace', {
+              name: event.characterName,
+              title: event.title,
+              palace: event.palace,
+            })
+          : t('events.consort_invested', { name: event.characterName, title: event.title }),
+      };
+    case 'heir_designated':
+      return {
+        glyph: MODULE_GLYPH.lineage,
+        tone: 'notice',
+        text: event.title
+          ? t('events.heir_designated_title', { name: event.characterName, title: event.title })
+          : t('events.heir_designated', { name: event.characterName }),
+      };
+    case 'heir_nurtured': {
+      const change = formatSigned(event.to - event.from, locale);
+      return {
+        glyph: MODULE_GLYPH.lineage,
+        tone:
+          event.outcome === 'breakthrough' || event.outcome === 'steady'
+            ? 'good'
+            : event.outcome === 'resisted'
+              ? 'bad'
+              : 'neutral',
+        text: t('events.heir_nurtured', {
+          name: event.characterName,
+          focus: t(`world.lineage.aptitude.${event.focus}`),
+          change,
+          outcome: t(`world.lineage.outcome.${event.outcome}`),
+        }),
+      };
+    }
+    case 'facility_updated':
+      return {
+        glyph: MODULE_GLYPH.domain,
+        tone: event.status === 'damaged' ? 'bad' : 'neutral',
+        text: t('events.facility_updated', {
+          name: event.name,
+          level: event.level,
+          status: t(`world.domain.status.${event.status}`),
+        }),
+      };
+    case 'domain_cycle': {
+      const changes = event.changes
+        .map((c) => `${c.resource} ${formatSigned(c.to - c.from, locale)}`)
+        .join(t('common.listSeparator'));
+      const base = event.completedFacility
+        ? t('events.domain_cycle_completed', {
+            name: event.domainName,
+            cycle: event.cycle,
+            facility: event.completedFacility,
+            outcome: t(`world.domain.outcome.${event.outcome}`),
+          })
+        : t('events.domain_cycle', {
+            name: event.domainName,
+            cycle: event.cycle,
+            outcome: t(`world.domain.outcome.${event.outcome}`),
+          });
+      return {
+        glyph: MODULE_GLYPH.domain,
+        tone:
+          event.outcome === 'bountiful' || Boolean(event.completedFacility)
+            ? 'good'
+            : event.outcome === 'setback'
+              ? 'bad'
+              : 'neutral',
+        text: changes ? `${base} · ${changes}` : base,
+      };
+    }
+    case 'spy_deployed':
+      return {
+        glyph: MODULE_GLYPH.espionage,
+        tone: 'neutral',
+        text: t('events.spy_deployed', { codename: event.codename, target: event.targetName }),
+      };
+    case 'espionage_operation':
+      return {
+        glyph: MODULE_GLYPH.espionage,
+        tone:
+          event.compromised || event.outcome === 'blown'
+            ? 'bad'
+            : event.outcome === 'triumph' || event.outcome === 'success'
+              ? 'good'
+              : 'notice',
+        text: event.compromised
+          ? t('events.espionage_compromised', {
+              codename: event.codename,
+              operation: t(`world.espionage.operation.${event.operation}`),
+              target: event.targetName,
+            })
+          : t('events.espionage_operation', {
+              codename: event.codename,
+              operation: t(`world.espionage.operation.${event.operation}`),
+              target: event.targetName,
+              outcome: t(`world.espionage.outcome.${event.outcome}`),
+            }),
+      };
+    case 'dossier_acquired':
+      return {
+        glyph: MODULE_GLYPH.espionage,
+        tone: 'notice',
+        text: event.subjectName
+          ? t('events.dossier_acquired_subject', { title: event.title, subject: event.subjectName })
+          : t('events.dossier_acquired', { title: event.title }),
+      };
+    case 'ability_learned':
+      return {
+        glyph: MODULE_GLYPH.progression,
+        tone: 'good',
+        text: event.rank
+          ? t('events.ability_learned_rank', { name: event.name, rank: event.rank })
+          : t('events.ability_learned', { name: event.name }),
+      };
+    case 'realm_breakthrough':
+      return {
+        glyph: MODULE_GLYPH.progression,
+        tone:
+          event.outcome === 'transcendent' || event.outcome === 'success'
+            ? 'good'
+            : event.outcome === 'backlash'
+              ? 'bad'
+              : 'notice',
+        text:
+          event.outcome === 'transcendent' || event.outcome === 'success'
+            ? t('events.realm_breakthrough_success', {
+                from: event.fromRealm,
+                to: event.toRealm,
+                outcome: t(`world.progression.outcome.${event.outcome}`),
+              })
+            : t('events.realm_breakthrough_failed', {
+                from: event.fromRealm,
+                outcome: t(`world.progression.outcome.${event.outcome}`),
+              }),
+      };
     default:
       return null;
   }

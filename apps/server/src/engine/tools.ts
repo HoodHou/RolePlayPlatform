@@ -107,7 +107,11 @@ const characterEntry = z.strictObject({
   name: z.string().optional().describe('Required when creating.'),
   is_player: z.boolean().optional().describe('True only for the player character. Set at creation.'),
   role: z.string().optional().describe('Short label, e.g. "innkeeper", "rival".'),
-  description: z.string().optional().describe('Appearance and background.'),
+  description: z.string().optional().describe('Background, history, and public identity.'),
+  appearance: z
+    .string()
+    .optional()
+    .describe('Concrete visual traits for consistent portraits: age, face, hair, build, signature attire.'),
   personality: z.string().optional().describe('Temperament, goals, manner of speaking.'),
   status: z.string().optional().describe('What they are doing or what condition they are in now.'),
   attitude: z.string().optional().describe('How they feel about the player right now.'),

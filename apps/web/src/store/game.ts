@@ -59,6 +59,10 @@ interface GameState {
   historyBusy: boolean;
   /** Image message ids currently being repainted on user request. */
   retryingImages: Record<string, boolean>;
+  /** Character portraits currently being painted (`${sessionId}:${characterId}`). */
+  paintingCharacters: Record<string, boolean>;
+  /** Last portrait painting error per character (`${sessionId}:${characterId}`). */
+  portraitErrors: Record<string, UiError>;
 
   init: () => Promise<void>;
   refreshSessions: () => Promise<void>;
@@ -87,8 +91,15 @@ interface GameState {
   forkSession: (upToTurn?: number) => Promise<void>;
   /** Repaints a failed or existing illustration in place. */
   retryImage: (messageId: string) => Promise<void>;
+  /** Generates or repaints an NPC's portrait on demand. */
+  paintCharacterPortrait: (characterId: string, prompt?: string) => Promise<void>;
+  dismissPortraitError: (characterId: string) => void;
   /** Quietly refreshes the open session while background illustrations are still painting. */
   pollCurrentSession: () => Promise<void>;
+}
+
+export function portraitKey(sessionId: string, characterId: string): string {
+  return `${sessionId}:${characterId}`;
 }
 
 let initialized = false;
@@ -280,6 +291,8 @@ export const useGame = create<GameState>()((set, get) => {
     talkingTo: null,
     historyBusy: false,
     retryingImages: {},
+    paintingCharacters: {},
+    portraitErrors: {},
 
     init: async () => {
       if (initialized) return;
@@ -596,6 +609,69 @@ export const useGame = create<GameState>()((set, get) => {
       const { current, turn } = get();
       if (!current || turn) return;
       await reload(current.id);
+    },
+
+    paintCharacterPortrait: async (characterId, prompt) => {
+      const { current, paintingCharacters } = get();
+      if (!current) return;
+      const sessionId = current.id;
+      const key = portraitKey(sessionId, characterId);
+      if (paintingCharacters[key]) return;
+      set((s) => {
+        const nextErrors = { ...s.portraitErrors };
+        delete nextErrors[key];
+        return {
+          paintingCharacters: { ...s.paintingCharacters, [key]: true },
+          portraitErrors: nextErrors,
+        };
+      });
+      try {
+        const { url, world } = await api.generateCharacterPortrait(sessionId, characterId, prompt);
+        set((s) => {
+          if (s.current?.id !== sessionId) return {};
+          if (s.turn) {
+            const existing = s.current.world.characters[characterId];
+            if (!existing) return {};
+            return {
+              current: {
+                ...s.current,
+                world: {
+                  ...s.current.world,
+                  characters: {
+                    ...s.current.world.characters,
+                    [characterId]: { ...existing, imageUrl: url },
+                  },
+                },
+              },
+            };
+          }
+          return { current: { ...s.current, world } };
+        });
+        if (!get().turn) void reload(sessionId);
+      } catch (err) {
+        const uiErr = toUiError(err);
+        set((s) => ({
+          portraitErrors: { ...s.portraitErrors, [key]: uiErr },
+        }));
+      } finally {
+        set((s) => {
+          const next = { ...s.paintingCharacters };
+          delete next[key];
+          return { paintingCharacters: next };
+        });
+      }
+    },
+
+    dismissPortraitError: (characterId) => {
+      const sessionId = get().current?.id;
+      if (!sessionId) return;
+      const key = portraitKey(sessionId, characterId);
+      set((s) => {
+        if (!s.portraitErrors[key]) return {};
+        const next = { ...s.portraitErrors };
+        delete next[key];
+        return { portraitErrors: next };
+      });
     },
   };
 });

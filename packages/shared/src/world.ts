@@ -46,6 +46,8 @@ export interface Character {
   /** Short label: "innkeeper", "rival cultivator". */
   role: string;
   description: string;
+  /** Concrete visual traits for consistent portraits: age, face, hair, build, attire. */
+  appearance: string;
   personality: string;
   /** What they are doing or what condition they are in right now. */
   status: string;

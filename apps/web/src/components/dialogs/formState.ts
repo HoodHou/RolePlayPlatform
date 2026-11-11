@@ -45,6 +45,7 @@ export interface ImageForm {
   baseUrl: string;
   model: string;
   quality: ImageQuality;
+  autoCharacterPortraits: boolean;
   key: KeyEdit;
 }
 
@@ -165,6 +166,7 @@ export function formFromSettings(settings: PublicSettings): SettingsFormState {
       baseUrl: settings.image.baseUrl,
       model: settings.image.model,
       quality: settings.image.quality,
+      autoCharacterPortraits: settings.image.autoCharacterPortraits,
       key: NO_KEY_EDIT,
     },
     generation: generationToForm(settings.generation),
@@ -192,6 +194,7 @@ export function formToUpdate(input: SettingsFormState): UpdateSettingsRequest {
       baseUrl: form.image.provider === 'gemini' ? geminiImageBaseUrl(rawImageUrl) : rawImageUrl,
       model: form.image.model.trim() || imageDefaults.model,
       quality: form.image.quality,
+      autoCharacterPortraits: form.image.autoCharacterPortraits,
       ...keyPatch(form.image.key),
     },
   };
@@ -230,6 +233,7 @@ export function applyToForm(form: SettingsFormState, update: UpdateSettingsReque
       baseUrl: image?.baseUrl ?? form.image.baseUrl,
       model: image?.model ?? form.image.model,
       quality: image?.quality ?? form.image.quality,
+      autoCharacterPortraits: image?.autoCharacterPortraits ?? form.image.autoCharacterPortraits,
     },
   });
 }

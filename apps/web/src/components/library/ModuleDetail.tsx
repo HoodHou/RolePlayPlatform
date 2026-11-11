@@ -23,6 +23,11 @@ const KNOWN_TOOLS = [
   'trade',
   'journey',
   'draw',
+  'hold_court',
+  'nurture_heir',
+  'develop_domain',
+  'run_operation',
+  'breakthrough',
 ] as const;
 type KnownTool = (typeof KNOWN_TOOLS)[number];
 const isKnownTool = (name: string): name is KnownTool => (KNOWN_TOOLS as readonly string[]).includes(name);

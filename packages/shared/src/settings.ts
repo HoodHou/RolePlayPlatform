@@ -155,6 +155,8 @@ export interface ImageSettings {
   baseUrl: string;
   model: string;
   quality: ImageQuality;
+  /** Automatically queue background portraits for newly introduced NPCs each turn. */
+  autoCharacterPortraits: boolean;
 }
 
 /**

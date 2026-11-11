@@ -26,6 +26,11 @@ export const MODULE_IDS = [
   'travel',
   'deck',
   'reputation',
+  'court',
+  'lineage',
+  'domain',
+  'espionage',
+  'progression',
 ] as const;
 export type ModuleId = (typeof MODULE_IDS)[number];
 
@@ -46,6 +51,11 @@ export const MODULE_CATEGORY: Record<ModuleId, ModuleCategory> = {
   travel: 'world',
   deck: 'rules',
   reputation: 'characters',
+  court: 'world',
+  lineage: 'characters',
+  domain: 'world',
+  espionage: 'story',
+  progression: 'rules',
 };
 
 /** What a fresh install is subscribed to: dice, which every story had before there was a library. */
@@ -573,6 +583,286 @@ export interface ReputationState {
   standings: Record<string, ReputationStanding>;
 }
 
+// --- court: imperial council, registered ministers, memorials, and edicts ----------
+
+export const MEMORIAL_URGENCIES = ['routine', 'urgent', 'secret'] as const;
+export type MemorialUrgency = (typeof MEMORIAL_URGENCIES)[number];
+
+export const MEMORIAL_STATUSES = ['pending', 'approved', 'rejected', 'shelved'] as const;
+export type MemorialStatus = (typeof MEMORIAL_STATUSES)[number];
+
+export const COURT_DOMAINS = ['governance', 'military', 'intrigue'] as const;
+export type CourtDomain = (typeof COURT_DOMAINS)[number];
+
+export const COURT_OUTCOMES = ['smooth', 'compromise', 'deadlock', 'backlash'] as const;
+export type CourtOutcome = (typeof COURT_OUTCOMES)[number];
+
+export interface CourtMetric {
+  id: string;
+  name: string;
+  value: number;
+  max?: number;
+  /** Most recent change applied to this metric. */
+  delta: number;
+}
+
+export interface CourtFaction {
+  id: string;
+  name: string;
+  description: string;
+  leaderId: string | null;
+  /** Share of political influence at court, 0 to 100. */
+  influence: number;
+  /** Agenda or political posture ("清流守成", "边功主战", "外戚专权"). */
+  stance: string;
+}
+
+export interface CourtOfficial {
+  /** Matches a `Character.id` in `world.characters`. */
+  characterId: string;
+  /** Official office or post ("内阁首辅", "兵部尚书", "江南巡抚"). */
+  office: string;
+  /** Ministry, organ, or branch ("内阁", "六部", "都察院", "边镇"). */
+  department: string;
+  /** Rank label ("正一品", "从二品", "Senior Councilor"). */
+  rank: string;
+  factionId: string | null;
+  /** Allegiance to the sovereign, 0 to 100. */
+  loyalty: number;
+  /** Political weight at court, 0 to 100. */
+  influence: number;
+  /** Civil governance & statecraft, 0 to 100. */
+  governance: number;
+  /** Military command & strategy, 0 to 100. */
+  military: number;
+  /** Court intrigue & maneuvering, 0 to 100. */
+  intrigue: number;
+  /** Current commission or active duty ("督理漕运", "镇守雁门关"). */
+  assignment: string;
+}
+
+export interface CourtMemorial {
+  id: string;
+  /** Character id of the petitioner when they are in the cast. */
+  authorId: string | null;
+  /** Display name of the petitioner when outside the cast or mirrored from it. */
+  authorName: string;
+  title: string;
+  summary: string;
+  /** Concrete course of action requested in the memorial. */
+  proposal: string;
+  urgency: MemorialUrgency;
+  status: MemorialStatus;
+  /** The sovereign's rescript ("朱批") once answered. */
+  ruling: string;
+  turn: number;
+}
+
+export interface CourtEdict {
+  id: string;
+  title: string;
+  description: string;
+  /** Ongoing rule or realm effect while active. */
+  effect: string;
+  active: boolean;
+  turnIssued: number;
+}
+
+export interface CourtState {
+  regimeName: string;
+  rulerTitle: string;
+  sessionsHeld: number;
+  metrics: CourtMetric[];
+  factions: Record<string, CourtFaction>;
+  /** Keyed by `characterId`. */
+  officials: Record<string, CourtOfficial>;
+  memorials: Record<string, CourtMemorial>;
+  edicts: Record<string, CourtEdict>;
+}
+
+// --- lineage: inner court consorts, heirs, tutors, and dynastic clan ---------------
+
+export const HEIR_APTITUDES = ['governance', 'martial', 'virtue', 'learning'] as const;
+export type HeirAptitudeKey = (typeof HEIR_APTITUDES)[number];
+
+export const NURTURE_INTENSITIES = ['gentle', 'strict', 'harsh'] as const;
+export type NurtureIntensity = (typeof NURTURE_INTENSITIES)[number];
+
+export const NURTURE_OUTCOMES = ['breakthrough', 'steady', 'strained', 'resisted'] as const;
+export type NurtureOutcome = (typeof NURTURE_OUTCOMES)[number];
+
+export interface ConsortEntry {
+  characterId: string;
+  /** Rank or investiture title ("皇后", "皇贵妃", "贵嫔", "王夫"). */
+  title: string;
+  /** 1 = highest rank, ascending downward for display order. */
+  rankOrder: number;
+  /** Residence or hall ("坤宁宫", "永寿宫"). */
+  palace: string;
+  /** Sovereign favor, 0 to 100. */
+  favor: number;
+  /** Maternal clan or noble backing ("清河崔氏·礼部尚书之女"). */
+  familyBackground: string;
+}
+
+export interface HeirAptitude {
+  governance: number;
+  martial: number;
+  virtue: number;
+  learning: number;
+}
+
+export interface HeirEntry {
+  characterId: string;
+  /** Birth order or style ("皇长子", "皇嫡次女"). */
+  order: string;
+  /** Princely or noble title ("东宫太子", "燕王", "长乐公主"). */
+  title: string;
+  /** Character ids of known parents in the cast. */
+  parentIds: string[];
+  /** Character id of assigned grand tutor ("太傅/授业恩师"), if any. */
+  tutorId: string | null;
+  /** Designated crown successor. At most one true at a time. */
+  isHeirApparent: boolean;
+  aptitude: HeirAptitude;
+  /** Faction or maternal house backing this heir. */
+  backing: string;
+}
+
+export interface ClanRelative {
+  characterId: string;
+  /** Kinship to the sovereign ("皇叔", "圣母皇太后", "国舅"). */
+  relation: string;
+  title: string;
+  influence: number;
+  note: string;
+}
+
+export interface LineageState {
+  houseName: string;
+  successionLaw: string;
+  consorts: Record<string, ConsortEntry>;
+  heirs: Record<string, HeirEntry>;
+  relatives: Record<string, ClanRelative>;
+}
+
+// --- domain: seat construction, facilities, yields, and NPC stewards ---------------
+
+export const FACILITY_STATUSES = ['operational', 'building', 'damaged'] as const;
+export type FacilityStatus = (typeof FACILITY_STATUSES)[number];
+
+export const DOMAIN_CYCLE_OUTCOMES = ['bountiful', 'steady', 'delayed', 'setback'] as const;
+export type DomainCycleOutcome = (typeof DOMAIN_CYCLE_OUTCOMES)[number];
+
+export interface DomainResource {
+  id: string;
+  name: string;
+  amount: number;
+  /** Net yield per development cycle. */
+  perCycle: number;
+}
+
+export interface DomainFacility {
+  id: string;
+  name: string;
+  category: string;
+  level: number;
+  maxLevel: number;
+  status: FacilityStatus;
+  /** Construction or repair progress (0 to `segments`). */
+  progress: number;
+  segments: number;
+  /** Character id of the NPC assigned to oversee or garrison this facility. */
+  stewardId: string | null;
+  output: string;
+  description: string;
+}
+
+export interface DomainState {
+  name: string;
+  tier: string;
+  locationId: string | null;
+  cycles: number;
+  resources: DomainResource[];
+  facilities: Record<string, DomainFacility>;
+}
+
+// --- espionage: secret police, covert agents, surveillance, and dossiers -----------
+
+export const SPY_STATUSES = ['active', 'compromised', 'recalled'] as const;
+export type SpyStatus = (typeof SPY_STATUSES)[number];
+
+export const ESPIONAGE_OPERATIONS = ['recon', 'infiltrate', 'wiretap', 'frame', 'subvert', 'raid'] as const;
+export type EspionageOperation = (typeof ESPIONAGE_OPERATIONS)[number];
+
+export const OPERATION_OUTCOMES = ['triumph', 'success', 'partial', 'blown'] as const;
+export type OperationOutcome = (typeof OPERATION_OUTCOMES)[number];
+
+export interface SpyAgent {
+  id: string;
+  /** Character id when the operative is a named cast member. */
+  characterId: string | null;
+  codename: string;
+  cover: string;
+  targetId: string | null;
+  targetName: string;
+  /** Penetration depth on target, 0 to 100. */
+  infiltration: number;
+  /** Suspicion / exposure heat, 0 to 10. At 10 the agent becomes `compromised`. */
+  exposure: number;
+  status: SpyStatus;
+}
+
+export interface IntelDossier {
+  id: string;
+  subjectId: string | null;
+  subjectName: string;
+  title: string;
+  summary: string;
+  /** Actionable blackmail, proof, or secret leverage. */
+  leverage: string;
+  verified: boolean;
+  /** True while kept by the GM before spies uncover it. */
+  hidden: boolean;
+}
+
+export interface EspionageState {
+  agencyName: string;
+  commanderId: string | null;
+  /** Overall surveillance grip, 0 to 100. */
+  networkPower: number;
+  agents: Record<string, SpyAgent>;
+  dossiers: Record<string, IntelDossier>;
+}
+
+// --- progression: cultivation realms / class tiers, XP gauge, and abilities --------
+
+export const BREAKTHROUGH_OUTCOMES = ['transcendent', 'success', 'stalled', 'backlash'] as const;
+export type BreakthroughOutcome = (typeof BREAKTHROUGH_OUTCOMES)[number];
+
+export interface ProgressionAbility {
+  id: string;
+  name: string;
+  category: string;
+  rank: string;
+  equipped: boolean;
+  cost: string;
+  description: string;
+}
+
+export interface ProgressionState {
+  systemName: string;
+  realm: string;
+  subRealm: string;
+  ladder: string[];
+  xp: number;
+  xpMax: number;
+  bottleneck: string;
+  /** Inner demon / qi deviation / strain risk, 0 to 100. */
+  deviation: number;
+  abilities: Record<string, ProgressionAbility>;
+}
+
 // --- external plugin manifests and state -------------------------------------------
 
 export interface PluginFieldSpec {
@@ -656,5 +946,10 @@ export interface ModuleStates {
   travel?: TravelState;
   deck?: DeckState;
   reputation?: ReputationState;
+  court?: CourtState;
+  lineage?: LineageState;
+  domain?: DomainState;
+  espionage?: EspionageState;
+  progression?: ProgressionState;
   custom?: Record<string, CustomModuleState>;
 }

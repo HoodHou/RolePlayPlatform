@@ -38,6 +38,7 @@ function upgradeWorld(world: WorldState): WorldState {
   partial.summarizedUpToTurn ??= 0;
   for (const character of Object.values(world.characters)) {
     const mind = character as Partial<typeof character>;
+    mind.appearance ??= '';
     mind.voice ??= '';
     mind.goals ??= '';
     mind.secrets ??= '';

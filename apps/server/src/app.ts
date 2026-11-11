@@ -9,6 +9,8 @@ import {
   type CreateSessionRequest,
   type ErrorResponse,
   type ForkSessionRequest,
+  type GeneratePortraitRequest,
+  type GeneratePortraitResponse,
   type ImageMessage,
   type ModelListResponse,
   type ModuleId,
@@ -27,7 +29,7 @@ import { streamSSE } from 'hono/streaming';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { runTurn, validateTurn } from './engine/gameMaster';
-import { attachPicture } from './engine/world';
+import { attachPicture, buildCharacterPortraitPrompt } from './engine/world';
 import {
   allModuleIds,
   listLibrary,
@@ -90,6 +92,10 @@ const rollbackSchema = z.object({
 const forkSchema = z.object({
   upToTurn: z.number().int().min(0).max(100_000).optional(),
 }) satisfies z.ZodType<ForkSessionRequest>;
+
+const generatePortraitSchema = z.object({
+  prompt: z.string().trim().max(2000).optional(),
+}) satisfies z.ZodType<GeneratePortraitRequest>;
 
 const rawSessionSchema = z.looseObject({
   id: z.string().max(120).optional().default('imported'),
@@ -192,6 +198,7 @@ const settingsSchema = z.object({
       model: model.optional(),
       baseUrl: baseUrl.optional(),
       quality: z.enum(IMAGE_QUALITIES).optional(),
+      autoCharacterPortraits: z.boolean().optional(),
       apiKey,
     })
     .optional(),
@@ -437,6 +444,62 @@ export function createApp(deps: AppDeps): Hono {
     return c.json(response);
   });
 
+  app.post('/api/sessions/:id/characters/:characterId/portrait', async (c) => {
+    const id = c.req.param('id');
+    const characterId = c.req.param('characterId');
+    const rawBody: unknown = await c.req.json().catch(() => ({}));
+    const parsedBody = generatePortraitSchema.safeParse(rawBody ?? {});
+    if (!parsedBody.success) throw new AppError('bad_request', z.prettifyError(parsedBody.error));
+
+    await (writeQueues.get(id) ?? Promise.resolve());
+    const session = activeTurns.get(id)?.session ?? (await sessions.get(id));
+    if (!session) throw new AppError('not_found', 'No such session.');
+    const character = session.world.characters[characterId];
+    if (!character) throw new AppError('not_found', 'No such character.');
+
+    const current = await settings.get();
+    const painter = makePainter(current);
+    if (!painter) throw new AppError('not_configured', 'Illustrations are not enabled or configured.');
+
+    const rawPrompt = buildCharacterPortraitPrompt(character, session.world, parsedBody.data.prompt);
+    const style = session.world.artStyle;
+    const painting = await painter.paint({
+      prompt: style ? `${rawPrompt}\n\nArt style: ${style}` : rawPrompt,
+      subject: 'character',
+      signal: c.req.raw.signal,
+    });
+    const url = await images.save(id, painting);
+
+    await enqueueSessionTask(id, async () => {
+      const applyPortrait = (target: Session): boolean => {
+        if (!attachPicture(target.world, 'character', characterId, url)) return false;
+        for (const snap of target.snapshots ?? []) {
+          const snapChar = snap.world.characters[characterId];
+          if (snapChar && (!snapChar.imageUrl || snap.turn >= target.world.turn)) {
+            snapChar.imageUrl = url;
+          }
+        }
+        return true;
+      };
+
+      const active = activeTurns.get(id);
+      if (active) {
+        if (applyPortrait(active.session)) {
+          active.emit({ type: 'world', world: active.session.world });
+        }
+        return;
+      }
+
+      const latest = await sessions.get(id);
+      if (!latest || !applyPortrait(latest)) return;
+      await sessions.save(latest);
+    });
+
+    const updated = activeTurns.get(id)?.session ?? (await sessions.get(id)) ?? session;
+    const response: GeneratePortraitResponse = { characterId, url, world: updated.world };
+    return c.json(response);
+  });
+
   app.patch('/api/sessions/:id', async (c) => {
     const id = c.req.param('id');
     const patch = await readBody(c, updateSessionSchema);
@@ -498,12 +561,14 @@ export function createApp(deps: AppDeps): Hono {
       if (!session) throw new AppError('not_found', 'No such session.');
       validateTurn(session, request);
       const current = await settings.get();
+      const painter = makePainter(current);
       return {
         session,
         provider: makeProvider(current, 'gameMaster'),
         // Only a talk turn has a character speak for themselves.
         actorProvider: request.kind === 'talk' ? makeProvider(current, 'actor') : undefined,
-        painter: makePainter(current),
+        painter,
+        autoCharacterPortraits: Boolean(painter && current.image.autoCharacterPortraits),
         subscribed: current.subscribedModules,
         tuning: { historyTurns: current.generation.historyTurns, memoriesRecalled: current.generation.memoriesRecalled },
       };
@@ -511,7 +576,7 @@ export function createApp(deps: AppDeps): Hono {
       running.delete(id);
       throw err;
     });
-    const { session, provider, actorProvider, painter, subscribed, tuning } = prepared;
+    const { session, provider, actorProvider, painter, autoCharacterPortraits, subscribed, tuning } = prepared;
 
     return streamSSE(c, async (stream) => {
       const abort = new AbortController();
@@ -541,6 +606,7 @@ export function createApp(deps: AppDeps): Hono {
           illustrate: painter
             ? async (paintRequest) => images.save(session.id, await painter.paint(paintRequest))
             : undefined,
+          autoCharacterPortraits,
           onBackgroundPicture: painter ? (settled) => applySettledPicture(id, settled) : undefined,
         });
         if (outcome.committed) {

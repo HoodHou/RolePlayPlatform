@@ -1,16 +1,28 @@
 import type {
   AttackOutcome,
+  BreakthroughOutcome,
   CheckDifficulty,
   CheckOutcome,
   ClueKind,
   CombatSide,
+  CourtDomain,
+  CourtOutcome,
   DeductionStatus,
   DiceSystem,
+  DomainCycleOutcome,
+  EspionageOperation,
+  FacilityStatus,
   FateAnswer,
   FateOdds,
   FateTwist,
   HaggleOutcome,
+  HeirAptitudeKey,
   JourneyOutcome,
+  MemorialStatus,
+  MemorialUrgency,
+  NurtureIntensity,
+  NurtureOutcome,
+  OperationOutcome,
   RouteHazard,
   Stance,
   TravelPace,
@@ -313,6 +325,145 @@ export type WorldEvent =
       to: number;
       title: string;
       heat: number;
+      reason: string;
+    }
+  // --- court module ---
+  | {
+      type: 'official_appointed';
+      characterId: string;
+      characterName: string;
+      office: string;
+      department: string;
+      rank: string;
+    }
+  | {
+      type: 'memorial_submitted';
+      id: string;
+      title: string;
+      authorName: string;
+      urgency: MemorialUrgency;
+    }
+  | {
+      type: 'memorial_ruled';
+      id: string;
+      title: string;
+      status: Exclude<MemorialStatus, 'pending'>;
+      ruling: string;
+    }
+  | {
+      type: 'edict_issued';
+      id: string;
+      title: string;
+      effect: string;
+    }
+  | {
+      type: 'court_session';
+      agenda: string;
+      domain: CourtDomain;
+      leadName: string;
+      oppositionName: string;
+      roll: number;
+      bonus: number;
+      total: number;
+      target: number;
+      outcome: CourtOutcome;
+      changes: { metric: string; from: number; to: number }[];
+    }
+  // --- lineage module ---
+  | {
+      type: 'consort_invested';
+      characterId: string;
+      characterName: string;
+      title: string;
+      palace: string;
+    }
+  | {
+      type: 'heir_designated';
+      characterId: string;
+      characterName: string;
+      title: string;
+    }
+  | {
+      type: 'heir_nurtured';
+      characterId: string;
+      characterName: string;
+      tutorName: string;
+      focus: HeirAptitudeKey;
+      intensity: NurtureIntensity;
+      rolls: number[];
+      bonus: number;
+      total: number;
+      outcome: NurtureOutcome;
+      from: number;
+      to: number;
+    }
+  // --- domain module ---
+  | {
+      type: 'facility_updated';
+      id: string;
+      name: string;
+      level: number;
+      status: FacilityStatus;
+      stewardName: string;
+    }
+  | {
+      type: 'domain_cycle';
+      domainName: string;
+      cycle: number;
+      facilityName: string;
+      stewardName: string;
+      roll: number;
+      bonus: number;
+      total: number;
+      outcome: DomainCycleOutcome;
+      completedFacility: string;
+      changes: { resource: string; from: number; to: number }[];
+    }
+  // --- espionage module ---
+  | {
+      type: 'spy_deployed';
+      id: string;
+      codename: string;
+      targetName: string;
+      cover: string;
+    }
+  | {
+      type: 'espionage_operation';
+      agentId: string;
+      codename: string;
+      operation: EspionageOperation;
+      targetName: string;
+      roll: number;
+      chance: number;
+      outcome: OperationOutcome;
+      infiltration: number;
+      exposure: number;
+      compromised: boolean;
+      reason: string;
+    }
+  | {
+      type: 'dossier_acquired';
+      id: string;
+      title: string;
+      subjectName: string;
+      verified: boolean;
+    }
+  // --- progression module ---
+  | {
+      type: 'ability_learned';
+      id: string;
+      name: string;
+      category: string;
+      rank: string;
+    }
+  | {
+      type: 'realm_breakthrough';
+      fromRealm: string;
+      toRealm: string;
+      roll: number;
+      chance: number;
+      outcome: BreakthroughOutcome;
+      deviation: number;
       reason: string;
     };
 

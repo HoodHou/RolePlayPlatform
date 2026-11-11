@@ -86,6 +86,26 @@ export function attachPicture(
   return true;
 }
 
+/** Builds a self-contained visual portrait prompt from a character's recorded dossier. */
+export function buildCharacterPortraitPrompt(
+  character: Character,
+  world: WorldState,
+  extra?: string,
+): string {
+  const parts: string[] = [`Character portrait of ${character.name}`];
+  if (character.role.trim()) parts.push(`Role: ${character.role.trim()}`);
+  if (character.appearance.trim()) parts.push(`Appearance: ${character.appearance.trim()}`);
+  if (character.description.trim()) parts.push(`Details: ${character.description.trim()}`);
+  if (character.personality.trim()) parts.push(`Demeanor: ${character.personality.trim()}`);
+  if (character.status.trim()) parts.push(`Current state: ${character.status.trim()}`);
+  if (world.title.trim()) parts.push(`World setting: ${world.title.trim()}`);
+  if (extra?.trim()) parts.push(extra.trim());
+  parts.push(
+    'Composition: expressive three-quarter or half-body standing character portrait (立绘), crisp facial features and attire details, atmospheric lighting, no text, no captions, no UI elements.',
+  );
+  return parts.join('. ');
+}
+
 export function setScene(
   world: WorldState,
   patch: { locationId?: string; time?: string; weather?: string; summary?: string },
@@ -216,6 +236,7 @@ export function upsertCharacter(
     isPlayer?: boolean;
     role?: string;
     description?: string;
+    appearance?: string;
     personality?: string;
     status?: string;
     attitude?: string;
@@ -247,6 +268,7 @@ export function upsertCharacter(
       isPlayer,
       role: input.role ?? '',
       description: input.description ?? '',
+      appearance: input.appearance ?? '',
       personality: input.personality ?? '',
       status: input.status ?? '',
       attitude: input.attitude ?? '',
@@ -273,6 +295,7 @@ export function upsertCharacter(
   if (input.name?.trim()) existing.name = input.name.trim();
   if (input.role !== undefined) existing.role = input.role;
   if (input.description !== undefined) existing.description = input.description;
+  if (input.appearance !== undefined) existing.appearance = input.appearance;
   if (input.personality !== undefined) existing.personality = input.personality;
   if (input.status !== undefined) existing.status = input.status;
   if (input.attitude !== undefined) existing.attitude = input.attitude;

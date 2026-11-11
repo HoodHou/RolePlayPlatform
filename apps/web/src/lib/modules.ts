@@ -30,6 +30,11 @@ export const MODULE_GLYPH: Record<ModuleId, string> = {
   travel: '⟡',
   deck: '❖',
   reputation: '♛',
+  court: '⚜',
+  lineage: '❀',
+  domain: '⌂',
+  espionage: '◉',
+  progression: '✧',
 };
 
 /** The modules a story has. Old saves are migrated by the server, but a missing list must not crash the UI. */

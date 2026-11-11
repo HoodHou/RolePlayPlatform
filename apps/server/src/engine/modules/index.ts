@@ -13,11 +13,16 @@ import { calendarModule } from './calendar';
 import { clocksModule } from './clocks';
 import { cluesModule } from './clues';
 import { combatModule } from './combat';
+import { courtModule } from './court';
 import { deckModule } from './deck';
 import { diceModule } from './dice';
+import { domainModule } from './domain';
+import { espionageModule } from './espionage';
+import { lineageModule } from './lineage';
 import { marketModule } from './market';
 import { oracleModule } from './oracle';
 import { compilePluginManifest, type CompiledPlugin } from './plugins';
+import { progressionModule } from './progression';
 import { reputationModule } from './reputation';
 import { sandboxModule } from './sandbox';
 import { travelModule } from './travel';
@@ -39,6 +44,11 @@ const BUILTIN_MODULES: Record<ModuleId, GameModule> = {
   travel: travelModule,
   deck: deckModule,
   reputation: reputationModule,
+  court: courtModule,
+  lineage: lineageModule,
+  domain: domainModule,
+  espionage: espionageModule,
+  progression: progressionModule,
 };
 
 /** User-installed external plugins, keyed by plugin id. */

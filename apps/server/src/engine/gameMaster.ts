@@ -29,7 +29,7 @@ import { getPrompts } from './prompts';
 import { StreamingStringField } from './streamingField';
 import { getModules, playableModules, settleModules } from './modules';
 import { getToolbox, NARRATE, type PictureRequest, type ToolContext } from './tools';
-import { addMemory, attachPicture, WorldOpError } from './world';
+import { addMemory, attachPicture, buildCharacterPortraitPrompt, WorldOpError } from './world';
 
 /**
  * The turn loop.
@@ -50,6 +50,7 @@ const MAX_STEPS = 10;
 
 // Pictures are slow and billed one by one.
 const MAX_PICTURES_PER_TURN = 2;
+const MAX_AUTO_PORTRAITS_PER_TURN = 2;
 
 // A memory the engine writes when a character answers but does not say what
 // they will remember of it. Long exchanges are cut to this.
@@ -75,6 +76,11 @@ export interface TurnDeps {
    * illustrations are off: the game master is then not offered the tool.
    */
   illustrate?: (request: PaintRequest) => Promise<string>;
+  /**
+   * When true alongside `illustrate`, newly added NPCs without a portrait have
+   * one queued automatically in the background (up to 2 per turn).
+   */
+  autoCharacterPortraits?: boolean;
   /**
    * When provided, `runTurn` returns as soon as narration and world updates
    * finish instead of waiting on slow image APIs, invoking this callback for
@@ -210,10 +216,14 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
   let chosen: ModuleId[] | undefined;
   const contextOptions = { illustrations: illustrate !== undefined, modules: playing, choosing, ...tuning };
   const toolbox = getToolbox(contextOptions);
+  const picturedCharacterIds = new Set<string>();
   const requestPicture = illustrate
     ? (picture: PictureRequest): void => {
         if (pictures.length >= MAX_PICTURES_PER_TURN) {
           throw new WorldOpError(`Only ${MAX_PICTURES_PER_TURN} pictures can be painted per turn.`);
+        }
+        if (picture.subject === 'character' && picture.targetId) {
+          picturedCharacterIds.add(picture.targetId);
         }
         const message: ImageMessage = {
           ...stamp(),
@@ -505,6 +515,34 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
     if (!told) throw new AppError('empty_response', 'The model told no story this turn.');
     // The game master has had a whole turn with every subscribed module on offer: keep the ones it asked for.
     if (choosing) settleModules(session, playing, chosen);
+    if (illustrate && deps.autoCharacterPortraits) {
+      const newcomers = Object.values(session.world.characters)
+        .filter(
+          (c) =>
+            !c.isPlayer &&
+            !checkpoint.world.characters[c.id] &&
+            !c.imageUrl &&
+            !picturedCharacterIds.has(c.id),
+        )
+        .sort((a, b) => Number(isPresent(session.world, b)) - Number(isPresent(session.world, a)))
+        .slice(0, MAX_AUTO_PORTRAITS_PER_TURN);
+      for (const npc of newcomers) {
+        const prompt = buildCharacterPortraitPrompt(npc, session.world);
+        const caption = npc.role ? `${npc.name} — ${npc.role}` : npc.name;
+        const message: ImageMessage = {
+          ...stamp(),
+          kind: 'image',
+          status: 'pending',
+          url: null,
+          caption,
+          prompt,
+          subject: 'character',
+          targetId: npc.id,
+        };
+        push(message);
+        pictures.push(paint(illustrate, message, prompt));
+      }
+    }
     if (deps.onBackgroundPicture) {
       turnReturned = true;
     } else {
