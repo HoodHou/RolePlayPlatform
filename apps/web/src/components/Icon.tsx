@@ -111,6 +111,13 @@ const PATHS = {
     </>
   ),
   list: <path d="M8.5 7h11M8.5 12h11M8.5 17h11M4.8 7h.01M4.8 12h.01M4.8 17h.01" />,
+  gauge: (
+    <>
+      <path d="M4.8 17a8 8 0 1 1 14.4 0" />
+      <path d="M12 13.5l3.5-3.5" />
+      <circle cx="12" cy="13.5" r="1.3" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;

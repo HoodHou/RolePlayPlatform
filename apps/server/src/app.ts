@@ -17,6 +17,8 @@ import {
   type ModuleLibraryResponse,
   type RetryImageResponse,
   type RollbackSessionRequest,
+  type ScenarioArchitectRequest,
+  type ScenarioStreamEvent,
   type Session,
   type SessionBackup,
   type TurnEvent,
@@ -29,6 +31,7 @@ import { streamSSE } from 'hono/streaming';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import { runTurn, validateTurn } from './engine/gameMaster';
+import { runScenarioArchitect } from './engine/scenarioArchitect';
 import { attachPicture, buildCharacterPortraitPrompt } from './engine/world';
 import {
   allModuleIds,
@@ -56,7 +59,7 @@ import {
   type SessionStore,
 } from './store/sessionStore';
 import type { ResolvedSettings, SettingsStore } from './store/settingsStore';
-import { toPublicSettings } from './store/settingsStore';
+import { toPublicSettings, withGameMasterOverride } from './store/settingsStore';
 
 export interface AppDeps {
   sessions: SessionStore;
@@ -77,9 +80,9 @@ const modules = z.array(moduleIdSchema).max(64);
 
 const createSessionSchema = z.object({
   language: z.enum(LOCALES),
-  premise: z.string().max(4000).optional(),
-  playerName: z.string().max(80).optional(),
-  playerConcept: z.string().max(2000).optional(),
+  premise: z.string().max(8000).optional(),
+  playerName: z.string().max(120).optional(),
+  playerConcept: z.string().max(4000).optional(),
   modules: modules.optional(),
 }) satisfies z.ZodType<CreateSessionRequest>;
 
@@ -205,6 +208,36 @@ const settingsSchema = z.object({
   subscribedModules: modules.optional(),
 }) satisfies z.ZodType<UpdateSettingsRequest>;
 
+const scenarioArchitectSchema = z.object({
+  language: z.enum(LOCALES),
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(['user', 'assistant']),
+        text: z.string().trim().min(1).max(8000),
+      }),
+    )
+    .min(1)
+    .max(40),
+  currentDraft: z
+    .object({
+      title: z.string().max(200).optional(),
+      premise: z.string().max(8000).optional(),
+      playerName: z.string().max(120).optional(),
+      playerConcept: z.string().max(2000).optional(),
+      modules: modules.optional(),
+    })
+    .optional(),
+  availableModules: modules.optional(),
+  modelOverride: z
+    .object({
+      provider: z.enum(PROVIDER_KINDS),
+      model: model.optional(),
+      effort: effort.optional(),
+    })
+    .optional(),
+}) satisfies z.ZodType<ScenarioArchitectRequest>;
+
 async function readBody<S extends z.ZodType>(c: Context, schema: S): Promise<z.infer<S>> {
   const json: unknown = await c.req.json().catch(() => undefined);
   const parsed = schema.safeParse(json);
@@ -328,6 +361,36 @@ export function createApp(deps: AppDeps): Hono {
     if (!removedMem && !removedDisk) throw new AppError('not_found', `No plugin with id "${id}".`);
     const modules = listLibrary((await settings.get()).subscribedModules);
     return c.json({ ok: true, modules });
+  });
+
+  app.post('/api/scenarios/architect', async (c) => {
+    const request = await readBody(c, scenarioArchitectSchema);
+    const current = await settings.get();
+    const effective = withGameMasterOverride(current, request.modelOverride);
+    const provider = makeProvider(effective, 'gameMaster');
+    const availableModules = request.availableModules ?? current.subscribedModules;
+
+    return streamSSE(c, async (stream) => {
+      const abort = new AbortController();
+      stream.onAbort(() => abort.abort());
+
+      let writes: Promise<unknown> = Promise.resolve();
+      const emit = (event: ScenarioStreamEvent): void => {
+        const frame = { event: event.type, data: JSON.stringify(event) };
+        writes = writes.then(() => stream.writeSSE(frame)).catch(() => {});
+      };
+
+      try {
+        await runScenarioArchitect(
+          { ...request, availableModules },
+          { provider, emit, signal: abort.signal },
+        );
+      } catch (err) {
+        emit({ type: 'error', error: toAppError(err).toApiError() });
+      } finally {
+        await writes;
+      }
+    });
   });
 
   app.get('/api/sessions', async (c) => c.json(await sessions.list()));

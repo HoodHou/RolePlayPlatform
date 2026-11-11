@@ -8,6 +8,8 @@ import type {
   PluginManifest,
   PublicSettings,
   RetryImageResponse,
+  ScenarioArchitectRequest,
+  ScenarioStreamEvent,
   Session,
   SessionBackup,
   SessionSummary,
@@ -15,6 +17,7 @@ import type {
   UpdateSettingsRequest,
 } from '@roleplay/shared';
 import { errorFromResponse, isAbortError, networkError, RequestError } from './errors';
+import { readEventStream } from './sse';
 
 async function request<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' };
@@ -93,4 +96,40 @@ export const api = {
   deleteSession: (id: string) => request<{ ok: true }>(sessionPath(id), { method: 'DELETE' }),
 
   turnsPath: (id: string) => `${sessionPath(id)}/turns`,
+
+  streamScenarioArchitect: async (
+    payload: ScenarioArchitectRequest,
+    onEvent: (event: ScenarioStreamEvent) => void,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    let res: Response;
+    try {
+      res = await fetch('/api/scenarios/architect', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+        },
+        body: JSON.stringify(payload),
+        signal,
+      });
+    } catch (err) {
+      if (isAbortError(err)) throw err;
+      throw networkError(err);
+    }
+    if (!res.ok) throw await errorFromResponse(res);
+    if (!res.body) {
+      throw new RequestError({ code: 'bad_response', message: 'Empty stream from /api/scenarios/architect' }, res.status);
+    }
+    await readEventStream(res.body, (frame) => {
+      try {
+        const parsed = JSON.parse(frame.data) as ScenarioStreamEvent;
+        onEvent(parsed);
+        if (parsed.type === 'done' || parsed.type === 'error') return true;
+      } catch {
+        // Ignore malformed keep-alive frames.
+      }
+      return false;
+    });
+  },
 };

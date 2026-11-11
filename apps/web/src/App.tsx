@@ -18,6 +18,8 @@ export function App() {
   const { t } = useTranslation();
   const narrow = useMediaQuery(NARROW_QUERY);
   const dialog = useUi((s) => s.dialog);
+  const settingsOverlay = useUi((s) => s.settingsOverlay);
+  const closeSettingsOverlay = useUi((s) => s.closeSettingsOverlay);
   const drawer = useUi((s) => s.drawer);
   const lightbox = useUi((s) => s.lightbox);
   const library = useUi((s) => s.library !== null);
@@ -62,6 +64,7 @@ export function App() {
 
       {dialog === 'newGame' && <NewGameDialog />}
       {dialog === 'settings' && <SettingsDialog />}
+      {dialog === 'newGame' && settingsOverlay && <SettingsDialog onClose={closeSettingsOverlay} />}
       {/* After the dialogs, so it opens on top of the one it was opened from. */}
       {library && <ModuleLibrary />}
       <CharacterDossierModal />

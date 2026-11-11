@@ -507,6 +507,659 @@
   font-size: inherit;
 }
 
+.module-options--grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+/* New Game Studio: Scenario Library + AI Scenario Co-Creator */
+.modal--dialog.modal--new-game {
+  width: min(60rem, calc(100vw - 2rem));
+  max-height: min(56rem, calc(100dvh - 2rem));
+}
+
+.new-game__top {
+  padding-top: 0.4rem;
+}
+
+.new-game__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.new-game__tab {
+  gap: 0.42rem;
+}
+
+.new-game__lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 0.38rem;
+}
+
+.new-game__lang-label {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.segmented--compact {
+  width: auto;
+}
+
+.segmented--compact .segmented__option span {
+  padding: 0.24rem 0.65rem;
+  font-size: 0.78rem;
+}
+
+.scenario-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.scenario-section__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.55rem 1rem;
+}
+
+.scenario-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  max-height: 17.8rem;
+  padding: 0.1rem 0.2rem 0.1rem 0;
+  overflow-y: auto;
+}
+
+.scenario-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.75rem 0.88rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-sunken) 40%, var(--bg-panel));
+  text-align: left;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.scenario-card:hover {
+  border-color: var(--accent-line);
+  background: var(--bg-hover);
+}
+
+.scenario-card.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-line);
+}
+
+.scenario-card__top {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.scenario-card__glyph {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--accent-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-panel));
+  color: var(--accent);
+  font-family: var(--font-serif);
+  font-size: 0.98rem;
+  font-weight: 700;
+}
+
+.scenario-card__titles {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.scenario-card__title {
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-serif);
+  font-size: 0.95rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scenario-card__cat {
+  color: var(--text-faint);
+  font-size: 0.72rem;
+}
+
+.scenario-card__check {
+  flex: none;
+  color: var(--accent);
+}
+
+.scenario-card__tagline {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.scenario-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.35rem;
+  border-top: 1px dashed var(--border);
+  font-size: 0.73rem;
+}
+
+.scenario-card__protagonist {
+  flex: none;
+  padding: 0.06rem 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
+.scenario-card__mods {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.new-game__premise-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.ai-bridge-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  padding: 0.22rem 0.65rem;
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 600;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.ai-bridge-btn:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.new-game__foot {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.new-game__foot-status {
+  min-width: 0;
+}
+
+.new-game__ready-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--good) 12%, transparent);
+  color: var(--good);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.new-game__ready-pill span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.new-game__foot-actions {
+  display: inline-flex;
+  flex: none;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+/* AI Scenario Architect two-pane studio */
+.dialog__body--architect {
+  padding-top: 1rem;
+}
+
+.architect-studio {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(17.5rem, 0.95fr);
+  gap: 1rem;
+  min-height: 29rem;
+  max-height: 36rem;
+}
+
+.architect-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+  min-height: 0;
+}
+
+.architect-chat__log {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 14rem;
+  padding: 0.2rem 0.25rem 0.2rem 0;
+  overflow-y: auto;
+}
+
+.architect-welcome {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin: auto 0;
+}
+
+.architect-welcome__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.architect-welcome__icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.architect-welcome__title {
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.architect-welcome__lead {
+  margin-top: 0.2rem;
+  color: var(--text-muted);
+  font-size: 0.83rem;
+  line-height: 1.55;
+}
+
+.architect-starters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.architect-starter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-sunken) 40%, var(--bg-panel));
+  text-align: left;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.architect-starter:hover {
+  border-color: var(--accent-line);
+  background: var(--bg-hover);
+}
+
+.architect-starter__title {
+  color: var(--text);
+  font-size: 0.83rem;
+  font-weight: 650;
+}
+
+.architect-starter__desc {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.48;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.architect-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.architect-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+  max-width: 92%;
+}
+
+.architect-msg--user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.architect-msg--assistant {
+  align-self: flex-start;
+}
+
+.architect-msg__role {
+  color: var(--text-faint);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.architect-msg__bubble {
+  padding: 0.62rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-sunken) 45%, var(--bg-panel));
+  color: var(--text);
+  font-size: 0.87rem;
+  line-height: 1.62;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.architect-msg--user .architect-msg__bubble {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+.architect-msg__thinking {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.architect-chat__error {
+  align-items: flex-start;
+}
+
+.architect-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.38rem;
+  margin-top: 0.15rem;
+}
+
+/* Composer box matching the pill-in-toolbar chat bar interaction */
+.architect-composer {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.65rem 0.75rem 0.55rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.architect-composer:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.architect-composer__input {
+  width: 100%;
+  max-height: 6.8rem;
+  padding: 0.1rem 0.15rem;
+  border: 0;
+  background: transparent;
+  font-size: 0.9rem;
+  line-height: 1.52;
+  resize: none;
+}
+
+.architect-composer__input:focus {
+  outline: none;
+}
+
+.architect-composer__input::placeholder {
+  color: var(--text-faint);
+}
+
+.architect-composer__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.architect-composer__left {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-width: 0;
+}
+
+.architect-composer__plus {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  transition:
+    background-color 0.15s,
+    color 0.15s,
+    opacity 0.15s;
+}
+
+.architect-composer__plus:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.architect-composer__plus:disabled {
+  opacity: 0.35;
+}
+
+.architect-composer__send {
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+}
+
+/* Live Scenario Blueprint right-hand preview card */
+.blueprint-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-sunken) 48%, var(--bg-panel));
+  transition:
+    border-color 0.25s,
+    box-shadow 0.25s;
+}
+
+.blueprint-card.is-pulsing {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.blueprint-card__head {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.blueprint-card__title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.blueprint-card__synced {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  padding: 0.08rem 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--good) 14%, transparent);
+  color: var(--good);
+  font-size: 0.69rem;
+  font-weight: 600;
+}
+
+.blueprint-card__edit {
+  font-size: 0.76rem;
+}
+
+.blueprint-card__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.8rem;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.blueprint-card__name {
+  color: var(--text);
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.blueprint-card__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.blueprint-card__label {
+  color: var(--text-faint);
+  font-size: 0.71rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.blueprint-card__protagonist {
+  color: var(--text-soft);
+  font-size: 0.83rem;
+  line-height: 1.5;
+}
+
+.blueprint-card__premise {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  line-height: 1.62;
+}
+
+.blueprint-card__modules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.blueprint-module-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.16rem 0.5rem 0.16rem 0.3rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-panel);
+  color: var(--text-soft);
+  font-size: 0.74rem;
+  font-weight: 550;
+}
+
+.blueprint-card__empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.5rem 1rem;
+  text-align: center;
+}
+
+.blueprint-card__empty-icon {
+  color: var(--text-faint);
+}
+
+.blueprint-card__empty-title {
+  color: var(--text-soft);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.blueprint-card__empty-desc {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
 /* The enlarged sandbox map */
 .map-dialog__heading {
   min-width: 0;
@@ -548,10 +1201,28 @@
   }
 }
 
+@media (max-width: 820px) {
+  .scenario-grid,
+  .module-options--grid,
+  .architect-starters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .architect-studio {
+    grid-template-columns: minmax(0, 1fr);
+    max-height: none;
+  }
+
+  .architect-chat__log {
+    max-height: 18rem;
+  }
+}
+
 /* Small screens: dialogs become full-screen sheets. */
 @media (max-width: 600px) {
   .modal--dialog,
-  .modal--dialog.modal--wide {
+  .modal--dialog.modal--wide,
+  .modal--dialog.modal--new-game {
     width: 100%;
     height: 100%;
     max-height: 100%;

@@ -11,6 +11,7 @@ import { portraitKey, useGame } from '../../store/game';
 import { useSettings } from '../../store/settings';
 import { useUi } from '../../store/ui';
 import { Icon } from '../Icon';
+import { ModelPickerPopover } from '../ModelPickerPopover';
 import { BondBadge } from '../world/BondMeter';
 import { ModulesMenu } from './ModulesMenu';
 
@@ -248,6 +249,7 @@ export function ComposerArea({ session }: { session: Session }) {
         </form>
         <div className="composer__meta">
           <div className="composer__meta-left">
+            <ModelPickerPopover usage={session.usage} disabled={running} />
             <ModulesMenu session={session} />
             {session.world.turn >= 1 && (
               <div className="composer__turn-actions" role="group" aria-label={t('story.turnActionsLabel')}>

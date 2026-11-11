@@ -74,6 +74,8 @@ interface ScriptedStep {
   record?: RecordInput | Record<string, unknown>;
   /** A character's answer, through `respond`. */
   respond?: RespondInput;
+  /** Scenario co-creator reply, through `propose_scenario`. */
+  architect?: Record<string, unknown>;
 }
 
 /** How one character talks: a few lines, taken in turn as the conversation goes on. */
@@ -807,6 +809,118 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+function draftScenario(meta: TurnMeta): ScriptedStep {
+  const cue = `${meta.playerText} ${meta.seed.premise}`.toLowerCase();
+  const refining = meta.seed.premise.trim().length > 0 && meta.turn > 1;
+  const isXianxia = /修仙|仙|宗门|灵脉|境界|xianxia|immortal|sect|cultivat/i.test(cue);
+  const isSpy = /锦衣|探案|密室|悬疑|谍|刺客|mystery|detective|spy|intrigue/i.test(cue);
+
+  if (meta.locale === 'zh') {
+    if (refining) {
+      const note = meta.playerText.trim();
+      return {
+        architect: {
+          reply: `已按你的想法微调剧本细节（「${note}」），将其融入开局冲突与人物动机之中。你可以继续告诉我还想调整的势力或开场气氛，或直接点击下方开始游戏。`,
+          blueprint: {
+            title: '风云定鼎 · 定制开局',
+            premise: `${meta.seed.premise.trim()}\n\n补充变局：${note}。各方视线已汇聚于你一身，风暴将在今晨第一声钟鸣时揭幕。`,
+            player_name: meta.seed.playerName.trim() || '萧景琰',
+            player_concept: meta.seed.playerConcept.trim() || '执棋破局之人，深藏底牌以待天时',
+            modules: ['court', 'lineage', 'domain', 'espionage', 'bonds', 'calendar', 'clocks'],
+          },
+          suggestions: ['再加入一位手握兵权的宿敌', '提高开局紧迫感与倒计时危机', '调整主角的隐藏底牌'],
+        },
+      };
+    }
+    if (isXianxia) {
+      return {
+        architect: {
+          reply:
+            '为你构思了一套「仙门少掌门 · 祖脉重开」开局：融合山门设施经营、长老派系博弈与破境渡劫体系。看看右侧蓝图是否合意，我们可以随时细化功法流派或敌对大宗。',
+          blueprint: {
+            title: '青云问道 · 祖脉重燃',
+            premise:
+              '太华山巅的青云剑宗曾执正道牛耳，自上代掌门坐化后护山大阵残损、地底祖脉枯竭，外门坊市凋敝。三日后便是七脉会武与外宗逼债之期，昨夜后山禁地却忽有紫气冲霄——尘封百年的灵脉眼正在苏醒。\n\n你于朝阳初升时执掌门铁剑踏入议事大殿：执法长老主张割让南麓灵矿求全，丹鼎峰一脉暗中与魔道世家往来，而你的修为正卡在筑基大圆满的破境关隘。',
+            player_name: meta.seed.playerName.trim() || '沈青崖',
+            player_concept:
+              meta.seed.playerConcept.trim() || '临危受命的青云少掌门，剑道奇才但根基曾受暗伤，誓要修复护山大阵并冲破金丹大道',
+            modules: ['progression', 'domain', 'combat', 'dice', 'market', 'bonds', 'calendar', 'reputation'],
+          },
+          suggestions: ['改成皇权与修真结合的仙朝女帝', '增加一位退婚或叛宗的宿敌角色', '加入秘境探索与拍卖会暗线'],
+        },
+      };
+    }
+    if (isSpy) {
+      return {
+        architect: {
+          reply:
+            '为你拟好了「锦衣暗夜 · 京畿迷案」剧本：主打密探渗透、黑料把柄收集与线索推演。你可以继续微调案件背景或主角官职。',
+          blueprint: {
+            title: '风雪诏狱 · 半页盐账',
+            premise:
+              '腊月廿四夜，大雪封锁京城九门。掌管两淮盐引勘合的户部侍郎死于反锁的书房之中，炭盆里留着半页未烧尽的密账，隐约可见内阁次辅与镇南藩王的私印。\n\n天子震怒，密召你入宫赐下行事铜牌，命你在元宵灯会大朝会之前查明真凶、起获完整黑账。然而北镇抚司内部亦有内鬼潜伏，每一步侦缉都可能打草惊蛇。',
+            player_name: meta.seed.playerName.trim() || '陆沉舟',
+            player_concept:
+              meta.seed.playerConcept.trim() || '北镇抚司新晋千户，外冷内刚，精于易容刺探与卷宗推演，手握天子密旨独行暗夜',
+            modules: ['espionage', 'clues', 'combat', 'dice', 'reputation', 'clocks', 'bonds', 'calendar'],
+          },
+          suggestions: ['把主角改成微服查案的皇子', '加入江湖刺客组织介入', '增加朝堂百官派系面板'],
+        },
+      };
+    }
+    return {
+      architect: {
+        reply:
+          '为你起草了「新帝亲政 · 九重惊雷」朝堂帝王剧本，已自动搭配百官朝堂、后宫皇嗣、京畿营造与皇城司密探等核心系统。你想侧重变法强国、权谋党争，还是边关征伐？告诉我即可继续打磨。',
+        blueprint: {
+          title: '九重惊雷 · 新帝亲政',
+          premise:
+            '大乾永宁元年冬，先帝狩猎暴崩，留下一座暗流汹涌的万里江山：国库岁入因江南豪强隐田而捉襟见肘，内阁清流党与开国勋贵集团在廷议上水火不容，慈宁宫太后仍握着半枚调兵凤印，而北境雁门关八百里加急刚刚抵京。\n\n五更景阳钟响，百官鱼贯步入白雪覆顶的太和殿。你身披十二章玄金龙袍初登宝座，御案上摆着三份烫手奏折，而暗掌皇城司的心腹指挥使已在殿外廊下候旨。',
+          player_name: meta.seed.playerName.trim() || '萧景琰',
+          player_concept:
+            meta.seed.playerConcept.trim() || '年方十九的新登基天子，表面宽仁谦冲，实则城府深沉，决意借清丈新政与密探暗网重掌乾纲',
+          modules: ['court', 'lineage', 'domain', 'espionage', 'bonds', 'calendar', 'reputation', 'clocks'],
+        },
+        suggestions: ['改成国库枯竭的末世翻盘高难局', '加入修真国运与灵脉设定', '细化后宫三大家族妃嫔与立储暗线'],
+      },
+    };
+  }
+
+  if (refining) {
+    const note = meta.playerText.trim();
+    return {
+      architect: {
+        reply: `Updated the scenario blueprint to weave in your note ("${note}"). Feel free to keep refining factions, tone, or your protagonist, or start the game directly.`,
+        blueprint: {
+          title: 'Crown & Tempest · Custom Scenario',
+          premise: `${meta.seed.premise.trim()}\n\nNew complication: ${note}. Every faction at court watches your opening move.`,
+          player_name: meta.seed.playerName.trim() || 'Aurelian Vale',
+          player_concept: meta.seed.playerConcept.trim() || 'A calculating sovereign holding a hidden ace',
+          modules: ['court', 'lineage', 'domain', 'espionage', 'bonds', 'calendar', 'clocks'],
+        },
+        suggestions: ['Add a rival warlord on the northern march', 'Raise the opening crisis stakes', 'Adjust protagonist background'],
+      },
+    };
+  }
+
+  return {
+    architect: {
+      reply:
+        'I drafted an imperial statecraft scenario — "Thunder in the Nine Courts" — pairing Court & Ministers, Lineage, Domain Construction, and Espionage. Tell me if you want more fantasy elements, a harsher crisis, or a different protagonist angle!',
+      blueprint: {
+        title: 'Thunder in the Nine Courts',
+        premise:
+          'Winter of the first year of a fragile reign. The late Emperor died suddenly on the autumn hunt, leaving an exhausted treasury, an administration split between reformist scholars and entrenched martial dukes, a Dowager Regent reluctant to yield the Privy Seal, and urgent beacon-fire dispatches arriving from the northern pass.\n\nDawn bells echo across snow-draped marble courtyards as ministers assemble in the Grand Hall. Three explosive memorials wait on your desk, while your secret-service commander lingers in the side gallery awaiting your quiet nod.',
+        player_name: meta.seed.playerName.trim() || 'Aurelian Vale',
+        player_concept:
+          meta.seed.playerConcept.trim() || 'A nineteen-year-old newly crowned monarch—composed in public, razor-sharp in private, determined to reclaim full imperial authority',
+        modules: ['court', 'lineage', 'domain', 'espionage', 'bonds', 'calendar', 'reputation', 'clocks'],
+      },
+      suggestions: ['Blend in immortal cultivation & dragon veins', 'Make it a desperate late-dynasty survival start', 'Add an inner-court succession intrigue'],
+    },
+  };
+}
+
 class MockConversation implements Conversation {
   private readonly meta: TurnMeta;
   private readonly delayMs: number;
@@ -855,6 +969,8 @@ class MockConversation implements Conversation {
         return this.act(script, first);
       case 'summary':
         return {};
+      case 'architect':
+        return first ? draftScenario(this.meta) : {};
     }
   }
 
@@ -908,13 +1024,16 @@ class MockConversation implements Conversation {
     if (step.fight) calls.push({ name: 'fight', input: step.fight });
     if (step.simulate) calls.push({ name: 'simulate', input: step.simulate });
     if (step.respond) calls.push({ name: 'respond', input: step.respond });
+    if (step.architect) calls.push({ name: 'propose_scenario', input: step.architect });
     if (step.text) calls.push({ name: 'narrate', input: { text: step.text } });
     if (step.record) calls.push({ name: 'record', input: step.record });
     const toolCalls = calls.map((call, i) => ({ id: `mock_${index}_${i}`, ...call }));
 
     // Stream what the player reads the way a real model does: as fragments of
     // the tool call's JSON input, a few characters at a time.
-    const spoken = toolCalls.find((call) => call.name === 'narrate' || call.name === 'respond');
+    const spoken = toolCalls.find(
+      (call) => call.name === 'narrate' || call.name === 'respond' || call.name === 'propose_scenario',
+    );
     if (spoken) {
       const json = JSON.stringify(spoken.input);
       for (let i = 0; i < json.length; i += 5) {

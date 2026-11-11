@@ -1,5 +1,6 @@
 import type { ModuleId, ModuleLibraryEntry } from './modules';
 import type { ImageMessage, Message, Session } from './session';
+import type { Effort, ProviderKind } from './settings';
 import type { Locale, WorldState } from './world';
 
 /**
@@ -183,3 +184,45 @@ export type TurnEvent =
   | { type: 'world'; world: WorldState }
   | { type: 'done'; turn: number; usage: TokenUsage; modules: ModuleId[] }
   | { type: 'error'; error: ApiError; kept: boolean };
+
+/** Structured opening scenario blueprint co-created with the AI Scenario Architect. */
+export interface ScenarioBlueprint {
+  title: string;
+  premise: string;
+  playerName: string;
+  playerConcept: string;
+  /** Recommended module IDs for this scenario. */
+  modules: ModuleId[];
+}
+
+export interface ScenarioChatMessage {
+  role: 'user' | 'assistant';
+  text: string;
+}
+
+export interface ScenarioArchitectRequest {
+  language: Locale;
+  messages: ScenarioChatMessage[];
+  /** Current draft on the new-game form so the AI can refine incrementally. */
+  currentDraft?: Partial<ScenarioBlueprint>;
+  /** Modules the player currently subscribes to, so recommendations match what can be played. */
+  availableModules?: ModuleId[];
+  /** Optional model override for this co-creation request. */
+  modelOverride?: {
+    provider: ProviderKind;
+    model?: string;
+    effort?: Effort | null;
+  };
+}
+
+export type ScenarioStreamEvent =
+  | { type: 'reply_delta'; text: string }
+  | { type: 'reply_reset' }
+  | {
+      type: 'done';
+      reply: string;
+      blueprint: ScenarioBlueprint | null;
+      suggestions: string[];
+      usage: TokenUsage;
+    }
+  | { type: 'error'; error: ApiError };

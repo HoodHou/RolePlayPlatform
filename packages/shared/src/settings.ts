@@ -65,6 +65,90 @@ export const IMAGE_MODEL_PRESETS: Record<ImageProviderKind, readonly string[]> =
   custom: [DEFAULT_IMAGE_MODEL, DEFAULT_GEMINI_IMAGE_MODEL, 'gemini-3-pro-image'],
 };
 
+export type ModelBadgeKind = 'new' | 'fast' | 'reasoning' | 'demo';
+
+export interface ChatModelPreset {
+  provider: ConnectionKind;
+  model: string;
+  label: string;
+  badge?: ModelBadgeKind;
+  defaultEffort?: Effort;
+}
+
+/** Curated flagship and fast chat models per connection for one-click switching. */
+export const CHAT_MODEL_PRESETS: Record<ConnectionKind, readonly ChatModelPreset[]> = {
+  gemini: [
+    { provider: 'gemini', model: 'gemini-4-carbon', label: 'Gemini 4 Carbon', badge: 'new', defaultEffort: 'high' },
+    { provider: 'gemini', model: 'gemini-4-argon', label: 'Gemini 4 Argon', badge: 'new', defaultEffort: 'medium' },
+    { provider: 'gemini', model: DEFAULT_GEMINI_MODEL, label: 'Gemini 3.8 Flash', badge: 'fast', defaultEffort: 'medium' },
+    { provider: 'gemini', model: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', badge: 'reasoning' },
+    { provider: 'gemini', model: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', badge: 'fast' },
+  ],
+  anthropic: [
+    { provider: 'anthropic', model: DEFAULT_ANTHROPIC_MODEL, label: 'Claude Opus 5.5', badge: 'new', defaultEffort: 'medium' },
+    { provider: 'anthropic', model: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', badge: 'new', defaultEffort: 'medium' },
+    { provider: 'anthropic', model: 'claude-opus-4-6', label: 'Claude Opus 4.6', badge: 'reasoning' },
+    { provider: 'anthropic', model: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', badge: 'fast' },
+    { provider: 'anthropic', model: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', badge: 'fast' },
+  ],
+  openai: [
+    { provider: 'openai', model: DEFAULT_OPENAI_MODEL, label: 'GPT-6.1 Sol', badge: 'new', defaultEffort: 'medium' },
+    { provider: 'openai', model: 'gpt-5.4', label: 'GPT-5.4', badge: 'reasoning' },
+    { provider: 'openai', model: 'gpt-5.4-mini', label: 'GPT-5.4 Mini', badge: 'fast' },
+    { provider: 'openai', model: 'o4-mini', label: 'o4-mini', badge: 'reasoning' },
+  ],
+  custom: [
+    { provider: 'custom', model: 'deepseek-chat', label: 'DeepSeek V3', badge: 'fast' },
+    { provider: 'custom', model: 'deepseek-reasoner', label: 'DeepSeek R1', badge: 'reasoning' },
+  ],
+};
+
+/** Turns a raw model ID into a clean human-readable label when it matches a known preset or naming pattern. */
+export function formatModelDisplayName(provider: ProviderKind, model: string): string {
+  if (provider === 'mock') return 'Demo (Offline)';
+  const trimmed = model.trim();
+  if (!trimmed) {
+    const def = CONNECTION_DEFAULTS[provider].model;
+    return def ? formatModelDisplayName(provider, def) : provider;
+  }
+  for (const list of Object.values(CHAT_MODEL_PRESETS)) {
+    const hit = list.find((preset) => preset.model === trimmed);
+    if (hit) return hit.label;
+  }
+  // Strip trailing date stamps like -20250514 for cleaner pill display.
+  const withoutDate = trimmed.replace(/-\d{8}$/, '');
+  if (/^claude-/i.test(withoutDate)) {
+    // e.g. claude-opus-5-5 -> Claude Opus 5.5
+    const parts = withoutDate.split('-');
+    const words: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i]!;
+      const next = parts[i + 1];
+      if (/^\d+$/.test(part) && next && /^\d+$/.test(next)) {
+        words.push(`${part}.${next}`);
+        i++;
+      } else {
+        words.push(part.charAt(0).toUpperCase() + part.slice(1));
+      }
+    }
+    return words.join(' ');
+  }
+  if (/^gemini-/i.test(withoutDate)) {
+    return withoutDate
+      .split('-')
+      .map((part) => (/^\d/.test(part) ? part : part.charAt(0).toUpperCase() + part.slice(1)))
+      .join(' ');
+  }
+  if (/^gpt-/i.test(withoutDate)) {
+    const rest = withoutDate.slice(4);
+    return `GPT-${rest
+      .split('-')
+      .map((p, idx) => (idx === 0 ? p.toUpperCase() : p.charAt(0).toUpperCase() + p.slice(1)))
+      .join(' ')}`;
+  }
+  return trimmed;
+}
+
 /** Normalizes a Gemini base URL to the `v1beta` root, stripping any trailing `/openai` path. */
 export function geminiImageBaseUrl(url: string): string {
   return url.trim().replace(/\/+$/, '').replace(/\/openai$/i, '');

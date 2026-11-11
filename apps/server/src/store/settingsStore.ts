@@ -265,6 +265,25 @@ export function resolveRole(settings: ResolvedSettings, role: 'gameMaster' | 'ac
   return { provider: actor.provider, model: actor.model || connectionModel(actor.provider), effort: actor.effort };
 }
 
+/** Applies an optional one-off Game Master model/effort override onto resolved settings. */
+export function withGameMasterOverride(
+  settings: ResolvedSettings,
+  override?: { provider: ProviderKind; model?: string; effort?: Effort | null },
+): ResolvedSettings {
+  if (!override) return settings;
+  return {
+    ...settings,
+    gameMaster: {
+      provider: override.provider,
+      model: override.model?.trim() ?? '',
+      effort:
+        override.effort !== undefined
+          ? supportedEffort(override.provider, override.effort)
+          : supportedEffort(override.provider, settings.gameMaster.effort),
+    },
+  };
+}
+
 export function toPublicSettings(settings: ResolvedSettings): PublicSettings {
   const withoutKey = <T extends ResolvedKey>({ apiKey: _, ...rest }: T) => rest;
   return {

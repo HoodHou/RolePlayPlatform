@@ -6,9 +6,10 @@ import { Icon } from '../Icon';
 import { Modal } from '../Modal';
 import { SettingsForm } from './SettingsForm';
 
-export function SettingsDialog() {
+export function SettingsDialog({ onClose }: { onClose?: () => void } = {}) {
   const { t } = useTranslation();
-  const close = useUi((s) => s.closeDialog);
+  const storeClose = useUi((s) => s.closeDialog);
+  const close = onClose ?? storeClose;
   const settings = useSettings((s) => s.settings);
   const status = useSettings((s) => s.status);
   const load = useSettings((s) => s.load);

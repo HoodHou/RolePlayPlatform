@@ -37,7 +37,7 @@ export interface TurnMeta {
    * answering the player for themselves. `referee` is the game master ruling
    * on what that character then does.
    */
-  kind: 'start' | 'action' | 'talk' | 'referee' | 'summary';
+  kind: 'start' | 'action' | 'talk' | 'referee' | 'summary' | 'architect';
   turn: number;
   playerText: string;
   seed: NewGameSeed;

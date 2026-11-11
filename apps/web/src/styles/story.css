@@ -2014,11 +2014,391 @@ button.illustration__frame:hover {
   }
 }
 
-/* Pulled left by its padding so the icon lines up with the composer's text. */
+/* Quick Model Switcher pill + upward floating popover (shared by ComposerArea & AI Scenario Architect). */
+.model-picker-pop {
+  position: relative;
+  flex: none;
+}
+
+.model-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.36rem;
+  max-width: 16rem;
+  padding: 0.24rem 0.62rem 0.24rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 55%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 6%, var(--bg-panel));
+  color: var(--text-soft);
+  font-size: 0.76rem;
+  line-height: 1.35;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.model-pill:hover:not(:disabled),
+.model-pill[aria-expanded='true'] {
+  border-color: var(--border-strong);
+  background: color-mix(in srgb, var(--text) 10%, var(--bg-panel));
+  color: var(--text);
+}
+
+.model-pill:disabled {
+  opacity: 0.5;
+}
+
+.model-pill__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 560;
+}
+
+.model-pill__effort {
+  flex: none;
+  color: var(--text-muted);
+  font-weight: 450;
+}
+
+.model-pill__chevron {
+  flex: none;
+  color: var(--text-muted);
+  transform: rotate(180deg);
+  transition: transform 0.16s ease;
+}
+
+.model-pill[aria-expanded='true'] .model-pill__chevron {
+  transform: rotate(0deg);
+}
+
+.model-popover {
+  position: absolute;
+  bottom: calc(100% + 0.48rem);
+  left: 0;
+  z-index: 30;
+  width: min(21rem, calc(100vw - 1.75rem));
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-lg);
+  animation: dialog-in 0.15s ease-out;
+}
+
+.model-picker-pop.is-right .model-popover {
+  left: auto;
+  right: 0;
+}
+
+.model-popover__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.65rem 0.85rem 0.3rem;
+}
+
+.model-popover__title {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.model-popover__refresh {
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-faint);
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.model-popover__refresh:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-soft);
+}
+
+.model-popover__refresh.is-spinning svg {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.model-popover__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  max-height: min(19rem, calc(100dvh - 14rem));
+  padding: 0.15rem 0.35rem 0.35rem;
+  overflow-y: auto;
+}
+
+.model-row {
+  border-radius: 8px;
+}
+
+.model-row__main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  border-radius: 8px;
+  transition: background-color 0.12s;
+}
+
+.model-row__main:hover {
+  background: var(--bg-hover);
+}
+
+.model-row.is-active .model-row__main {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.model-row__select {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.42rem;
+  min-width: 0;
+  padding: 0.44rem 0.35rem 0.44rem 0.55rem;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+
+.model-row__label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 520;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-row.is-active .model-row__label {
+  font-weight: 640;
+}
+
+.model-row__effort {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 0.79rem;
+  font-weight: 450;
+}
+
+.model-row__badge {
+  flex: none;
+  padding: 0.06rem 0.46rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text-soft);
+  font-size: 0.69rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.model-row__badge--fast {
+  background: color-mix(in srgb, var(--good) 14%, transparent);
+  color: var(--good);
+}
+
+.model-row__badge--reasoning {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.model-row__badge--setup {
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  color: var(--text-faint);
+}
+
+.model-row__right {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.1rem;
+  padding-right: 0.3rem;
+}
+
+.model-row__check {
+  display: inline-grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  color: var(--text);
+}
+
+.model-row__more {
+  display: inline-grid;
+  place-items: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-faint);
+  transition:
+    background-color 0.12s,
+    color 0.12s;
+}
+
+.model-row__more:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
+
+.model-row__more svg {
+  transform: rotate(-90deg);
+  transition: transform 0.15s ease;
+}
+
+.model-row__more.is-open {
+  color: var(--accent);
+}
+
+.model-row__more.is-open svg {
+  transform: rotate(0deg);
+}
+
+.model-row__efforts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  padding: 0.2rem 0.55rem 0.48rem;
+}
+
+.effort-chip {
+  padding: 0.16rem 0.52rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-panel);
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  font-weight: 550;
+  transition:
+    background-color 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+
+.effort-chip:hover:not(:disabled) {
+  border-color: var(--accent-line);
+  color: var(--text);
+}
+
+.effort-chip.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.model-popover__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.3rem 0.35rem;
+  border-top: 1px solid var(--border);
+}
+
+.model-popover__action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.44rem 0.55rem;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  font-weight: 520;
+  transition:
+    background-color 0.12s,
+    color 0.12s;
+}
+
+.model-popover__action:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.model-popover__action-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.48rem;
+}
+
+.model-popover__action-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.model-popover__tokens {
+  color: var(--text-faint);
+  font-size: 0.73rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.model-popover__arrow {
+  color: var(--text-faint);
+  transform: rotate(-90deg);
+  transition: transform 0.15s ease;
+}
+
+.model-popover__arrow.is-down {
+  transform: rotate(0deg);
+}
+
+.model-popover__usage {
+  margin: 0.1rem 0.4rem 0.25rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-sunken) 55%, transparent);
+}
+
+.usage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 0.75rem;
+  font-size: 0.74rem;
+}
+
+.usage-grid dt {
+  color: var(--text-faint);
+}
+
+.usage-grid dd {
+  margin-top: 0.05rem;
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.model-popover__usage-empty {
+  color: var(--text-faint);
+  font-size: 0.75rem;
+}
+
 .modules {
   position: relative;
   min-width: 0;
-  margin-left: -0.45rem;
 }
 
 .modules__button {

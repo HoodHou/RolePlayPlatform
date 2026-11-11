@@ -43,6 +43,8 @@ export interface LibraryView {
 
 interface UiState {
   dialog: DialogKind | null;
+  /** Stacks Settings on top of New Game so the player can configure a key without losing their scenario chat. */
+  settingsOverlay: boolean;
   drawer: DrawerKind | null;
   lightbox: LightboxImage | null;
   /** Character id currently open in the full portrait & dossier modal. */
@@ -54,6 +56,7 @@ interface UiState {
   showSecrets: boolean;
   openDialog: (dialog: DialogKind) => void;
   closeDialog: () => void;
+  closeSettingsOverlay: () => void;
   openDrawer: (drawer: DrawerKind) => void;
   closeDrawer: () => void;
   openLightbox: (image: LightboxImage) => void;
@@ -68,6 +71,7 @@ interface UiState {
 
 export const useUi = create<UiState>()((set) => ({
   dialog: null,
+  settingsOverlay: false,
   drawer: null,
   lightbox: null,
   dossierCharacterId: null,
@@ -75,8 +79,15 @@ export const useUi = create<UiState>()((set) => ({
   worldTab: null,
   showSecrets: false,
   // A dialog opened from inside a drawer replaces it rather than stacking on top.
-  openDialog: (dialog) => set({ dialog, drawer: null, dossierCharacterId: null }),
-  closeDialog: () => set({ dialog: null }),
+  // Opening settings while `newGame` is open stacks on top so scenario drafts/chats are preserved.
+  openDialog: (dialog) =>
+    set((s) =>
+      dialog === 'settings' && s.dialog === 'newGame'
+        ? { settingsOverlay: true, drawer: null, dossierCharacterId: null }
+        : { dialog, settingsOverlay: false, drawer: null, dossierCharacterId: null },
+    ),
+  closeDialog: () => set({ dialog: null, settingsOverlay: false }),
+  closeSettingsOverlay: () => set({ settingsOverlay: false }),
   openDrawer: (drawer) => set({ drawer }),
   closeDrawer: () => set({ drawer: null }),
   // The lightbox may stack on a drawer or dossier modal; closing it returns there.
