@@ -544,9 +544,16 @@ export function createApp(deps: AppDeps): Hono {
           onBackgroundPicture: painter ? (settled) => applySettledPicture(id, settled) : undefined,
         });
         if (outcome.committed) {
-          recordSessionUsage(session, outcome.usage);
-          recordSnapshot(session);
-          await sessions.save(session);
+          await enqueueSessionTask(id, async () => {
+            activeTurns.delete(id);
+            recordSessionUsage(session, outcome.usage);
+            recordSnapshot(session);
+            await sessions.save(session);
+          });
+        } else {
+          await enqueueSessionTask(id, async () => {
+            activeTurns.delete(id);
+          });
         }
         emit(
           outcome.error
