@@ -374,7 +374,22 @@ export function compilePluginManifest(rawManifest: unknown): CompiledPlugin {
     keptWhenUnused: manifest.keptWhenUnused ?? true,
     hasPanel: Boolean(manifest.record),
     tools,
-    ...(record ? { record } : {}),
+    ...(record
+      ? {
+          record,
+          operate(world: WorldState, op: string, params: Record<string, unknown>, ctx) {
+            if (op === 'update_entry') {
+              const errors: EntryError[] = [];
+              const events = record.apply(world, [params], errors, ctx);
+              if (errors.length > 0) throw new WorldOpError(errors.map((e) => e.problem).join('; '));
+              const entryId = typeof params.id === 'string' ? params.id : '';
+              const label = world.modules.custom?.[manifest.id]?.entries[entryId]?.name ?? entryId;
+              return { events, summary: `${manifest.name.zh || manifest.name.en}：更新 ${label}` };
+            }
+            throw new WorldOpError(`Unknown plugin operation "${op}".`);
+          },
+        }
+      : {}),
     guide: {
       en: `## ${manifest.name.en}\n\n${manifest.guide.en}`,
       zh: `## ${manifest.name.zh}\n\n${manifest.guide.zh}`,

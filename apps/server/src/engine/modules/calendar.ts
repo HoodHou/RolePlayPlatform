@@ -380,6 +380,19 @@ const zh = `## 日历
 
 叙述里自己跳过一段时间时（“三年后”），改用 calendar.now 把时钟往前拨：跳过的时间里到期的事同样会到期，下一回合你会在世界状态里看到它们标为 due。`;
 
+function viewCalendarForGM(world: WorldState): unknown {
+  const calendar = world.modules.calendar;
+  if (!calendar) return undefined;
+  const activeSchedule = Object.fromEntries(
+    Object.entries(calendar.schedule).filter(([, entry]) => entry.status === 'pending' || entry.status === 'due'),
+  );
+  return {
+    day: calendar.day,
+    hour: calendar.hour,
+    schedule: activeSchedule,
+  };
+}
+
 export const calendarModule: GameModule = {
   id: 'calendar',
   // A clock and a short list: cheap to carry, and any story can come to a deadline.
@@ -398,4 +411,5 @@ export const calendarModule: GameModule = {
   ],
   record: { schema: calendarSection, apply: applyCalendar },
   guide: { en, zh },
+  viewForGM: viewCalendarForGM,
 };

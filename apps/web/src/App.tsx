@@ -1,18 +1,27 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Lightbox } from './components/Lightbox';
 import { Modal } from './components/Modal';
-import { NewGameDialog } from './components/dialogs/NewGameDialog';
-import { SettingsDialog } from './components/dialogs/SettingsDialog';
-import { ModuleLibrary } from './components/library/ModuleLibrary';
 import { Sidebar } from './components/sidebar/Sidebar';
 import { StoryView } from './components/story/StoryView';
-import { CharacterDossierModal } from './components/world/CharacterDossierModal';
 import { WorldPanel } from './components/world/WorldPanel';
 import { NARROW_QUERY, useMediaQuery } from './lib/useMediaQuery';
 import { useGame } from './store/game';
 import { useSettings } from './store/settings';
 import { useUi } from './store/ui';
+
+const NewGameDialog = lazy(() =>
+  import('./components/dialogs/NewGameDialog').then((m) => ({ default: m.NewGameDialog })),
+);
+const SettingsDialog = lazy(() =>
+  import('./components/dialogs/SettingsDialog').then((m) => ({ default: m.SettingsDialog })),
+);
+const ModuleLibrary = lazy(() =>
+  import('./components/library/ModuleLibrary').then((m) => ({ default: m.ModuleLibrary })),
+);
+const CharacterDossierModal = lazy(() =>
+  import('./components/world/CharacterDossierModal').then((m) => ({ default: m.CharacterDossierModal })),
+);
 
 export function App() {
   const { t } = useTranslation();
@@ -23,6 +32,8 @@ export function App() {
   const drawer = useUi((s) => s.drawer);
   const lightbox = useUi((s) => s.lightbox);
   const library = useUi((s) => s.library !== null);
+  const dossierOpen = useUi((s) => s.dossierCharacterId !== null);
+  const workspaceExpanded = useUi((s) => s.workspaceExpanded);
   const closeDrawer = useUi((s) => s.closeDrawer);
 
   useEffect(() => {
@@ -36,7 +47,7 @@ export function App() {
   }, [narrow, closeDrawer]);
 
   return (
-    <div className="app">
+    <div className={!narrow && workspaceExpanded ? 'app app--workspace' : 'app'}>
       {!narrow && (
         <aside className="app__sidebar">
           <Sidebar />
@@ -62,12 +73,14 @@ export function App() {
         </Modal>
       )}
 
-      {dialog === 'newGame' && <NewGameDialog />}
-      {dialog === 'settings' && <SettingsDialog />}
-      {dialog === 'newGame' && settingsOverlay && <SettingsDialog onClose={closeSettingsOverlay} />}
-      {/* After the dialogs, so it opens on top of the one it was opened from. */}
-      {library && <ModuleLibrary />}
-      <CharacterDossierModal />
+      <Suspense fallback={null}>
+        {dialog === 'newGame' && <NewGameDialog />}
+        {dialog === 'settings' && <SettingsDialog />}
+        {dialog === 'newGame' && settingsOverlay && <SettingsDialog onClose={closeSettingsOverlay} />}
+        {/* After the dialogs, so it opens on top of the one it was opened from. */}
+        {library && <ModuleLibrary />}
+        {dossierOpen && <CharacterDossierModal />}
+      </Suspense>
       {lightbox && <Lightbox key={lightbox.url} image={lightbox} />}
     </div>
   );

@@ -102,8 +102,8 @@ const MODULE_DESCRIPTIONS: Record<string, { en: string; zh: string }> = {
     zh: 'bonds — 人物关系好感羁绊（-100 至 +100 与亲疏阶段）。',
   },
   sandbox: {
-    en: 'sandbox — Strategic faction map with territories, resources, diplomacy, and wars.',
-    zh: 'sandbox — 天下势力沙盘（疆域版图、兵力钱粮、邦交与战事推演）。',
+    en: 'sandbox — 2D strategic map with fortified passes, garrisons, stationed commanders, stability, treasuries, diplomacy, and campaigns.',
+    zh: 'sandbox — 二维战略舆图沙盘（雄关州镇、驻军调防、守将委任、城防民生、钱粮军资与攻伐邦交）。',
   },
   market: {
     en: 'market — Shops, wares, currency balance, and 2d6 haggling.',
@@ -143,7 +143,7 @@ function buildSystemPrompt(locale: Locale, available: readonly ModuleId[]): stri
    - \`premise\`：详实生动的开局设定（2～4 段）：包含世界观时代背景、核心矛盾与各方派系/关键登场人物（写明一两位核心臣属或对手的名号与立场，方便游戏开始后主持人直接立档）、美术氛围基调，以及**具体的第一幕开场瞬间**。若玩家此前已有草稿（见 <current_draft>），请在其基础上精准增删打磨，保留玩家满意的设定。
    - \`player_name\`：贴合题材的主角姓名（若玩家已起名则优先沿用）。
    - \`player_concept\`：鲜明立体的主角身份、处境、性格特质与手中底牌/隐患。
-   - \`modules\`：从下方 <available_modules> 中精选最契合本剧本的 4～9 个系统模块 ID（例如皇帝/权谋局优先搭配 court, lineage, domain, espionage, bonds, calendar, reputation, clocks；修仙宗门搭配 progression, domain, combat, dice, market, bonds 等）。
+   - \`modules\`：从下方 <available_modules> 中精选最契合本剧本的 4～9 个系统模块 ID（例如皇帝/王朝军国局优先搭配 court, sandbox, lineage, domain, espionage, bonds, calendar, clocks；修仙宗门搭配 progression, domain, combat, dice, market, bonds 等）。
 3. \`suggestions\`：提供 3 条简短具体的一键追问/微调指令（每条 8～18 字，如「加入手握重兵的摄政皇叔」「融合修真国运与灵脉体系」「调高开局财政与边关危机」）。
 
 <available_modules>

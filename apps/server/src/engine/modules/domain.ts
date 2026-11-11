@@ -372,6 +372,61 @@ const zh = `## 领地营造与驻守委派
 
 当推进一轮领地营造或督办工程结算时，先调用 develop_domain 再叙述。服务端会结合驻守 NPC 的能力投掷 d20，自动推进工期进度（满格时完工升级为 operational）并结算各项资源的周期收支。`;
 
+const assignStewardOpSchema = z.strictObject({
+  facility_id: id,
+  steward_id: id.nullable(),
+});
+
+const setFacilityStatusOpSchema = z.strictObject({
+  facility_id: id,
+  status: z.enum(FACILITY_STATUSES),
+  progress: z.number().int().min(0).max(20).optional(),
+});
+
+function operateDomain(
+  world: WorldState,
+  op: string,
+  params: Record<string, unknown>,
+): { events: WorldEvent[]; summary: string } {
+  const state = ensureDomain(world);
+
+  if (op === 'assign_steward') {
+    const parsed = assignStewardOpSchema.safeParse(params);
+    if (!parsed.success) throw new WorldOpError(z.prettifyError(parsed.error));
+    const facility = state.facilities[parsed.data.facility_id];
+    if (!facility) throw new WorldOpError(`There is no facility with id "${parsed.data.facility_id}".`);
+    const events = upsertFacility(world, state, {
+      id: parsed.data.facility_id,
+      steward_id: parsed.data.steward_id,
+    });
+    const stewardName = parsed.data.steward_id
+      ? (world.characters[parsed.data.steward_id]?.name ?? parsed.data.steward_id)
+      : '解除驻守';
+    return { events, summary: `【${facility.name}】驻守委派：${stewardName}` };
+  }
+
+  if (op === 'set_facility_status') {
+    const parsed = setFacilityStatusOpSchema.safeParse(params);
+    if (!parsed.success) throw new WorldOpError(z.prettifyError(parsed.error));
+    const facility = state.facilities[parsed.data.facility_id];
+    if (!facility) throw new WorldOpError(`There is no facility with id "${parsed.data.facility_id}".`);
+    const events = upsertFacility(world, state, {
+      id: parsed.data.facility_id,
+      status: parsed.data.status,
+      ...(parsed.data.progress !== undefined
+        ? { progress: parsed.data.progress }
+        : parsed.data.status === 'building'
+          ? { progress: 0 }
+          : {}),
+    });
+    const label =
+      parsed.data.status === 'building' ? '兴工扩建' : parsed.data.status === 'operational' ? '恢复运转' : '受损待修';
+    return { events, summary: `【${facility.name}】工程状态：${label}` };
+  }
+
+  throw new WorldOpError(`Unknown domain operation "${op}".`);
+}
+
 export const domainModule: GameModule = {
   id: 'domain',
   keptWhenUnused: false,
@@ -390,4 +445,5 @@ export const domainModule: GameModule = {
   record: { schema: domainSection, apply: applyDomain },
   guide: { en, zh },
   shownToCharacter: { tag: 'domain_post', of: domainPostView },
+  operate: operateDomain,
 };

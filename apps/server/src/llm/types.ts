@@ -56,6 +56,8 @@ export interface ConversationInit {
   prompt: string;
   tools: ToolSpec[];
   meta: TurnMeta;
+  /** Optional stable routing key to maximize provider-side prompt prefix cache hits. */
+  cacheKey?: string;
 }
 
 export type StopReason = 'end' | 'tool_use' | 'max_tokens' | 'refusal';

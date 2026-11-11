@@ -2,8 +2,11 @@ import type { DomainFacility, WorldState } from '@roleplay/shared';
 import { useTranslation } from 'react-i18next';
 import { languageTag, useLocale } from '../../i18n';
 import { formatNumber, formatSigned } from '../../lib/text';
+import { npcsOf } from '../../lib/world';
+import { useGame } from '../../store/game';
 import { useUi } from '../../store/ui';
 import { CharacterAvatar } from '../CharacterAvatar';
+import { ModuleOpButtons, useCanOperateModule } from './ModuleOpControls';
 
 export function hasDomainContent(world: WorldState): boolean {
   const domain = world.modules?.domain;
@@ -24,7 +27,10 @@ function FacilityCard({
 }) {
   const { t } = useTranslation();
   const openDossier = useUi((s) => s.openDossier);
+  const executeDirective = useGame((s) => s.executeDirective);
+  const canOperate = useCanOperateModule();
   const steward = facility.stewardId ? world.characters[facility.stewardId] : undefined;
+  const npcs = npcsOf(world);
 
   const statusTag =
     facility.status === 'operational'
@@ -97,6 +103,57 @@ function FacilityCard({
         ) : (
           <span className="muted">{t('world.domain.unassigned')}</span>
         )}
+        {npcs.length > 0 && (
+          <select
+            className="op-select op-select--inline"
+            aria-label={t('world.domain.ops.assignSteward')}
+            value={facility.stewardId ?? ''}
+            disabled={!canOperate}
+            onChange={(e) => {
+              const nextId = e.target.value || null;
+              void executeDirective({
+                moduleId: 'domain',
+                op: 'assign_steward',
+                params: { facility_id: facility.id, steward_id: nextId },
+                label: `${facility.name} · ${t('world.domain.ops.assignSteward')}`,
+              });
+            }}
+          >
+            <option value="">{t('world.domain.unassigned')}</option>
+            {npcs.map((npc) => (
+              <option key={npc.id} value={npc.id}>
+                {npc.name}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      <div className="card__actions">
+        {facility.status === 'operational' && facility.level < facility.maxLevel && (
+          <ModuleOpButtons
+            directive={{
+              moduleId: 'domain',
+              op: 'set_facility_status',
+              params: { facility_id: facility.id, status: 'building' },
+              label: `${facility.name} · ${t('world.domain.ops.startUpgrade')}`,
+            }}
+            instantLabel={t('world.domain.ops.startUpgrade')}
+            compact
+          />
+        )}
+        {(facility.status === 'building' || facility.status === 'damaged') && (
+          <ModuleOpButtons
+            directive={{
+              moduleId: 'domain',
+              op: 'develop_domain',
+              params: { facility_id: facility.id },
+              label: `${facility.name} · ${t('world.domain.ops.pushWorks')}`,
+            }}
+            instantLabel={t('world.domain.ops.pushWorks')}
+            compact
+          />
+        )}
       </div>
     </li>
   );
@@ -113,29 +170,39 @@ export function DomainTab({ world, lang }: { world: WorldState; lang: string }) 
 
   return (
     <div className="module-tab">
-      {(state.name || state.tier || state.cycles > 0) && (
-        <header className="regime-banner">
-          <div className="regime-banner__main">
-            {state.name && (
-              <h3 className="regime-banner__title" lang={lang}>
-                {state.name}
-              </h3>
-            )}
-            {state.tier && (
-              <span className="tag tag--accent" lang={lang}>
-                {state.tier}
-              </span>
-            )}
-          </div>
-          {(locationName || state.cycles > 0) && (
-            <p className="regime-banner__meta">
-              {locationName && <span lang={lang}>{locationName}</span>}
-              {locationName && state.cycles > 0 && ' · '}
-              {state.cycles > 0 && t('world.domain.cycles', { count: state.cycles })}
-            </p>
+      <header className="regime-banner">
+        <div className="regime-banner__main">
+          {state.name && (
+            <h3 className="regime-banner__title" lang={lang}>
+              {state.name}
+            </h3>
           )}
-        </header>
-      )}
+          {state.tier && (
+            <span className="tag tag--accent" lang={lang}>
+              {state.tier}
+            </span>
+          )}
+          <div className="regime-banner__cta">
+            <ModuleOpButtons
+              directive={{
+                moduleId: 'domain',
+                op: 'develop_domain',
+                params: {},
+                label: t('world.domain.ops.advanceCycle'),
+              }}
+              instantLabel={t('world.domain.ops.advanceCycle')}
+              compact
+            />
+          </div>
+        </div>
+        {(locationName || state.cycles > 0) && (
+          <p className="regime-banner__meta">
+            {locationName && <span lang={lang}>{locationName}</span>}
+            {locationName && state.cycles > 0 && ' · '}
+            {state.cycles > 0 && t('world.domain.cycles', { count: state.cycles })}
+          </p>
+        )}
+      </header>
 
       {state.resources.length > 0 && (
         <section className="world-section">

@@ -1,9 +1,12 @@
 import type {
+  CourtDomain,
   CourtEdict,
   CourtFaction,
   CourtMemorial,
   CourtOfficial,
   CourtState,
+  MemorialStatus,
+  ModuleDirective,
   Session,
   WorldState,
 } from '@roleplay/shared';
@@ -19,6 +22,7 @@ import { useGame } from '../../store/game';
 import { useUi } from '../../store/ui';
 import { CharacterAvatar } from '../CharacterAvatar';
 import { Icon } from '../Icon';
+import { ModuleOpButtons, useCanOperateModule } from './ModuleOpControls';
 
 export function hasCourtContent(world: WorldState): boolean {
   const court = world.modules?.court;
@@ -90,6 +94,12 @@ function OfficialCard({
   const talkable = canTalkTo(world, official.characterId);
   const talking = talkable && talkingTo === official.characterId;
   const faction = official.factionId ? state.factions[official.factionId] : undefined;
+  const canOperate = useCanOperateModule();
+
+  const [editing, setEditing] = useState(false);
+  const [officeInput, setOfficeInput] = useState(official.office);
+  const [dutyInput, setDutyInput] = useState(official.assignment);
+  const [factionInput, setFactionInput] = useState(official.factionId ?? '');
 
   const handleAudience = () => {
     flushSync(() => {
@@ -108,6 +118,28 @@ function OfficialCard({
       closeDrawer();
     });
     focusComposer();
+  };
+
+  const manageDirective: ModuleDirective = {
+    moduleId: 'court',
+    op: 'manage_official',
+    params: {
+      character_id: official.characterId,
+      office: officeInput.trim() || official.office,
+      assignment: dutyInput.trim(),
+      faction_id: factionInput || null,
+    },
+    label: `${name} · ${officeInput.trim() || official.office}`,
+  };
+
+  const dismissDirective: ModuleDirective = {
+    moduleId: 'court',
+    op: 'manage_official',
+    params: {
+      character_id: official.characterId,
+      remove: true,
+    },
+    label: `${t('world.court.ops.dismissOfficial')} · ${name}`,
   };
 
   return (
@@ -180,17 +212,37 @@ function OfficialCard({
         )}
       </div>
 
-      {character && (
-        <div className="card__actions">
+      <div className="card__actions">
+        <div className="card__actions-left">
+          {character && (
+            <button
+              type="button"
+              className="disclosure"
+              onClick={() => openDossier(character.id)}
+            >
+              <Icon name="dossier" size={14} />
+              {t('world.dossier.open')}
+            </button>
+          )}
           <button
             type="button"
             className="disclosure"
-            onClick={() => openDossier(character.id)}
+            aria-expanded={editing}
+            onClick={() => {
+              if (!editing) {
+                setOfficeInput(official.office);
+                setDutyInput(official.assignment);
+                setFactionInput(official.factionId ?? '');
+              }
+              setEditing((v) => !v);
+            }}
           >
-            <Icon name="dossier" size={14} />
-            {t('world.dossier.open')}
+            <Icon name="settings" size={13} />
+            {t('world.court.ops.manageOfficial')}
           </button>
-          {talkable ? (
+        </div>
+        {character &&
+          (talkable ? (
             <button
               type="button"
               className={talking ? 'talk-button is-active' : 'talk-button'}
@@ -204,7 +256,63 @@ function OfficialCard({
               <Icon name="speech" size={14} />
               {t('world.dossier.summon')}
             </button>
+          ))}
+      </div>
+
+      {editing && (
+        <div className="op-drawer">
+          <div className="op-drawer__row">
+            <input
+              type="text"
+              className="op-input"
+              lang={lang}
+              value={officeInput}
+              placeholder={t('world.court.ops.officePlaceholder')}
+              disabled={!canOperate}
+              onChange={(e) => setOfficeInput(e.target.value)}
+            />
+            <input
+              type="text"
+              className="op-input"
+              lang={lang}
+              value={dutyInput}
+              placeholder={t('world.court.ops.dutyPlaceholder')}
+              disabled={!canOperate}
+              onChange={(e) => setDutyInput(e.target.value)}
+            />
+          </div>
+          {Object.keys(state.factions).length > 0 && (
+            <div className="op-drawer__row">
+              <select
+                className="op-select"
+                value={factionInput}
+                disabled={!canOperate}
+                onChange={(e) => setFactionInput(e.target.value)}
+              >
+                <option value="">{t('world.court.ops.none')}</option>
+                {Object.values(state.factions).map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           )}
+          <div className="op-drawer__foot">
+            <ModuleOpButtons
+              directive={manageDirective}
+              instantLabel={t('world.court.ops.applyAppointment')}
+              compact
+              onAfter={() => setEditing(false)}
+            />
+            <ModuleOpButtons
+              directive={dismissDirective}
+              instantLabel={t('world.court.ops.dismissOfficial')}
+              hideStage
+              compact
+              onAfter={() => setEditing(false)}
+            />
+          </div>
         </div>
       )}
     </li>
@@ -225,6 +333,12 @@ function MemorialCard({
   const closeDrawer = useUi((s) => s.closeDrawer);
   const stopTalking = useGame((s) => s.stopTalking);
   const setDraft = useGame((s) => s.setDraft);
+  const canOperate = useCanOperateModule();
+
+  const [rulingOpen, setRulingOpen] = useState(false);
+  const [decision, setDecision] = useState<'approved' | 'rejected' | 'shelved'>('approved');
+  const [rulingText, setRulingText] = useState('');
+  const [issueEdict, setIssueEdict] = useState(false);
 
   const authorChar = memorial.authorId ? session.world.characters[memorial.authorId] : undefined;
   const authorLabel = authorChar?.name || memorial.authorName;
@@ -253,6 +367,26 @@ function MemorialCard({
       closeDrawer();
     });
     focusComposer();
+  };
+
+  const applyPreset = (
+    nextDecision: Exclude<MemorialStatus, 'pending'>,
+    presetText: string,
+  ) => {
+    setDecision(nextDecision);
+    setRulingText(presetText);
+  };
+
+  const ruleDirective: ModuleDirective = {
+    moduleId: 'court',
+    op: 'rule_memorial',
+    params: {
+      id: memorial.id,
+      status: decision,
+      ...(rulingText.trim() ? { ruling: rulingText.trim() } : {}),
+      ...(decision === 'approved' && issueEdict ? { issue_edict: true } : {}),
+    },
+    label: `${t(`world.court.memorialStatus.${decision}`)} · ${memorial.title}`,
   };
 
   return (
@@ -310,12 +444,98 @@ function MemorialCard({
       )}
 
       {memorial.status === 'pending' && (
-        <div className="card__actions">
-          <button type="button" className="talk-button" onClick={handleRule}>
-            <Icon name="book" size={14} />
-            {t('world.court.ruleAction')}
-          </button>
-        </div>
+        <>
+          <div className="card__actions">
+            <button
+              type="button"
+              className={rulingOpen ? 'talk-button is-active' : 'talk-button'}
+              aria-expanded={rulingOpen}
+              onClick={() => setRulingOpen((v) => !v)}
+            >
+              <Icon name="book" size={14} />
+              {t('world.court.ruleAction')}
+            </button>
+            <button type="button" className="disclosure" onClick={handleRule}>
+              <Icon name="speech" size={13} />
+              {t('world.court.ops.draftChat')}
+            </button>
+          </div>
+
+          {rulingOpen && (
+            <div className="op-drawer">
+              <div className="op-drawer__row op-drawer__row--chips">
+                {(['approved', 'rejected', 'shelved'] as const).map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    className="chip-button"
+                    aria-pressed={decision === status}
+                    disabled={!canOperate}
+                    onClick={() => setDecision(status)}
+                  >
+                    {t(`world.court.memorialStatus.${status}`)}
+                  </button>
+                ))}
+              </div>
+              <div className="op-drawer__row op-drawer__row--chips">
+                <button
+                  type="button"
+                  className="chip-button"
+                  disabled={!canOperate}
+                  onClick={() => applyPreset('approved', t('world.court.ops.presetApprove'))}
+                >
+                  {t('world.court.ops.presetApprove')}
+                </button>
+                <button
+                  type="button"
+                  className="chip-button"
+                  disabled={!canOperate}
+                  onClick={() => applyPreset('rejected', t('world.court.ops.presetReject'))}
+                >
+                  {t('world.court.ops.presetReject')}
+                </button>
+                <button
+                  type="button"
+                  className="chip-button"
+                  disabled={!canOperate}
+                  onClick={() => applyPreset('shelved', t('world.court.ops.presetShelve'))}
+                >
+                  {t('world.court.ops.presetShelve')}
+                </button>
+              </div>
+              <div className="op-drawer__row">
+                <input
+                  type="text"
+                  className="op-input"
+                  lang={lang}
+                  value={rulingText}
+                  placeholder={t('world.court.ops.rescriptPlaceholder')}
+                  disabled={!canOperate}
+                  onChange={(e) => setRulingText(e.target.value)}
+                />
+              </div>
+              {decision === 'approved' && (
+                <label className="op-check">
+                  <input
+                    type="checkbox"
+                    checked={issueEdict}
+                    disabled={!canOperate}
+                    onChange={(e) => setIssueEdict(e.target.checked)}
+                  />
+                  <span>{t('world.court.ops.issueEdict')}</span>
+                </label>
+              )}
+              <div className="op-drawer__foot">
+                <ModuleOpButtons
+                  directive={ruleDirective}
+                  instantLabel={t(`world.court.memorialStatus.${decision}`)}
+                  compact
+                  onAfter={() => setRulingOpen(false)}
+                />
+              </div>
+            </div>
+          )}
+        </>
       )}
     </li>
   );
@@ -403,6 +623,16 @@ function FactionCard({
 
 function EdictCard({ edict, lang }: { edict: CourtEdict; lang: string }) {
   const { t } = useTranslation();
+  const toggleDirective: ModuleDirective = {
+    moduleId: 'court',
+    op: 'toggle_edict',
+    params: {
+      id: edict.id,
+      active: !edict.active,
+    },
+    label: `${edict.active ? t('world.court.ops.repealEdict') : t('world.court.ops.enactEdict')} · ${edict.title}`,
+  };
+
   return (
     <li className={edict.active ? 'card is-present' : 'card'}>
       <div className="card__head">
@@ -423,15 +653,43 @@ function EdictCard({ edict, lang }: { edict: CourtEdict; lang: string }) {
           {edict.description}
         </p>
       )}
+      <div className="card__actions">
+        <ModuleOpButtons
+          directive={toggleDirective}
+          instantLabel={edict.active ? t('world.court.ops.repealEdict') : t('world.court.ops.enactEdict')}
+          compact
+        />
+      </div>
     </li>
   );
+}
+
+function nextEdictId(state: CourtState, turn: number): string {
+  let index = Object.keys(state.edicts).length + 1;
+  let candidate = `edict_${turn}_${index}`;
+  while (state.edicts[candidate]) {
+    index += 1;
+    candidate = `edict_${turn}_${index}`;
+  }
+  return candidate;
 }
 
 export function CourtTab({ session, lang }: { session: Session; lang: string }) {
   const { t } = useTranslation();
   const uiTag = languageTag(useLocale());
+  const canOperate = useCanOperateModule();
   const state = session.world.modules?.court;
-  const [section, setSection] = useState<CourtSection>('officials');
+  const [section, setSection] = useState<CourtSection | null>(null);
+
+  const [conveneOpen, setConveneOpen] = useState(false);
+  const [agenda, setAgenda] = useState('');
+  const [domain, setDomain] = useState<CourtDomain>('governance');
+  const [leadOfficialId, setLeadOfficialId] = useState('');
+  const [opposingFactionId, setOpposingFactionId] = useState('');
+
+  const [newEdictOpen, setNewEdictOpen] = useState(false);
+  const [newEdictTitle, setNewEdictTitle] = useState('');
+  const [newEdictEffect, setNewEdictEffect] = useState('');
 
   if (!state) return null;
 
@@ -463,32 +721,146 @@ export function CourtTab({ session, lang }: { session: Session; lang: string }) 
   ];
 
   const activeSection: CourtSection =
-    sections.find((s) => s.id === section && s.count > 0)?.id ??
-    sections.find((s) => s.count > 0)?.id ??
-    'officials';
+    section ?? sections.find((s) => s.count > 0)?.id ?? 'officials';
+
+  const holdCourtDirective: ModuleDirective = {
+    moduleId: 'court',
+    op: 'hold_court',
+    params: {
+      agenda: agenda.trim(),
+      domain,
+      ...(leadOfficialId ? { lead_official_id: leadOfficialId } : {}),
+      ...(opposingFactionId ? { opposing_faction_id: opposingFactionId } : {}),
+    },
+    label: `${t('world.court.ops.conveneBtn')} · ${agenda.trim() || '…'}`,
+  };
+
+  const newEdictDirective: ModuleDirective = {
+    moduleId: 'court',
+    op: 'toggle_edict',
+    params: {
+      id: nextEdictId(state, session.world.turn),
+      title: newEdictTitle.trim(),
+      ...(newEdictEffect.trim() ? { effect: newEdictEffect.trim() } : {}),
+      active: true,
+    },
+    label: `${t('world.court.ops.newEdictBtn')} · ${newEdictTitle.trim() || '…'}`,
+  };
 
   return (
     <div className="module-tab">
-      {(state.regimeName || state.rulerTitle || state.sessionsHeld > 0) && (
-        <header className="regime-banner">
-          <div className="regime-banner__main">
-            {state.regimeName && (
-              <h3 className="regime-banner__title" lang={lang}>
-                {state.regimeName}
-              </h3>
-            )}
-            {state.rulerTitle && (
-              <span className="tag tag--accent" lang={lang}>
-                {state.rulerTitle}
-              </span>
-            )}
-          </div>
-          {state.sessionsHeld > 0 && (
-            <p className="regime-banner__meta">
-              {t('world.court.sessionsHeld', { count: state.sessionsHeld })}
-            </p>
+      <header className="regime-banner">
+        <div className="regime-banner__main">
+          {state.regimeName && (
+            <h3 className="regime-banner__title" lang={lang}>
+              {state.regimeName}
+            </h3>
           )}
-        </header>
+          {state.rulerTitle && (
+            <span className="tag tag--accent" lang={lang}>
+              {state.rulerTitle}
+            </span>
+          )}
+          <button
+            type="button"
+            className="btn btn--small regime-banner__cta"
+            aria-expanded={conveneOpen}
+            onClick={() => setConveneOpen((v) => !v)}
+          >
+            <Icon name="bolt" size={13} />
+            {t('world.court.ops.conveneBtn')}
+          </button>
+        </div>
+        {state.sessionsHeld > 0 && (
+          <p className="regime-banner__meta">
+            {t('world.court.sessionsHeld', { count: state.sessionsHeld })}
+          </p>
+        )}
+      </header>
+
+      {conveneOpen && (
+        <div className="op-drawer">
+          <div className="op-drawer__row">
+            <input
+              type="text"
+              className="op-input"
+              lang={lang}
+              value={agenda}
+              placeholder={t('world.court.ops.agendaPlaceholder')}
+              disabled={!canOperate}
+              onChange={(e) => setAgenda(e.target.value)}
+            />
+          </div>
+          <div className="op-drawer__row op-drawer__row--chips">
+            {(['governance', 'military', 'intrigue'] as const).map((d) => (
+              <button
+                key={d}
+                type="button"
+                className="chip-button"
+                aria-pressed={domain === d}
+                disabled={!canOperate}
+                onClick={() => setDomain(d)}
+              >
+                {t(`world.court.stats.${d}`)}
+              </button>
+            ))}
+          </div>
+          {(officials.length > 0 || factions.length > 0) && (
+            <div className="op-drawer__row">
+              {officials.length > 0 && (
+                <select
+                  className="op-select"
+                  value={leadOfficialId}
+                  aria-label={t('world.court.ops.leadMinister')}
+                  disabled={!canOperate}
+                  onChange={(e) => setLeadOfficialId(e.target.value)}
+                >
+                  <option value="">
+                    {t('world.court.ops.leadMinister')} · {t('world.court.ops.none')}
+                  </option>
+                  {officials.map((o) => {
+                    const name = session.world.characters[o.characterId]?.name ?? o.characterId;
+                    return (
+                      <option key={o.characterId} value={o.characterId}>
+                        {name}（{o.office}）
+                      </option>
+                    );
+                  })}
+                </select>
+              )}
+              {factions.length > 0 && (
+                <select
+                  className="op-select"
+                  value={opposingFactionId}
+                  aria-label={t('world.court.ops.opposingFaction')}
+                  disabled={!canOperate}
+                  onChange={(e) => setOpposingFactionId(e.target.value)}
+                >
+                  <option value="">
+                    {t('world.court.ops.opposingFaction')} · {t('world.court.ops.none')}
+                  </option>
+                  {factions.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+          <div className="op-drawer__foot">
+            <ModuleOpButtons
+              directive={holdCourtDirective}
+              instantLabel={t('world.court.ops.holdNow')}
+              disabled={!agenda.trim()}
+              compact
+              onAfter={() => {
+                setAgenda('');
+                setConveneOpen(false);
+              }}
+            />
+          </div>
+        </div>
       )}
 
       {state.metrics.length > 0 && (
@@ -574,16 +946,71 @@ export function CourtTab({ session, lang }: { session: Session; lang: string }) 
           <p className="tab-empty">{t('world.court.emptyFactions')}</p>
         ))}
 
-      {activeSection === 'edicts' &&
-        (edicts.length > 0 ? (
-          <ul className="cards">
-            {edicts.map((e) => (
-              <EdictCard key={e.id} edict={e} lang={lang} />
-            ))}
-          </ul>
-        ) : (
-          <p className="tab-empty">{t('world.court.emptyEdicts')}</p>
-        ))}
+      {activeSection === 'edicts' && (
+        <>
+          <div className="op-bar">
+            <button
+              type="button"
+              className="btn btn--small"
+              aria-expanded={newEdictOpen}
+              onClick={() => setNewEdictOpen((v) => !v)}
+            >
+              <Icon name="plus" size={13} />
+              {t('world.court.ops.newEdictBtn')}
+            </button>
+          </div>
+
+          {newEdictOpen && (
+            <div className="op-drawer">
+              <div className="op-drawer__row">
+                <input
+                  type="text"
+                  className="op-input"
+                  lang={lang}
+                  value={newEdictTitle}
+                  placeholder={t('world.court.ops.edictTitlePlaceholder')}
+                  disabled={!canOperate}
+                  onChange={(e) => setNewEdictTitle(e.target.value)}
+                />
+              </div>
+              <div className="op-drawer__row">
+                <input
+                  type="text"
+                  className="op-input"
+                  lang={lang}
+                  value={newEdictEffect}
+                  placeholder={t('world.court.ops.edictEffectPlaceholder')}
+                  disabled={!canOperate}
+                  onChange={(e) => setNewEdictEffect(e.target.value)}
+                />
+              </div>
+              <div className="op-drawer__foot">
+                <ModuleOpButtons
+                  directive={newEdictDirective}
+                  instantLabel={t('world.court.ops.newEdictBtn')}
+                  disabled={!newEdictTitle.trim()}
+                  compact
+                  onAfter={() => {
+                    setNewEdictTitle('');
+                    setNewEdictEffect('');
+                    setNewEdictOpen(false);
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {edicts.length > 0 ? (
+            <ul className="cards">
+              {edicts.map((e) => (
+                <EdictCard key={e.id} edict={e} lang={lang} />
+              ))}
+            </ul>
+          ) : (
+            <p className="tab-empty">{t('world.court.emptyEdicts')}</p>
+          )}
+        </>
+      )}
     </div>
   );
 }

@@ -373,6 +373,50 @@ const zh = `## 锦衣密探与情报网
 
 当派遣密探执行刺探（recon）、潜伏渗透（infiltrate）、截获密信（wiretap）、罗织构陷（frame）、策反离间（subvert）或诏狱查抄（raid）时，先调用 run_operation 再叙述结果。服务端会按掌控力与渗透度投掷 d100 结算成败与暴露风险；查获新罪证或把柄时记得写入 dossiers。`;
 
+const setAgentStatusOpSchema = z.strictObject({
+  agent_id: id,
+  status: z.enum(['active', 'recalled']),
+  target_id: id.nullable().optional(),
+  target_name: z.string().optional(),
+  cover: z.string().optional(),
+});
+
+function operateEspionage(
+  world: WorldState,
+  op: string,
+  params: Record<string, unknown>,
+): { events: WorldEvent[]; summary: string } {
+  const state = ensureEspionage(world);
+
+  if (op === 'set_agent_status') {
+    const parsed = setAgentStatusOpSchema.safeParse(params);
+    if (!parsed.success) throw new WorldOpError(z.prettifyError(parsed.error));
+    const existing = state.agents[parsed.data.agent_id];
+    if (!existing) throw new WorldOpError(`There is no spy agent with id "${parsed.data.agent_id}".`);
+
+    // Extracting or rotating an agent cools off part of their exposure heat so they aren't permanently stuck at 10.
+    const nextExposure =
+      parsed.data.status === 'recalled'
+        ? Math.max(0, existing.exposure - 3)
+        : existing.exposure >= 10
+          ? 6
+          : existing.exposure;
+
+    const events = upsertAgent(world, state, {
+      id: parsed.data.agent_id,
+      status: parsed.data.status,
+      exposure: nextExposure,
+      ...(parsed.data.target_id !== undefined ? { target_id: parsed.data.target_id } : {}),
+      ...(parsed.data.target_name !== undefined ? { target_name: parsed.data.target_name } : {}),
+      ...(parsed.data.cover !== undefined ? { cover: parsed.data.cover } : {}),
+    });
+    const label = parsed.data.status === 'recalled' ? '密令撤回休整' : '重新潜伏外派';
+    return { events, summary: `密探【${existing.codename}】${label}` };
+  }
+
+  throw new WorldOpError(`Unknown espionage operation "${op}".`);
+}
+
 export const espionageModule: GameModule = {
   id: 'espionage',
   keptWhenUnused: false,
@@ -390,4 +434,5 @@ export const espionageModule: GameModule = {
   ],
   record: { schema: espionageSection, apply: applyEspionage },
   guide: { en, zh },
+  operate: operateEspionage,
 };

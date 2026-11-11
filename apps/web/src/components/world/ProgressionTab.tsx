@@ -1,5 +1,6 @@
 import type { ProgressionAbility, WorldState } from '@roleplay/shared';
 import { useTranslation } from 'react-i18next';
+import { ModuleOpButtons } from './ModuleOpControls';
 
 export function hasProgressionContent(world: WorldState): boolean {
   const prog = world.modules?.progression;
@@ -43,6 +44,19 @@ function AbilityCard({ ability, lang }: { ability: ProgressionAbility; lang: str
           {ability.description}
         </p>
       )}
+      <div className="card__actions">
+        <ModuleOpButtons
+          directive={{
+            moduleId: 'progression',
+            op: 'toggle_ability',
+            params: { ability_id: ability.id, equipped: !ability.equipped },
+            label: `${ability.equipped ? t('world.progression.ops.unequip') : t('world.progression.ops.equip')} · ${ability.name}`,
+          }}
+          instantLabel={ability.equipped ? t('world.progression.ops.unequip') : t('world.progression.ops.equip')}
+          hideStage
+          compact
+        />
+      </div>
     </li>
   );
 }
@@ -54,6 +68,17 @@ export function ProgressionTab({ world, lang }: { world: WorldState; lang: strin
 
   const xpPct = Math.max(0, Math.min(100, (state.xp / Math.max(1, state.xpMax)) * 100));
   const currentIdx = state.ladder.findIndex((r) => r === state.realm);
+  const nextLadderRealm =
+    currentIdx >= 0 && currentIdx + 1 < state.ladder.length
+      ? state.ladder[currentIdx + 1]
+      : currentIdx < 0 && state.ladder.length > 0
+        ? state.ladder[0]
+        : undefined;
+  const targetRealm = nextLadderRealm ?? (state.realm ? `${state.realm}·晋阶` : '初阶');
+  const breakthroughLabel = nextLadderRealm
+    ? t('world.progression.ops.breakthrough', { realm: nextLadderRealm })
+    : t('world.progression.ops.breakthroughGeneric');
+
   const abilities = Object.values(state.abilities).sort(
     (a, b) => Number(b.equipped) - Number(a.equipped) || a.name.localeCompare(b.name),
   );
@@ -100,6 +125,47 @@ export function ProgressionTab({ world, lang }: { world: WorldState; lang: strin
             </div>
           </div>
         )}
+
+        <div className="op-drawer__row op-drawer__row--chips">
+          <ModuleOpButtons
+            directive={{
+              moduleId: 'progression',
+              op: 'cultivate',
+              params: { mode: 'meditate' },
+              label: t('world.progression.ops.meditate'),
+            }}
+            instantLabel={t('world.progression.ops.meditate')}
+            compact
+          />
+          {state.deviation > 0 && (
+            <ModuleOpButtons
+              directive={{
+                moduleId: 'progression',
+                op: 'cultivate',
+                params: { mode: 'cleanse' },
+                label: t('world.progression.ops.cleanse'),
+              }}
+              instantLabel={t('world.progression.ops.cleanse')}
+              hideStage
+              compact
+            />
+          )}
+          {!(currentIdx >= 0 && currentIdx === state.ladder.length - 1 && state.ladder.length > 0) && (
+            <ModuleOpButtons
+              directive={{
+                moduleId: 'progression',
+                op: 'breakthrough',
+                params: {
+                  target_realm: targetRealm,
+                  reason: state.bottleneck || breakthroughLabel,
+                },
+                label: breakthroughLabel,
+              }}
+              instantLabel={breakthroughLabel}
+              compact
+            />
+          )}
+        </div>
 
         {state.bottleneck && (
           <div className="callout-box">

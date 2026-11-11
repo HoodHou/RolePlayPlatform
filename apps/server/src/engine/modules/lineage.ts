@@ -455,6 +455,80 @@ const zh = `## 后宫内廷与宗室皇嗣
 
 当君主考校皇嗣课业、督促习武修德或命太傅授业时，先调用 nurture_heir 传入皇嗣、培养方向与宽严尺度（gentle 宽仁、strict 严明、harsh 苛厉），再叙述考校情景。服务端会结合太傅能力投掷 2d6，自动结算皇嗣资质成长或逆反损耗。`;
 
+const designateHeirOpSchema = z.strictObject({
+  character_id: id,
+  title: z.string().optional(),
+});
+
+const assignTutorOpSchema = z.strictObject({
+  character_id: id,
+  tutor_id: id.nullable(),
+});
+
+const updateConsortOpSchema = z.strictObject({
+  character_id: id,
+  title: z.string().optional(),
+  palace: z.string().optional(),
+  favor_delta: z.number().int().min(-50).max(50).optional(),
+});
+
+function operateLineage(
+  world: WorldState,
+  op: string,
+  params: Record<string, unknown>,
+): { events: WorldEvent[]; summary: string } {
+  const state = ensureLineage(world);
+
+  if (op === 'designate_heir') {
+    const parsed = designateHeirOpSchema.safeParse(params);
+    if (!parsed.success) throw new WorldOpError(z.prettifyError(parsed.error));
+    const existing = state.heirs[parsed.data.character_id];
+    if (!existing) throw new WorldOpError(`Character "${parsed.data.character_id}" is not registered in lineage.heirs.`);
+    const events = upsertHeir(world, state, {
+      character_id: parsed.data.character_id,
+      is_heir_apparent: true,
+      ...(parsed.data.title ? { title: parsed.data.title } : {}),
+    });
+    const name = world.characters[parsed.data.character_id]?.name ?? existing.order;
+    return { events, summary: `册立 ${name} 为储君` };
+  }
+
+  if (op === 'assign_tutor') {
+    const parsed = assignTutorOpSchema.safeParse(params);
+    if (!parsed.success) throw new WorldOpError(z.prettifyError(parsed.error));
+    const existing = state.heirs[parsed.data.character_id];
+    if (!existing) throw new WorldOpError(`Character "${parsed.data.character_id}" is not registered in lineage.heirs.`);
+    const events = upsertHeir(world, state, {
+      character_id: parsed.data.character_id,
+      tutor_id: parsed.data.tutor_id,
+    });
+    const heirName = world.characters[parsed.data.character_id]?.name ?? existing.order;
+    const tutorName = parsed.data.tutor_id
+      ? (world.characters[parsed.data.tutor_id]?.name ?? parsed.data.tutor_id)
+      : '解除太傅';
+    return { events, summary: `指派 ${heirName} 授业太傅：${tutorName}` };
+  }
+
+  if (op === 'update_consort') {
+    const parsed = updateConsortOpSchema.safeParse(params);
+    if (!parsed.success) throw new WorldOpError(z.prettifyError(parsed.error));
+    const existing = state.consorts[parsed.data.character_id];
+    if (!existing) throw new WorldOpError(`Character "${parsed.data.character_id}" is not registered in lineage.consorts.`);
+    const nextFavor =
+      parsed.data.favor_delta !== undefined ? clamp(existing.favor + parsed.data.favor_delta, 0, 100) : undefined;
+    const events = upsertConsort(world, state, {
+      character_id: parsed.data.character_id,
+      ...(parsed.data.title !== undefined ? { title: parsed.data.title } : {}),
+      ...(parsed.data.palace !== undefined ? { palace: parsed.data.palace } : {}),
+      ...(nextFavor !== undefined ? { favor: nextFavor } : {}),
+    });
+    const name = world.characters[parsed.data.character_id]?.name ?? parsed.data.character_id;
+    return { events, summary: `内廷册封/恩赏 ${name}（${state.consorts[parsed.data.character_id]?.title ?? existing.title}）` };
+  }
+
+  throw new WorldOpError(`Unknown lineage operation "${op}".`);
+}
+
 export const lineageModule: GameModule = {
   id: 'lineage',
   keptWhenUnused: false,
@@ -473,4 +547,5 @@ export const lineageModule: GameModule = {
   record: { schema: lineageSection, apply: applyLineage },
   guide: { en, zh },
   shownToCharacter: { tag: 'royal_household', of: royalHouseholdView },
+  operate: operateLineage,
 };

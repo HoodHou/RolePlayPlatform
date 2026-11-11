@@ -21,6 +21,7 @@ import type { Locale, WorldState } from './world';
  *   POST   /api/sessions/:id/fork      ForkSessionRequest -> Session
  *   POST   /api/sessions/:id/images/:messageId/retry -> RetryImageResponse
  *   POST   /api/sessions/:id/characters/:characterId/portrait -> GeneratePortraitResponse
+ *   POST   /api/sessions/:id/actions   ModuleOperationRequest -> ModuleOperationResponse
  *   PATCH  /api/sessions/:id           UpdateSessionRequest -> Session
  *   DELETE /api/sessions/:id           -> { ok: true }
  *   POST   /api/sessions/:id/turns     TurnRequest -> text/event-stream of TurnEvent
@@ -129,14 +130,43 @@ export interface SessionBackup {
 }
 
 /**
+ * A structured module operation issued from an interactive module panel or
+ * captured from advisor dialogue. Can execute immediately on the server at
+ * zero LLM token cost (`POST /api/sessions/:id/actions`) or queue into
+ * `TurnRequest.directives` to settle multiple decisions in one batched turn.
+ */
+export interface ModuleDirective {
+  /** Optional client-side key for managing staged items in the queue UI. */
+  id?: string;
+  moduleId: ModuleId;
+  op: string;
+  params: Record<string, unknown>;
+  /** Short human-readable label shown in the staged queue and player log. */
+  label: string;
+  /** Optional context passed to the game master when settled in a batched turn. */
+  aiNote?: string;
+}
+
+export interface ModuleOperationRequest {
+  directive: ModuleDirective;
+}
+
+export interface ModuleOperationResponse {
+  world: WorldState;
+  messages: Message[];
+  summary: string;
+  snapshotTurns: number[];
+}
+
+/**
  * `start` generates the opening scene of a new session. `action` is something
- * the player's character does, answered by the game master. `talk` is
- * something they say to one character who is present, answered by that
- * character in their own voice and from their own memory.
+ * the player's character does (and/or staged `directives`), answered by the
+ * game master. `talk` is something they say to one character who is present,
+ * answered by that character in their own voice and from their own memory.
  */
 export type TurnRequest =
   | { kind: 'start' }
-  | { kind: 'action'; text: string }
+  | { kind: 'action'; text: string; directives?: ModuleDirective[] }
   | { kind: 'talk'; characterId: string; text: string };
 
 export interface TokenUsage {

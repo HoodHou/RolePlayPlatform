@@ -3,6 +3,11 @@ import type { z } from 'zod';
 import type { ToolSpec } from '../../llm/types';
 import type { EntryError, GameTool, ToolContext } from '../toolKit';
 
+export interface ModuleOperationOutcome {
+  events: WorldEvent[];
+  summary: string;
+}
+
 /**
  * A play module, as the engine sees it: everything the game master gains when
  * the module is on. Adding a kind of play (a deck of cards, a shop, a travel
@@ -67,4 +72,20 @@ export interface GameModule {
     fields: Record<string, z.ZodType>;
     apply(world: WorldState, character: Character, reply: Record<string, unknown>): WorldEvent[];
   };
+  /**
+   * Optional compacted projection of this module's state in `gameMasterView`.
+   * Hides unseen card piles or condenses settled history to save input tokens.
+   */
+  viewForGM?(world: WorldState): unknown;
+  /**
+   * Direct player-initiated operation handler for interactive UI controls and
+   * staged turn directives. Executes deterministically or with server dice at
+   * zero LLM token cost when invoked directly.
+   */
+  operate?(
+    world: WorldState,
+    op: string,
+    params: Record<string, unknown>,
+    ctx: Pick<ToolContext, 'random'>,
+  ): ModuleOperationOutcome;
 }

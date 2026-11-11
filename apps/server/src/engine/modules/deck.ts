@@ -401,6 +401,44 @@ const zh = `## 牌堆与随机表
 
 在 record.deck.tables 中可以定义贴合世界观的加权随机表（如路途奇遇、酒馆传闻、异象天气、战利品），再用 draw 传入 table_id 由服务端按权重抽取。每次抽牌或掷表后，把结果自然地织入本回合的叙述中。`;
 
+function viewDeckForGM(world: WorldState): unknown {
+  const state = world.modules.deck;
+  if (!state) return undefined;
+  const decks = Object.fromEntries(
+    Object.entries(state.decks).map(([deckId, deck]) => [
+      deckId,
+      {
+        id: deck.id,
+        name: deck.name,
+        ...(deck.description ? { description: deck.description } : {}),
+        reversals: deck.reversals,
+        remainingCount: deck.remaining.length,
+        drawn: deck.drawn.slice(-10),
+      },
+    ]),
+  );
+  return { decks, tables: state.tables };
+}
+
+const resetDeckOpSchema = z.strictObject({
+  deck_id: id,
+});
+
+function operateDeck(
+  world: WorldState,
+  op: string,
+  params: Record<string, unknown>,
+): { events: WorldEvent[]; summary: string } {
+  if (op === 'reset_deck') {
+    const parsed = resetDeckOpSchema.safeParse(params);
+    if (!parsed.success) throw new WorldOpError(z.prettifyError(parsed.error));
+    const events = upsertDeck(world, { id: parsed.data.deck_id, reset: true });
+    const name = world.modules.deck?.decks[parsed.data.deck_id]?.name ?? parsed.data.deck_id;
+    return { events, summary: `重洗牌堆【${name}】` };
+  }
+  throw new WorldOpError(`Unknown deck operation "${op}".`);
+}
+
 export const deckModule: GameModule = {
   id: 'deck',
   keptWhenUnused: true,
@@ -418,4 +456,6 @@ export const deckModule: GameModule = {
   ],
   record: { schema: deckSection, apply: applyDeck },
   guide: { en, zh },
+  viewForGM: viewDeckForGM,
+  operate: operateDeck,
 };

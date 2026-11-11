@@ -2,6 +2,7 @@ import {
   ERROR_CODES,
   type CreateSessionRequest,
   type ErrorCode,
+  type ModuleDirective,
   type ModuleId,
   type PlayerMessage,
   type Session,
@@ -57,6 +58,12 @@ interface GameState {
   talkingTo: string | null;
   /** True while undo, reroll, branch or import is in flight. */
   historyBusy: boolean;
+  /** Queued module directives per session, settled together on the next `action` turn. */
+  stagedDirectives: Record<string, ModuleDirective[]>;
+  /** True while a 0-token instant module operation is in flight. */
+  moduleBusy: boolean;
+  /** Feedback banner shown in the world panel after an instant operation or staging action. */
+  lastModuleNotice: { text: string; isError?: boolean } | null;
   /** Image message ids currently being repainted on user request. */
   retryingImages: Record<string, boolean>;
   /** Character portraits currently being painted (`${sessionId}:${characterId}`). */
@@ -74,6 +81,13 @@ interface GameState {
   /** Changes the modules of the open story, from its next turn. Throws when the server refuses. */
   setModules: (modules: ModuleId[]) => Promise<void>;
   sendAction: (text: string) => void;
+  /** Executes a module operation immediately on the server at 0 LLM tokens. */
+  executeDirective: (directive: ModuleDirective) => Promise<boolean>;
+  /** Adds (or toggles off) a module operation in the next turn's staged directive queue. */
+  stageDirective: (directive: ModuleDirective) => void;
+  removeDirective: (directiveId: string) => void;
+  clearDirectives: () => void;
+  dismissModuleNotice: () => void;
   /** Says `text` to the character in `talkingTo`. */
   sendTalk: (text: string) => void;
   startTalking: (characterId: string) => void;
@@ -102,17 +116,29 @@ export function portraitKey(sessionId: string, characterId: string): string {
   return `${sessionId}:${characterId}`;
 }
 
+export function sameDirective(a: ModuleDirective, b: ModuleDirective): boolean {
+  return a.moduleId === b.moduleId && a.op === b.op && JSON.stringify(a.params) === JSON.stringify(b.params);
+}
+
 let initialized = false;
 let localSeq = 0;
 
 /** The client's copy of what the player said or did, shown until the server echoes its own. */
-function optimisticPlayerMessage(request: TurnRequest, turn: number): PlayerMessage | null {
+function optimisticPlayerMessage(request: TurnRequest, turn: number, language = 'en'): PlayerMessage | null {
   if (request.kind === 'start') return null;
   localSeq += 1;
+  let text = request.text;
+  if (request.kind === 'action' && request.directives && request.directives.length > 0) {
+    const zh = language.toLowerCase().startsWith('zh');
+    const header =
+      (zh ? '【部署】' : '[Directive] ') +
+      request.directives.map((d) => d.label || d.op).join(zh ? '；' : '; ');
+    text = text.trim() ? `${header}\n${text.trim()}` : header;
+  }
   const message: PlayerMessage = {
     kind: 'player',
     id: `${LOCAL_ID_PREFIX}${localSeq}`,
-    text: request.text,
+    text,
     turn,
     createdAt: new Date().toISOString(),
   };
@@ -172,16 +198,27 @@ export const useGame = create<GameState>()((set, get) => {
     }
   }
 
-  /** Puts words the server did not keep back into the composer, unless the player has typed something new. */
+  /** Puts words and staged directives the server did not keep back into the composer. */
   function restoreDraft(turn: RunningTurn, reloaded: Session | null): void {
     if (turn.request.kind === 'start') return;
     const text = turn.request.text;
     const kept =
-      reloaded?.messages.some((m) => m.kind === 'player' && m.turn > turn.startTurn && m.text === text) ?? false;
+      (reloaded ? reloaded.world.turn > turn.startTurn : false) ||
+      (reloaded?.messages.some((m) => m.kind === 'player' && m.turn > turn.startTurn && m.text === text) ?? false);
     if (kept) return;
-    const drafts = get().drafts;
-    if ((drafts[turn.sessionId] ?? '').trim() !== '') return;
-    set({ drafts: { ...drafts, [turn.sessionId]: text } });
+    const state = get();
+    const nextDrafts =
+      text && (state.drafts[turn.sessionId] ?? '').trim() === ''
+        ? { ...state.drafts, [turn.sessionId]: text }
+        : state.drafts;
+    const prevDirectives = state.stagedDirectives[turn.sessionId] ?? [];
+    const nextDirectives =
+      turn.request.kind === 'action' && turn.request.directives?.length && prevDirectives.length === 0
+        ? { ...state.stagedDirectives, [turn.sessionId]: turn.request.directives }
+        : state.stagedDirectives;
+    if (nextDrafts !== state.drafts || nextDirectives !== state.stagedDirectives) {
+      set({ drafts: nextDrafts, stagedDirectives: nextDirectives });
+    }
   }
 
   /** After an error or Stop the server may have rolled the turn back, so its copy is the truth. */
@@ -204,7 +241,7 @@ export const useGame = create<GameState>()((set, get) => {
       startTurn: current.world.turn,
       streaming: [],
     };
-    const optimistic = optimisticPlayerMessage(request, current.world.turn + 1);
+    const optimistic = optimisticPlayerMessage(request, current.world.turn + 1, current.language);
     const messages = optimistic ? [...current.messages, optimistic] : current.messages;
     set({ current: { ...current, messages }, turn, failure: null });
 
@@ -290,6 +327,9 @@ export const useGame = create<GameState>()((set, get) => {
     drafts: {},
     talkingTo: null,
     historyBusy: false,
+    stagedDirectives: {},
+    moduleBusy: false,
+    lastModuleNotice: null,
     retryingImages: {},
     paintingCharacters: {},
     portraitErrors: {},
@@ -367,7 +407,9 @@ export const useGame = create<GameState>()((set, get) => {
       set((s) => {
         const drafts = { ...s.drafts };
         delete drafts[id];
-        return { sessions: s.sessions.filter((x) => x.id !== id), drafts };
+        const stagedDirectives = { ...s.stagedDirectives };
+        delete stagedDirectives[id];
+        return { sessions: s.sessions.filter((x) => x.id !== id), drafts, stagedDirectives };
       });
     },
 
@@ -385,9 +427,103 @@ export const useGame = create<GameState>()((set, get) => {
     },
 
     sendAction: (text) => {
+      const { current, stagedDirectives } = get();
+      if (!current) return;
+      const staged = stagedDirectives[current.id] ?? [];
       const trimmed = text.trim();
-      if (trimmed) void runTurn({ kind: 'action', text: trimmed });
+      if (!trimmed && staged.length === 0) return;
+      if (staged.length > 0) {
+        set((s) => ({
+          stagedDirectives: { ...s.stagedDirectives, [current.id]: [] },
+          lastModuleNotice: null,
+        }));
+      }
+      void runTurn({
+        kind: 'action',
+        text: trimmed,
+        ...(staged.length > 0 ? { directives: staged } : {}),
+      });
     },
+
+    executeDirective: async (directive) => {
+      const { current, turn, historyBusy, moduleBusy } = get();
+      if (!current || turn || historyBusy || moduleBusy || current.world.turn < 1) return false;
+      const sessionId = current.id;
+      set({ moduleBusy: true, lastModuleNotice: null });
+      try {
+        const res = await api.executeModuleAction(sessionId, directive);
+        set((s) => {
+          if (s.current?.id !== sessionId) return { lastModuleNotice: { text: res.summary } };
+          const updated: Session = {
+            ...s.current,
+            world: res.world,
+            messages: [...s.current.messages, ...res.messages],
+            snapshotTurns: res.snapshotTurns,
+            updatedAt: new Date().toISOString(),
+          };
+          return {
+            current: updated,
+            talkingTo: stillTalkingTo(s.talkingTo, updated),
+            sessions: [toSummary(updated), ...s.sessions.filter((x) => x.id !== updated.id)].sort(byRecent),
+            lastModuleNotice: { text: res.summary },
+          };
+        });
+        return true;
+      } catch (err) {
+        const uiErr = toUiError(err);
+        set({ lastModuleNotice: { text: uiErr.message, isError: true } });
+        return false;
+      } finally {
+        set({ moduleBusy: false });
+      }
+    },
+
+    stageDirective: (directive) => {
+      const current = get().current;
+      if (!current || current.world.turn < 1) return;
+      const existing = get().stagedDirectives[current.id] ?? [];
+      const match = existing.find((d) => sameDirective(d, directive));
+      if (match) {
+        set((s) => ({
+          stagedDirectives: {
+            ...s.stagedDirectives,
+            [current.id]: existing.filter((d) => d.id !== match.id),
+          },
+          lastModuleNotice: null,
+        }));
+        return;
+      }
+      const id = directive.id ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const entry: ModuleDirective = { ...directive, id };
+      set((s) => ({
+        stagedDirectives: {
+          ...s.stagedDirectives,
+          [current.id]: [...(s.stagedDirectives[current.id] ?? []), entry],
+        },
+        lastModuleNotice: { text: directive.label ?? directive.op },
+      }));
+    },
+
+    removeDirective: (directiveId) => {
+      const current = get().current;
+      if (!current) return;
+      set((s) => ({
+        stagedDirectives: {
+          ...s.stagedDirectives,
+          [current.id]: (s.stagedDirectives[current.id] ?? []).filter((d) => d.id !== directiveId),
+        },
+      }));
+    },
+
+    clearDirectives: () => {
+      const current = get().current;
+      if (!current) return;
+      set((s) => ({
+        stagedDirectives: { ...s.stagedDirectives, [current.id]: [] },
+      }));
+    },
+
+    dismissModuleNotice: () => set({ lastModuleNotice: null }),
 
     sendTalk: (text) => {
       const { current, talkingTo } = get();

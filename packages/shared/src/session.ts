@@ -111,6 +111,8 @@ export interface Session {
   messages: Message[];
   /** Engine checkpoints keyed by turn, oldest first, capped to keep saves compact. */
   snapshots?: TurnSnapshot[];
+  /** Turn numbers with saved checkpoints, sent when `snapshots` are omitted on slim client fetches. */
+  snapshotTurns?: number[];
   /** Token usage accumulated across this session. */
   usage?: SessionUsage;
 }

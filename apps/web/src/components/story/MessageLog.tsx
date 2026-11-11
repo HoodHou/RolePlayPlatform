@@ -50,8 +50,8 @@ export function MessageLog({ session }: { session: Session }) {
     [session.messages],
   );
   const snapshottedTurns = useMemo(
-    () => new Set((session.snapshots ?? []).map((s) => s.turn)),
-    [session.snapshots],
+    () => new Set(session.snapshotTurns ?? (session.snapshots ?? []).map((s) => s.turn)),
+    [session.snapshotTurns, session.snapshots],
   );
 
   // Illustrations paint in the background after the turn's text finishes; poll quietly until they settle.

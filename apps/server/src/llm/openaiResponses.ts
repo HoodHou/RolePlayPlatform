@@ -91,10 +91,12 @@ class ResponsesConversation implements Conversation {
   private readonly instructions: string;
   private readonly tools: unknown[];
   private readonly input: InputItem[];
+  private readonly cacheKey: string | undefined;
 
   constructor(options: OpenAIResponsesOptions, init: ConversationInit) {
     this.options = options;
     this.instructions = init.system;
+    this.cacheKey = init.cacheKey;
     this.input = [
       ...init.history.map((turn): InputItem => ({ role: turn.role, content: turn.text })),
       { role: 'user', content: init.prompt },
@@ -125,6 +127,7 @@ class ResponsesConversation implements Conversation {
         // Only sent when chosen: a model without reasoning rejects the setting.
         ...(effort ? { reasoning: { effort } } : {}),
         ...(maxOutputTokens ? { max_output_tokens: maxOutputTokens } : {}),
+        ...(this.cacheKey ? { prompt_cache_key: this.cacheKey } : {}),
         // Nothing is kept on OpenAI's side: the turn carries its own history,
         // including the model's reasoning, which comes back encrypted for that.
         store: false,

@@ -54,6 +54,8 @@ interface UiState {
   /** The world tab the player picked; null until they pick one, which shows the first tab the story has. */
   worldTab: WorldTab | null;
   showSecrets: boolean;
+  /** Widens the desktop world/module panel into a strategy command workspace. */
+  workspaceExpanded: boolean;
   openDialog: (dialog: DialogKind) => void;
   closeDialog: () => void;
   closeSettingsOverlay: () => void;
@@ -67,6 +69,7 @@ interface UiState {
   closeLibrary: () => void;
   setWorldTab: (tab: WorldTab) => void;
   setShowSecrets: (show: boolean) => void;
+  toggleWorkspaceExpanded: () => void;
 }
 
 export const useUi = create<UiState>()((set) => ({
@@ -78,6 +81,7 @@ export const useUi = create<UiState>()((set) => ({
   library: null,
   worldTab: null,
   showSecrets: false,
+  workspaceExpanded: false,
   // A dialog opened from inside a drawer replaces it rather than stacking on top.
   // Opening settings while `newGame` is open stacks on top so scenario drafts/chats are preserved.
   openDialog: (dialog) =>
@@ -99,4 +103,5 @@ export const useUi = create<UiState>()((set) => ({
   closeLibrary: () => set({ library: null }),
   setWorldTab: (worldTab) => set({ worldTab }),
   setShowSecrets: (showSecrets) => set({ showSecrets }),
+  toggleWorkspaceExpanded: () => set((s) => ({ workspaceExpanded: !s.workspaceExpanded })),
 }));

@@ -2639,3 +2639,141 @@ button.illustration__frame:hover {
     display: none;
   }
 }
+
+/* --- Batched Directive Tray ("拟旨匣") & Advisor Proposal Actions --- */
+.talk-bar__stop--accent {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.talk-bar__stop--accent:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text);
+}
+
+.directive-tray {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: -1px;
+  padding: 0.55rem 0.75rem 0.6rem;
+  border: 1px solid var(--accent-line);
+  border-bottom: 1px dashed var(--border-strong);
+  border-radius: var(--radius) var(--radius) 0 0;
+  background:
+    linear-gradient(180deg, var(--accent-soft), transparent 3rem),
+    var(--bg-raised);
+}
+
+.composer.has-directives {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-color: var(--accent-line);
+}
+
+.directive-tray__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem 0.75rem;
+}
+
+.directive-tray__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.directive-tray__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.directive-tray__clear {
+  padding: 0.12rem 0.45rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background-color 0.15s;
+}
+
+.directive-tray__clear:hover:not(:disabled) {
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+
+.directive-tray__clear--accent {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.directive-tray__clear--accent:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.directive-tray__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.directive-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0.18rem 0.3rem 0.18rem 0.5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-panel);
+  color: var(--text-soft);
+  font-size: 0.76rem;
+}
+
+.directive-chip__glyph {
+  flex: none;
+  color: var(--accent);
+  font-size: 0.78rem;
+}
+
+.directive-chip__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.directive-chip__remove {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-faint);
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.directive-chip__remove:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--bad);
+}

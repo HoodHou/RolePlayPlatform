@@ -118,6 +118,14 @@ const PATHS = {
       <circle cx="12" cy="13.5" r="1.3" />
     </>
   ),
+  bolt: <path d="M13 3L5.5 13.5h5.5L10 21l8.5-11.5H13z" />,
+  queue: <path d="M4.5 7h10M4.5 12h10M4.5 17h6.5M16.5 13.5v6M13.5 16.5h6" />,
+  panelWide: (
+    <>
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+      <path d="M11 4.5v15M8.5 10l-2 2 2 2" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;

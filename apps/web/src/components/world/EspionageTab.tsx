@@ -1,6 +1,8 @@
-import type { IntelDossier, SpyAgent, WorldState } from '@roleplay/shared';
+import type { EspionageOperation, IntelDossier, SpyAgent, WorldState } from '@roleplay/shared';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useUi } from '../../store/ui';
+import { ModuleOpButtons, useCanOperateModule } from './ModuleOpControls';
 import { SecretsSwitch } from './SecretsSwitch';
 
 export function visibleDossiers(world: WorldState, showSecrets: boolean): IntelDossier[] {
@@ -19,6 +21,15 @@ export function hasEspionageContent(world: WorldState, showSecrets: boolean): bo
   );
 }
 
+const OPERATIONS: readonly EspionageOperation[] = [
+  'recon',
+  'infiltrate',
+  'wiretap',
+  'frame',
+  'subvert',
+  'raid',
+];
+
 function AgentCard({
   agent,
   world,
@@ -30,6 +41,9 @@ function AgentCard({
 }) {
   const { t } = useTranslation();
   const openDossier = useUi((s) => s.openDossier);
+  const canOperate = useCanOperateModule();
+  const [operation, setOperation] = useState<EspionageOperation>('recon');
+
   const operativeChar = agent.characterId ? world.characters[agent.characterId] : undefined;
   const targetChar = agent.targetId ? world.characters[agent.targetId] : undefined;
   const targetLabel = targetChar?.name || agent.targetName;
@@ -40,6 +54,9 @@ function AgentCard({
       : agent.status === 'compromised'
         ? 'tag tag--failed'
         : 'tag';
+
+  const opName = t(`world.espionage.operation.${operation}`);
+  const opReason = targetLabel ? `${opName} · ${targetLabel}` : `${opName} · ${agent.codename}`;
 
   return (
     <li className={agent.status === 'compromised' ? 'card' : 'card is-present'}>
@@ -118,6 +135,62 @@ function AgentCard({
           <span className="mini-meter__value">{agent.exposure}/10</span>
         </div>
       </div>
+
+      {agent.status !== 'compromised' && (
+        <div className="op-drawer">
+          {agent.status === 'active' && (
+            <div className="op-drawer__row">
+              <select
+                className="op-select"
+                value={operation}
+                aria-label={t('world.espionage.ops.dispatch')}
+                disabled={!canOperate}
+                onChange={(e) => setOperation(e.target.value as EspionageOperation)}
+              >
+                {OPERATIONS.map((op) => (
+                  <option key={op} value={op}>
+                    {t(`world.espionage.operation.${op}`)}
+                  </option>
+                ))}
+              </select>
+              <ModuleOpButtons
+                directive={{
+                  moduleId: 'espionage',
+                  op: 'run_operation',
+                  params: {
+                    agent_id: agent.id,
+                    operation,
+                    reason: opReason,
+                  },
+                  label: `${agent.codename} · ${opName}`,
+                }}
+                instantLabel={t('world.espionage.ops.dispatch')}
+                compact
+              />
+            </div>
+          )}
+          <div className="op-drawer__foot">
+            <ModuleOpButtons
+              directive={{
+                moduleId: 'espionage',
+                op: 'set_agent_status',
+                params: {
+                  agent_id: agent.id,
+                  status: agent.status === 'active' ? 'recalled' : 'active',
+                },
+                label: `${agent.codename} · ${
+                  agent.status === 'active' ? t('world.espionage.ops.recall') : t('world.espionage.ops.redeploy')
+                }`,
+              }}
+              instantLabel={
+                agent.status === 'active' ? t('world.espionage.ops.recall') : t('world.espionage.ops.redeploy')
+              }
+              hideStage
+              compact
+            />
+          </div>
+        </div>
+      )}
     </li>
   );
 }

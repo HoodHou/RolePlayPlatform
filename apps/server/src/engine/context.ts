@@ -144,6 +144,7 @@ export function buildSummaryInit(session: Session, droppedTranscript: string): C
     history: [],
     prompt: prompts.summarize(session.world.storySummary ?? '', droppedTranscript),
     tools: [],
+    cacheKey: `rp:${session.id}:summary`,
     meta: {
       locale: session.language,
       kind: 'summary',
@@ -155,6 +156,12 @@ export function buildSummaryInit(session: Session, droppedTranscript: string): C
   };
 }
 
+export interface ExecutedDirectiveNote {
+  label: string;
+  summary: string;
+  aiNote?: string;
+}
+
 function gameMasterInit(
   session: Session,
   kind: 'start' | 'action' | 'referee',
@@ -163,12 +170,13 @@ function gameMasterInit(
   turn: number,
   options: ContextOptions,
   characterId?: string,
+  cueText?: string,
 ): ConversationInit {
   const prompts = getPrompts(session.language);
   const { world } = session;
   // The game master watches several characters at once, so each gets fewer memories than an actor would.
   const perCharacter = Math.max(2, Math.round((options.memoriesRecalled * 2) / 3));
-  const view = gameMasterView(world, playerText, perCharacter, options.modules);
+  const view = gameMasterView(world, cueText ?? playerText, perCharacter, options.modules);
   const state = `<world_state>\n${JSON.stringify(view)}\n</world_state>`;
   const nameOf = (id: string) => world.characters[id]?.name ?? id;
 
@@ -177,6 +185,7 @@ function gameMasterInit(
     history: buildHistory(session.messages, prompts.openingMarker, nameOf, options.historyTurns),
     prompt: `${state}\n\n${ask}`,
     tools: getToolbox(options).specs,
+    cacheKey: `rp:${session.id}:gm`,
     meta: {
       locale: session.language,
       kind,
@@ -195,12 +204,49 @@ export function buildTurnInit(
   request: Extract<TurnRequest, { kind: 'start' | 'action' }>,
   turn: number,
   options: ContextOptions,
+  executedDirectives?: readonly ExecutedDirectiveNote[],
 ): ConversationInit {
   if (request.kind === 'start') {
     return gameMasterInit(session, 'start', getPrompts(session.language).opening(session.seed), '', turn, options);
   }
-  const ask = `<player_action>\n${request.text}\n</player_action>`;
-  return gameMasterInit(session, 'action', ask, request.text, turn, options);
+
+  const actionText = request.text.trim();
+  const hasDirectives = Boolean(executedDirectives && executedDirectives.length > 0);
+  if (!hasDirectives) {
+    const ask = `<player_action>\n${request.text}\n</player_action>`;
+    return gameMasterInit(session, 'action', ask, request.text, turn, options);
+  }
+
+  const lines = executedDirectives!.map((item) =>
+    item.aiNote?.trim() ? `- ${item.summary} (${item.aiNote.trim()})` : `- ${item.summary}`,
+  );
+  const directiveBlock = [
+    '<executed_directives>',
+    session.language === 'zh'
+      ? '以下模块化政令/操作已在服务端先行结算并写入上方 <world_state>（切勿回滚已变更的数值，请在此基础上推演朝野/各方反应与剧情后果）：'
+      : 'The following structured module directives have already been settled on the server and reflected in <world_state> above (keep them intact and narrate/record their consequences and reactions):',
+    ...lines,
+    '</executed_directives>',
+  ].join('\n');
+
+  const ask = actionText
+    ? `${directiveBlock}\n\n<player_action>\n${actionText}\n</player_action>`
+    : `${directiveBlock}\n\n<player_action>\n${
+        session.language === 'zh'
+          ? '颁行上述部署并推进本回合局势。'
+          : 'Promulgate the directives above and advance the turn.'
+      }\n</player_action>`;
+
+  const effectivePlayerText =
+    actionText || executedDirectives!.map((item) => item.label).join(session.language === 'zh' ? '；' : '; ');
+  const cueText = [
+    actionText,
+    ...executedDirectives!.map((item) => `${item.label} ${item.summary} ${item.aiNote ?? ''}`),
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return gameMasterInit(session, 'action', ask, effectivePlayerText, turn, options, undefined, cueText);
 }
 
 /**

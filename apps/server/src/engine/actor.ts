@@ -136,34 +136,47 @@ export function characterView(
   // They know the speaker's name only if they have some memory of them.
   const met = player !== undefined && character.memories.some((memory) => memory.about.includes(player.id));
 
+  const carrying = Object.values(world.items)
+    .filter((item) => item.ownerId === character.id)
+    .map((item) => (item.quantity > 1 ? `${item.name} ×${item.quantity}` : item.name));
+
   return {
     you: {
       name: character.name,
-      role: character.role,
-      description: character.description,
+      ...(character.role ? { role: character.role } : {}),
+      ...(character.description ? { description: character.description } : {}),
       ...(character.appearance ? { appearance: character.appearance } : {}),
-      personality: character.personality,
-      voice: character.voice,
-      goals: character.goals,
-      secrets: character.secrets,
-      condition: character.status,
-      stats: character.stats,
-      carrying: Object.values(world.items)
-        .filter((item) => item.ownerId === character.id)
-        .map((item) => (item.quantity > 1 ? `${item.name} ×${item.quantity}` : item.name)),
+      ...(character.personality ? { personality: character.personality } : {}),
+      ...(character.voice ? { voice: character.voice } : {}),
+      ...(character.goals ? { goals: character.goals } : {}),
+      ...(character.secrets ? { secrets: character.secrets } : {}),
+      ...(character.status ? { condition: character.status } : {}),
+      ...(character.stats.length > 0 ? { stats: character.stats } : {}),
+      ...(carrying.length > 0 ? { carrying } : {}),
     },
-    your_memories: recall(character.memories, focus, memoriesRecalled).map((memory) => ({
-      when: memory.time,
-      where: memory.locationId ? (world.locations[memory.locationId]?.name ?? '') : '',
-      memory: memory.text,
-      ...(memory.toldBy ? { told_to_you_by: nameOf(memory.toldBy) } : {}),
-    })),
+    your_memories: recall(character.memories, focus, memoriesRecalled).map((memory) => {
+      const where = memory.locationId ? (world.locations[memory.locationId]?.name ?? '') : '';
+      return {
+        ...(memory.time ? { when: memory.time } : {}),
+        ...(where ? { where } : {}),
+        memory: memory.text,
+        ...(memory.toldBy ? { told_to_you_by: nameOf(memory.toldBy) } : {}),
+      };
+    }),
     here_and_now: {
-      place: place ? { name: place.name, description: place.description } : null,
-      time: world.scene.time,
-      weather: world.scene.weather,
+      place: place ? { name: place.name, ...(place.description ? { description: place.description } : {}) } : null,
+      ...(world.scene.time ? { time: world.scene.time } : {}),
+      ...(world.scene.weather ? { weather: world.scene.weather } : {}),
       // Of the others present: what shows, not what they are thinking.
-      also_here: alsoHere.map((other) => ({ name: other.name, role: other.role, doing: other.status })),
+      ...(alsoHere.length > 0
+        ? {
+            also_here: alsoHere.map((other) => ({
+              name: other.name,
+              ...(other.role ? { role: other.role } : {}),
+              ...(other.status ? { doing: other.status } : {}),
+            })),
+          }
+        : {}),
     },
     common_knowledge: Object.values(world.lore)
       .filter((entry) => !entry.hidden)
@@ -172,8 +185,8 @@ export function characterView(
     speaking_to_you: {
       name: met ? (player?.name ?? null) : null,
       met_before: met,
-      condition: player?.status ?? '',
-      how_you_feel_about_them: character.attitude,
+      ...(player?.status ? { condition: player.status } : {}),
+      ...(character.attitude ? { how_you_feel_about_them: character.attitude } : {}),
     },
   };
 }
@@ -197,18 +210,19 @@ export function buildActorInit(
   });
 
   return {
-    system: getPrompts(session.language).actorSystem,
+    system: getPrompts(session.language).actorSystemFor(modules),
     history: conversationSoFar(session.messages, character.id),
     prompt: [
       section('you', view.you),
       section('your_memories', view.your_memories),
       section('here_and_now', view.here_and_now),
-      section('common_knowledge', view.common_knowledge),
+      ...(view.common_knowledge.length > 0 ? [section('common_knowledge', view.common_knowledge)] : []),
       ...fromModules,
       section('speaking_to_you', view.speaking_to_you),
       `<they_say>\n${said}\n</they_say>`,
     ].join('\n\n'),
     tools: [respondTool(modules).spec],
+    cacheKey: `rp:${session.id}:actor:${character.id}`,
     meta: {
       locale: session.language,
       kind: 'talk',

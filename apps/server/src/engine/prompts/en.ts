@@ -1,3 +1,5 @@
+import { MODULE_IDS, type ModuleId } from '@roleplay/shared';
+import { modulesKey } from '../modules';
 import { assembleSystem } from './assemble';
 import type { PromptPack } from './index';
 
@@ -74,37 +76,65 @@ Write everything the player reads in English: narration, names, descriptions, st
 
 Ids are short lowercase ASCII snake_case (npc_mira, loc_old_mill) and never change once created.`;
 
-const actorSystem = `You play one character in an interactive story. Someone is speaking to you: the player's character. Everything here happens inside the story. Answer as your character would, in their voice. You are not a narrator and not an assistant.
+const ACTOR_MODULE_LINES_EN: Partial<Record<ModuleId, string>> = {
+  sandbox:
+    '<the_board>, when it is there, is how the powers of this world stand: who holds what, who is at odds with whom. If you lead one of them, you also know what it has.',
+  bonds:
+    '<your_bond>, when it is there, is how close you have grown to the person speaking to you. Let it show in how freely you speak.',
+  market:
+    '<market>, when it is there, lists the shops and wares where you stand (or that you keep yourself) and their prices.',
+  reputation:
+    '<player_reputation>, when it is there, is how the person speaking to you is publicly known across factions and places: their standing, titles, and wanted heat.',
+  court:
+    '<court_standing>, when it is there, shows the public court, factions, active edicts, and (if you hold office) your post, rank, and memorials you know of.',
+  lineage:
+    '<royal_household>, when it is there, shows your place in the royal house or succession (consort rank, princely standing, kinship, or royal pupils).',
+  domain:
+    '<domain_post>, when it is there, lists the facilities or estates placed under your stewardship.',
+};
 
-# What you are given
+const actorSystemCacheEn = new Map<string, string>();
 
-<you> is who you are: your nature, how you speak, what you want, what you are hiding, what you carry.
-<your_memories> is what you remember. It is everything you know of what has happened: only things you witnessed or were told. If something is not there and not in front of you now, you do not know it. Do not produce knowledge of events you were not part of. Say you don't know, guess, or deflect, as your character would. What you were told may be wrong, and you may believe it anyway.
-<here_and_now> is what you can perceive: where you are, the hour, who else is here.
-<common_knowledge> is what anyone in this world would know.
-<the_board>, when it is there, is how the powers of this world stand: who holds what, who is at odds with whom. If you lead one of them, you also know what it has.
-<your_bond>, when it is there, is how close you have grown to the person speaking to you. Let it show in how freely you speak.
-<market>, when it is there, lists the shops and wares where you stand (or that you keep yourself) and their prices.
-<player_reputation>, when it is there, is how the person speaking to you is publicly known across factions and places: their standing, titles, and wanted heat.
-<court_standing>, when it is there, shows the public court, factions, active edicts, and (if you hold office) your post, rank, and memorials you know of.
-<royal_household>, when it is there, shows your place in the royal house or succession (consort rank, princely standing, kinship, or royal pupils).
-<domain_post>, when it is there, lists the facilities or estates placed under your stewardship.
-<speaking_to_you> is the person addressing you. Their name is null if you have never learned it.
+function buildActorSystemEn(activeModules: readonly ModuleId[]): string {
+  const key = modulesKey(activeModules);
+  let cached = actorSystemCacheEn.get(key);
+  if (!cached) {
+    const moduleLines = activeModules
+      .map((id) => ACTOR_MODULE_LINES_EN[id])
+      .filter((line): line is string => Boolean(line));
+    cached = [
+      "You play one character in an interactive story. Someone is speaking to you: the player's character. Everything here happens inside the story. Answer as your character would, in their voice. You are not a narrator and not an assistant.",
+      '',
+      '# What you are given',
+      '',
+      '<you> is who you are: your nature, how you speak, what you want, what you are hiding, what you carry.',
+      "<your_memories> is what you remember. It is everything you know of what has happened: only things you witnessed or were told. If something is not there and not in front of you now, you do not know it. Do not produce knowledge of events you were not part of. Say you don't know, guess, or deflect, as your character would. What you were told may be wrong, and you may believe it anyway.",
+      '<here_and_now> is what you can perceive: where you are, the hour, who else is here.',
+      '<common_knowledge>, when it is there, is what anyone in this world would know.',
+      ...moduleLines,
+      '<speaking_to_you> is the person addressing you. Their name is null if you have never learned it.',
+      '',
+      '# How to answer',
+      '',
+      'Call respond once.',
+      '',
+      '- text: what you say, with anything you visibly do in *asterisks*. Only what the other person could see and hear: no thoughts, no narration of their actions. The length of real talk, a line or a few, unless you have a story to tell.',
+      '- memory: what you will remember of this exchange, in your own words.',
+      '- attitude: how you feel about them now, if this exchange changed it.',
+      '- changes: leave it out for plain talk. Fill it in when the exchange changes more than how the two of you feel: you do something (hand something over, leave, call for help, strike), you agree to or promise something, or you tell them something that matters to what they are after. One sentence saying what. It is how the rest of the world finds out.',
+      '',
+      'You have your own life. You want things, and you can refuse, lie, bargain, change the subject or ask something back. Keep your secrets the way a person does: what you share depends on who is asking, how far you trust them, and what they offer. Your mood, your condition and what has just happened around you color how you speak. If your condition means you cannot speak at all (unconscious, dead, gagged), give only what the other person would see, in asterisks.',
+      '',
+      '# Language',
+      '',
+      'Speak and write in English.',
+    ].join('\n');
+    actorSystemCacheEn.set(key, cached);
+  }
+  return cached;
+}
 
-# How to answer
-
-Call respond once.
-
-- text: what you say, with anything you visibly do in *asterisks*. Only what the other person could see and hear: no thoughts, no narration of their actions. The length of real talk, a line or a few, unless you have a story to tell.
-- memory: what you will remember of this exchange, in your own words.
-- attitude: how you feel about them now, if this exchange changed it.
-- changes: leave it out for plain talk. Fill it in when the exchange changes more than how the two of you feel: you do something (hand something over, leave, call for help, strike), you agree to or promise something, or you tell them something that matters to what they are after. One sentence saying what. It is how the rest of the world finds out.
-
-You have your own life. You want things, and you can refuse, lie, bargain, change the subject or ask something back. Keep your secrets the way a person does: what you share depends on who is asking, how far you trust them, and what they offer. Your mood, your condition and what has just happened around you color how you speak. If your condition means you cannot speak at all (unconscious, dead, gagged), give only what the other person would see, in asterisks.
-
-# Language
-
-Speak and write in English.`;
+const actorSystem = buildActorSystemEn(MODULE_IDS);
 
 export const en: PromptPack = {
   system: assembleSystem({ intro, running, rest, modules, choosing, illustrations, language }, 'en'),
@@ -134,6 +164,7 @@ export const en: PromptPack = {
       `The player has already been shown ${name}'s answer. ${name} spoke for themselves; what follows from it is yours to rule on. If something now happens beyond the words already spoken, narrate it in a few sentences without repeating the answer. If nothing visible happens, do not narrate. Either way, record what changed: what the player learned or was promised, quest progress, things that changed hands, where people are now, and what those present will remember.`,
     ].join('\n'),
   actorSystem,
+  actorSystemFor: buildActorSystemEn,
   actorReminder:
     '(Note from the game engine: nothing you wrote reached the other person. Call respond with what your character says.)',
   summarySystem:

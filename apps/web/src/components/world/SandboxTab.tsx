@@ -2,12 +2,20 @@ import { STANCES, type SandboxFaction, type SandboxRelation, type SandboxState, 
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { languageTag, useLocale } from '../../i18n';
-import { factionStyle, playerFactionOf, regionCounts, sortedFactions } from '../../lib/sandbox';
+import { factionStyle, playerFactionOf, regionCounts, sortedFactions, stanceBetween, totalGarrisonOf } from '../../lib/sandbox';
 import { formatNumber, formatSigned } from '../../lib/text';
 import { Icon } from '../Icon';
 import { MapDialog } from './MapDialog';
+import { ModuleOpButtons } from './ModuleOpControls';
 import { RegionDetails } from './RegionDetails';
-import { MapLegend, SandboxMap } from './SandboxMap';
+import { MapLegend, SANDBOX_LENSES, SandboxMap, type SandboxLens } from './SandboxMap';
+
+const LENS_LABEL_KEYS = {
+  political: 'world.sandbox.ops.lensPolitical',
+  military: 'world.sandbox.ops.lensMilitary',
+  governance: 'world.sandbox.ops.lensGovernance',
+  frontline: 'world.sandbox.ops.lensFrontline',
+} as const satisfies Record<SandboxLens, string>;
 
 /** Where a stance sits between war and alliance, drawn as five steps with the current one lit. */
 function StanceBadge({ stance }: { stance: Stance }) {
@@ -79,12 +87,36 @@ interface FactionCardProps {
 
 function FactionCard({ faction, board, world, regions, lang }: FactionCardProps) {
   const { t } = useTranslation();
+  const uiTag = languageTag(useLocale());
   const id = useId();
   // The player's own holdings are always in view; the others fold away, so a crowded board stays scannable.
   const [open, setOpen] = useState(faction.isPlayer);
   const leader = faction.leaderId ? world.characters[faction.leaderId] : undefined;
   const leaderIsPlayer = leader !== undefined && (leader.isPlayer || leader.id === world.playerId);
+  const totalGarrison = totalGarrisonOf(board, faction.id);
   const hasDetails = board.resources.length > 0 || faction.description !== '';
+
+  const deficitAlerts = faction.isPlayer
+    ? board.resources.flatMap((resource) => {
+        const held = faction.resources[resource.id] ?? 0;
+        const income = faction.income[resource.id] ?? 0;
+        if (income >= 0) return [];
+        if (held <= 0) {
+          return [{ id: resource.id, tone: 'bad' as const, text: t('world.sandbox.deficitDepleted', { resource: resource.name }) }];
+        }
+        const roundsLeft = Math.ceil(held / Math.abs(income));
+        if (roundsLeft <= 4) {
+          return [
+            {
+              id: resource.id,
+              tone: roundsLeft <= 2 ? ('bad' as const) : ('warn' as const),
+              text: t('world.sandbox.deficitWarn', { resource: resource.name, rounds: roundsLeft }),
+            },
+          ];
+        }
+        return [];
+      })
+    : [];
 
   return (
     <li className={faction.isPlayer ? 'card faction is-player' : 'card faction'} style={factionStyle(faction)}>
@@ -100,6 +132,15 @@ function FactionCard({ faction, board, world, regions, lang }: FactionCardProps)
           {faction.status}
         </p>
       )}
+      {deficitAlerts.length > 0 && (
+        <div className="faction__warnings">
+          {deficitAlerts.map((alert) => (
+            <span key={alert.id} className={`tag tag--${alert.tone}`}>
+              {alert.text}
+            </span>
+          ))}
+        </div>
+      )}
       <dl className="facts">
         {leader && (
           <div className="facts__row">
@@ -111,6 +152,12 @@ function FactionCard({ faction, board, world, regions, lang }: FactionCardProps)
           <dt>{t('world.sandbox.lands')}</dt>
           <dd>{regions > 0 ? t('world.sandbox.regionCount', { count: regions }) : t('world.sandbox.noLands')}</dd>
         </div>
+        {totalGarrison !== null && (
+          <div className="facts__row">
+            <dt>{t('world.sandbox.garrisonTotal')}</dt>
+            <dd className="region-card__number">{formatNumber(totalGarrison, uiTag)}</dd>
+          </div>
+        )}
       </dl>
       {hasDetails && !faction.isPlayer && (
         <button
@@ -144,7 +191,19 @@ function sortedRelations(board: SandboxState): SandboxRelation[] {
   const mine = playerFactionOf(board)?.id;
   const rank = (relation: SandboxRelation) =>
     (relation.a === mine || relation.b === mine ? 0 : STANCES.length) + STANCES.indexOf(relation.stance);
-  return [...board.relations].sort((x, y) => rank(x) - rank(y));
+  const explicit = [...board.relations];
+  if (mine) {
+    for (const faction of Object.values(board.factions)) {
+      if (faction.id === mine) continue;
+      const exists = explicit.some(
+        (rel) => (rel.a === mine && rel.b === faction.id) || (rel.a === faction.id && rel.b === mine),
+      );
+      if (!exists) {
+        explicit.push({ a: mine, b: faction.id, stance: 'neutral', note: '' });
+      }
+    }
+  }
+  return explicit.sort((x, y) => rank(x) - rank(y));
 }
 
 interface SandboxTabProps {
@@ -159,11 +218,14 @@ export function SandboxTab({ board, world, lang }: SandboxTabProps) {
   const id = useId();
   const [selected, setSelected] = useState<string | null>(null);
   const [enlarged, setEnlarged] = useState(false);
+  const [lens, setLens] = useState<SandboxLens>('political');
+  const [openDiplomacyId, setOpenDiplomacyId] = useState<string | null>(null);
 
   // A region can disappear from the board between turns.
   const selectedId = selected !== null && board.regions[selected] ? selected : null;
   const hasRegions = Object.keys(board.regions).length > 0;
   const factions = sortedFactions(board);
+  const playerFaction = playerFactionOf(board);
   const counts = regionCounts(board);
   const relations = sortedRelations(board);
   const round = board.round > 0 ? t('world.sandbox.round', { n: board.round }) : t('world.sandbox.roundZero');
@@ -179,20 +241,63 @@ export function SandboxTab({ board, world, lang }: SandboxTabProps) {
             </p>
           )}
         </div>
-        {hasRegions && (
-          <button type="button" className="btn btn--small" aria-haspopup="dialog" onClick={() => setEnlarged(true)}>
-            <Icon name="expand" size={15} />
-            {t('world.sandbox.enlarge')}
-          </button>
-        )}
+        <div className="sandbox__head-actions">
+          {factions.length > 0 && (
+            <ModuleOpButtons
+              directive={{
+                moduleId: 'sandbox',
+                op: 'simulate',
+                params: { advance: {} },
+                label: t('world.sandbox.ops.advanceRound'),
+              }}
+              instantLabel={t('world.sandbox.ops.advanceRound')}
+              compact
+            />
+          )}
+          {hasRegions && (
+            <button type="button" className="btn btn--small" aria-haspopup="dialog" onClick={() => setEnlarged(true)}>
+              <Icon name="expand" size={15} />
+              {t('world.sandbox.enlarge')}
+            </button>
+          )}
+        </div>
       </div>
 
+      {hasRegions && (
+        <div className="subtabs" role="group" aria-label={t('world.sandbox.mapLabel')}>
+          {SANDBOX_LENSES.map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              className="chip-button"
+              aria-pressed={lens === mode}
+              onClick={() => setLens(mode)}
+            >
+              {t(LENS_LABEL_KEYS[mode])}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="sandbox__map">
-        <SandboxMap board={board} lang={lang} selected={selectedId} onSelect={setSelected} />
+        <SandboxMap
+          board={board}
+          world={world}
+          lang={lang}
+          selected={selectedId}
+          onSelect={setSelected}
+          lens={lens}
+        />
         <MapLegend board={board} lang={lang} />
         {hasRegions &&
           (selectedId ? (
-            <RegionDetails board={board} regionId={selectedId} lang={lang} />
+            <RegionDetails
+              board={board}
+              world={world}
+              regionId={selectedId}
+              lang={lang}
+              onSelectRegion={setSelected}
+            />
           ) : (
             <p className="sandbox__hint">{t('world.sandbox.selectHint')}</p>
           ))}
@@ -228,26 +333,104 @@ export function SandboxTab({ board, world, lang }: SandboxTabProps) {
           {relations.length > 0 ? (
             <>
               <ul className="relations">
-                {relations.map((relation) => (
-                  <li key={`${relation.a}|${relation.b}`} className={`relation relation--${relation.stance}`}>
-                    <div className="relation__head">
-                      <span className="relation__pair">
-                        <FactionName faction={board.factions[relation.a]} fallback={relation.a} lang={lang} />
-                        <span className="relation__link" aria-hidden="true" />
-                        <span className="sr-only">, </span>
-                        <FactionName faction={board.factions[relation.b]} fallback={relation.b} lang={lang} />
-                      </span>
-                      <StanceBadge stance={relation.stance} />
-                    </div>
-                    {relation.note && (
-                      <p className="relation__note" lang={lang}>
-                        {relation.note}
-                      </p>
-                    )}
-                  </li>
-                ))}
+                {relations.map((relation) => {
+                  const rivalId =
+                    playerFaction && relation.a === playerFaction.id
+                      ? relation.b
+                      : playerFaction && relation.b === playerFaction.id
+                        ? relation.a
+                        : null;
+                  const rival = rivalId ? board.factions[rivalId] : undefined;
+                  const currentStance =
+                    playerFaction && rivalId ? stanceBetween(board, playerFaction.id, rivalId) : relation.stance;
+                  const dipOpen = rival !== undefined && openDiplomacyId === rival.id;
+
+                  return (
+                    <li key={`${relation.a}|${relation.b}`} className={`relation relation--${relation.stance}`}>
+                      <div className="relation__head">
+                        <span className="relation__pair">
+                          <FactionName faction={board.factions[relation.a]} fallback={relation.a} lang={lang} />
+                          <span className="relation__link" aria-hidden="true" />
+                          <span className="sr-only">, </span>
+                          <FactionName faction={board.factions[relation.b]} fallback={relation.b} lang={lang} />
+                        </span>
+                        <span className="relation__meta">
+                          <StanceBadge stance={relation.stance} />
+                          {rival && (
+                            <button
+                              type="button"
+                              className="chip-button relation__dip-btn"
+                              aria-pressed={dipOpen}
+                              onClick={() => setOpenDiplomacyId((prev) => (prev === rival.id ? null : rival.id))}
+                            >
+                              {t('world.sandbox.ops.diplomacyBtn')}
+                            </button>
+                          )}
+                        </span>
+                      </div>
+                      {relation.note && (
+                        <p className="relation__note" lang={lang}>
+                          {relation.note}
+                        </p>
+                      )}
+                      {rival && dipOpen && (
+                        <div className="diplomacy-drawer">
+                          <ModuleOpButtons
+                            directive={{
+                              moduleId: 'sandbox',
+                              op: 'advisor_note',
+                              params: { target_faction_id: rival.id, intent: 'peace' },
+                              label: t('world.sandbox.ops.diplomacyPeaceLabel', { faction: rival.name }),
+                              aiNote: t('world.sandbox.ops.diplomacyPeaceLabel', { faction: rival.name }),
+                            }}
+                            stageLabel={t('world.sandbox.ops.proposePeace')}
+                            hideInstant
+                            compact
+                          />
+                          <ModuleOpButtons
+                            directive={{
+                              moduleId: 'sandbox',
+                              op: 'advisor_note',
+                              params: { target_faction_id: rival.id, intent: 'alliance' },
+                              label: t('world.sandbox.ops.diplomacyAllianceLabel', { faction: rival.name }),
+                              aiNote: t('world.sandbox.ops.diplomacyAllianceLabel', { faction: rival.name }),
+                            }}
+                            stageLabel={t('world.sandbox.ops.proposeAlliance')}
+                            hideInstant
+                            compact
+                          />
+                          <ModuleOpButtons
+                            directive={{
+                              moduleId: 'sandbox',
+                              op: 'advisor_note',
+                              params: { target_faction_id: rival.id, intent: 'tribute' },
+                              label: t('world.sandbox.ops.diplomacyTributeLabel', { faction: rival.name }),
+                              aiNote: t('world.sandbox.ops.diplomacyTributeLabel', { faction: rival.name }),
+                            }}
+                            stageLabel={t('world.sandbox.ops.demandTribute')}
+                            hideInstant
+                            compact
+                          />
+                          {currentStance !== 'war' && (
+                            <ModuleOpButtons
+                              directive={{
+                                moduleId: 'sandbox',
+                                op: 'diplomacy_stance',
+                                params: { target_faction_id: rival.id, stance: 'war' },
+                                label: `${t('world.sandbox.ops.declareWar')} · ${rival.name}`,
+                              }}
+                              instantLabel={t('world.sandbox.ops.declareWar')}
+                              compact
+                              onAfter={() => setOpenDiplomacyId(null)}
+                            />
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
-              <p className="sandbox__note">{t('world.sandbox.unlistedNeutral')}</p>
+              {!playerFaction && <p className="sandbox__note">{t('world.sandbox.unlistedNeutral')}</p>}
             </>
           ) : (
             <p className="sandbox__note">{t('world.sandbox.noRelations')}</p>
@@ -258,10 +441,13 @@ export function SandboxTab({ board, world, lang }: SandboxTabProps) {
       {enlarged && (
         <MapDialog
           board={board}
+          world={world}
           round={round}
           lang={lang}
           selected={selectedId}
           onSelect={setSelected}
+          lens={lens}
+          onLensChange={setLens}
           onClose={() => setEnlarged(false)}
         />
       )}

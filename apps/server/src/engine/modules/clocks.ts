@@ -105,6 +105,38 @@ const zh = `## 进度钟
 
 没有隐藏的钟玩家都看得见，让玩家看着它填满正是用意所在：这让他们知道自己的选择付出了什么。只有当玩家的角色不可能知道这件事正在逼近时，才把钟隐藏起来。`;
 
+const tickClockOpSchema = z.strictObject({
+  id,
+  delta: z.number().int().min(-CLOCK_SEGMENTS.max).max(CLOCK_SEGMENTS.max).optional(),
+  remove: z.boolean().optional(),
+});
+
+function operateClocks(
+  world: WorldState,
+  op: string,
+  params: Record<string, unknown>,
+): { events: WorldEvent[]; summary: string } {
+  if (op === 'tick_clock') {
+    const parsed = tickClockOpSchema.safeParse(params);
+    if (!parsed.success) throw new WorldOpError(z.prettifyError(parsed.error));
+    const existing = world.modules.clocks?.clocks[parsed.data.id];
+    if (!existing) throw new WorldOpError(`There is no clock with id "${parsed.data.id}".`);
+    const name = existing.name;
+    const events = upsertClock(world, {
+      id: parsed.data.id,
+      tick: parsed.data.delta,
+      remove: parsed.data.remove,
+    });
+    if (parsed.data.remove) return { events, summary: `结案移除进度钟【${name}】` };
+    const updated = world.modules.clocks?.clocks[parsed.data.id];
+    return {
+      events,
+      summary: `调整进度钟【${name}】（${updated?.filled ?? existing.filled}/${updated?.segments ?? existing.segments}）`,
+    };
+  }
+  throw new WorldOpError(`Unknown clocks operation "${op}".`);
+}
+
 export const clocksModule: GameModule = {
   id: 'clocks',
   // A list in the record and a few lines of instruction: cheap enough to carry in any story.
@@ -113,4 +145,5 @@ export const clocksModule: GameModule = {
   tools: [],
   record: { schema: clocksSection, apply: applyClocks },
   guide: { en, zh },
+  operate: operateClocks,
 };

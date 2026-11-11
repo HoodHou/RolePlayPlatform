@@ -1,10 +1,11 @@
-import type { Session } from '@roleplay/shared';
+import type { DialogueMessage, ModuleDirective, Session } from '@roleplay/shared';
 import { useLayoutEffect, useRef, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { languageTag, useLocale } from '../../i18n';
 import { bondOf } from '../../lib/bonds';
 import { primaryStandingOf } from '../../lib/characterRoles';
 import { COMPOSER_INPUT_ID } from '../../lib/composer';
+import { MODULE_GLYPH } from '../../lib/modules';
 import { formatNumber } from '../../lib/text';
 import { canTalkTo } from '../../lib/world';
 import { portraitKey, useGame } from '../../store/game';
@@ -14,6 +15,8 @@ import { Icon } from '../Icon';
 import { ModelPickerPopover } from '../ModelPickerPopover';
 import { BondBadge } from '../world/BondMeter';
 import { ModulesMenu } from './ModulesMenu';
+
+const EMPTY_DIRECTIVES: readonly ModuleDirective[] = [];
 
 function compactTokens(n: number, uiTag: string): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -28,11 +31,16 @@ export function ComposerArea({ session }: { session: Session }) {
   const uiTag = languageTag(useLocale());
   const running = useGame((s) => s.turn !== null);
   const historyBusy = useGame((s) => s.historyBusy);
+  const moduleBusy = useGame((s) => s.moduleBusy);
   const draft = useGame((s) => s.drafts[session.id] ?? '');
+  const staged = useGame((s) => s.stagedDirectives[session.id] ?? EMPTY_DIRECTIVES);
   const talkingTo = useGame((s) => s.talkingTo);
   const setDraft = useGame((s) => s.setDraft);
   const sendAction = useGame((s) => s.sendAction);
   const sendTalk = useGame((s) => s.sendTalk);
+  const stageDirective = useGame((s) => s.stageDirective);
+  const removeDirective = useGame((s) => s.removeDirective);
+  const clearDirectives = useGame((s) => s.clearDirectives);
   const stopTalking = useGame((s) => s.stopTalking);
   const stop = useGame((s) => s.stop);
   const undoTurn = useGame((s) => s.undoTurn);
@@ -49,8 +57,18 @@ export function ComposerArea({ session }: { session: Session }) {
   const storyLang = languageTag(session.language);
   const notStarted = session.world.turn === 0 && session.messages.length === 0;
   const suggestions = running || notStarted ? [] : session.world.suggestions.filter((s) => s.trim() !== '');
-  const canSend = !running && !historyBusy && !notStarted && draft.trim() !== '';
-  const hasPrevSnapshot = Boolean(session.snapshots?.some((s) => s.turn === session.world.turn - 1));
+  // The store clears `talkingTo` when they leave; checking here as well keeps a stale id from ever being sent.
+  const partner = talkingTo && canTalkTo(session.world, talkingTo) ? session.world.characters[talkingTo] : undefined;
+  const canSend =
+    !running &&
+    !historyBusy &&
+    !moduleBusy &&
+    !notStarted &&
+    (partner ? draft.trim() !== '' : draft.trim() !== '' || staged.length > 0);
+  const hasPrevSnapshot = Boolean(
+    session.snapshotTurns?.includes(session.world.turn - 1) ||
+      session.snapshots?.some((s) => s.turn === session.world.turn - 1),
+  );
   const canUndoOrReroll = !running && !historyBusy && session.world.turn >= 1 && hasPrevSnapshot;
   const canBranch = !running && !historyBusy && session.world.turn >= 1;
 
@@ -58,8 +76,6 @@ export function ComposerArea({ session }: { session: Session }) {
   const totalTokens = (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0);
   const cachePct =
     usage && usage.inputTokens > 0 ? Math.round((usage.cachedInputTokens / usage.inputTokens) * 100) : 0;
-  // The store clears `talkingTo` when they leave; checking here as well keeps a stale id from ever being sent.
-  const partner = talkingTo && canTalkTo(session.world, talkingTo) ? session.world.characters[talkingTo] : undefined;
 
   // Grow with the text up to the CSS max-height.
   useLayoutEffect(() => {
@@ -184,6 +200,49 @@ export function ComposerArea({ session }: { session: Session }) {
                 <button
                   type="button"
                   className="talk-bar__stop"
+                  disabled={running || historyBusy}
+                  onClick={() => {
+                    const promptText =
+                      session.language === 'zh'
+                        ? '依卿之见，眼下当如何定夺？'
+                        : 'What course of action do you advise right now?';
+                    sendTalk(promptText);
+                  }}
+                >
+                  <Icon name="sparkle" size={13} />
+                  <span>{t('story.directives.askCounsel')}</span>
+                </button>
+                {(() => {
+                  const lastLine = [...session.messages]
+                    .reverse()
+                    .find((m): m is DialogueMessage => m.kind === 'dialogue' && m.characterId === partner.id);
+                  if (!lastLine) return null;
+                  return (
+                    <button
+                      type="button"
+                      className="talk-bar__stop talk-bar__stop--accent"
+                      disabled={running || historyBusy}
+                      onClick={() => {
+                        const modId = session.modules[0] ?? 'dice';
+                        stageDirective({
+                          moduleId: modId,
+                          op: 'advisor_note',
+                          params: { characterId: partner.id },
+                          label: t('story.directives.advisorLabel', { name: partner.name }),
+                          aiNote: `${partner.name}: ${lastLine.text.slice(0, 220)}`,
+                        });
+                        stopTalking();
+                        textareaRef.current?.focus();
+                      }}
+                    >
+                      <Icon name="queue" size={13} />
+                      <span>{t('story.directives.adoptCounsel')}</span>
+                    </button>
+                  );
+                })()}
+                <button
+                  type="button"
+                  className="talk-bar__stop"
                   onClick={() => openDossier(partner.id)}
                 >
                   <Icon name="dossier" size={14} />
@@ -205,8 +264,69 @@ export function ComposerArea({ session }: { session: Session }) {
           );
         })()}
 
+        {staged.length > 0 && (
+          <div className="directive-tray" role="region" aria-label={t('story.directives.trayTitle', { count: staged.length })}>
+            <div className="directive-tray__head">
+              <span className="directive-tray__title">
+                <Icon name="queue" size={13} />
+                <span>{t('story.directives.trayTitle', { count: staged.length })}</span>
+              </span>
+              <div className="directive-tray__actions">
+                {partner && (
+                  <button
+                    type="button"
+                    className="directive-tray__clear directive-tray__clear--accent"
+                    onClick={() => {
+                      stopTalking();
+                      textareaRef.current?.focus();
+                    }}
+                  >
+                    {t('story.directives.switchToAct', { count: staged.length })}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="directive-tray__clear"
+                  disabled={running}
+                  onClick={clearDirectives}
+                >
+                  {t('story.directives.clear')}
+                </button>
+              </div>
+            </div>
+            <ul className="directive-tray__list">
+              {staged.map((dir, idx) => {
+                const glyph = (MODULE_GLYPH as Record<string, string | undefined>)[dir.moduleId] ?? '✦';
+                const label = dir.label || dir.op;
+                const key = dir.id ?? `${idx}:${dir.moduleId}:${dir.op}`;
+                return (
+                  <li key={key} className="directive-chip">
+                    <span className="directive-chip__glyph" aria-hidden="true">
+                      {glyph}
+                    </span>
+                    <span className="directive-chip__label" lang={storyLang}>
+                      {label}
+                    </span>
+                    {dir.id && (
+                      <button
+                        type="button"
+                        className="directive-chip__remove"
+                        aria-label={t('story.directives.removeAria', { label })}
+                        disabled={running}
+                        onClick={() => removeDirective(dir.id!)}
+                      >
+                        <Icon name="close" size={11} />
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
         <form
-          className={`composer${running ? ' is-running' : ''}${partner ? ' is-talking' : ''}`}
+          className={`composer${running ? ' is-running' : ''}${partner ? ' is-talking' : ''}${!partner && staged.length > 0 ? ' has-directives' : ''}`}
           onSubmit={(event) => {
             event.preventDefault();
             submit();
@@ -223,7 +343,11 @@ export function ComposerArea({ session }: { session: Session }) {
             lang={storyLang}
             value={draft}
             placeholder={
-              partner ? t('story.composerTalkPlaceholder', { name: partner.name }) : t('story.composerPlaceholder')
+              partner
+                ? t('story.composerTalkPlaceholder', { name: partner.name })
+                : staged.length > 0
+                  ? t('story.directives.placeholderReady', { count: staged.length })
+                  : t('story.composerPlaceholder')
             }
             disabled={notStarted && !running}
             aria-describedby="composer-hint"

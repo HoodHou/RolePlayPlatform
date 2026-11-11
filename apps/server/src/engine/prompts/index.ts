@@ -43,6 +43,8 @@ export interface PromptPack {
 
   /** Instructions for a model playing one character in conversation. Byte-stable, like `system`. */
   actorSystem: string;
+  /** Module-tailored actor instructions emitting only the active module tags. */
+  actorSystemFor(modules: readonly ModuleId[]): string;
   /** Sent when the actor answered without using its tool or said nothing. */
   actorReminder: string;
 

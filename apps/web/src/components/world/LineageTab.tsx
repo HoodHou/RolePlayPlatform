@@ -1,7 +1,9 @@
 import type {
   ClanRelative,
   ConsortEntry,
+  HeirAptitudeKey,
   HeirEntry,
+  NurtureIntensity,
   Session,
   WorldState,
 } from '@roleplay/shared';
@@ -10,11 +12,12 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { draftSummonOrSeek } from '../../lib/characterRoles';
 import { focusComposer } from '../../lib/composer';
-import { canTalkTo, isPresent } from '../../lib/world';
+import { canTalkTo, isPresent, npcsOf } from '../../lib/world';
 import { useGame } from '../../store/game';
 import { useUi } from '../../store/ui';
 import { CharacterAvatar } from '../CharacterAvatar';
 import { Icon } from '../Icon';
+import { ModuleOpButtons, useCanOperateModule } from './ModuleOpControls';
 
 export function hasLineageContent(world: WorldState): boolean {
   const lineage = world.modules?.lineage;
@@ -159,6 +162,30 @@ function ConsortCard({
         </p>
       )}
 
+      <div className="op-drawer__row op-drawer__row--chips">
+        <ModuleOpButtons
+          directive={{
+            moduleId: 'lineage',
+            op: 'update_consort',
+            params: { character_id: consort.characterId, favor_delta: 5 },
+            label: `${name} · ${t('world.lineage.ops.rewardFavor')}`,
+          }}
+          instantLabel={t('world.lineage.ops.rewardFavor')}
+          compact
+        />
+        <ModuleOpButtons
+          directive={{
+            moduleId: 'lineage',
+            op: 'update_consort',
+            params: { character_id: consort.characterId, favor_delta: -5 },
+            label: `${name} · ${t('world.lineage.ops.coolFavor')}`,
+          }}
+          instantLabel={t('world.lineage.ops.coolFavor')}
+          hideStage
+          compact
+        />
+      </div>
+
       {character && (
         <div className="card__actions">
           <button type="button" className="disclosure" onClick={() => openDossier(character.id)}>
@@ -202,6 +229,12 @@ function HeirCard({
   const startTalking = useGame((s) => s.startTalking);
   const stopTalking = useGame((s) => s.stopTalking);
   const setDraft = useGame((s) => s.setDraft);
+  const executeDirective = useGame((s) => s.executeDirective);
+  const canOperate = useCanOperateModule();
+
+  const [nurtureOpen, setNurtureOpen] = useState(false);
+  const [focus, setFocus] = useState<HeirAptitudeKey>('governance');
+  const [intensity, setIntensity] = useState<NurtureIntensity>('strict');
 
   const { world } = session;
   const character = world.characters[heir.characterId];
@@ -210,6 +243,7 @@ function HeirCard({
   const talkable = canTalkTo(world, heir.characterId);
   const talking = talkable && talkingTo === heir.characterId;
   const tutor = heir.tutorId ? world.characters[heir.tutorId] : undefined;
+  const candidateTutors = npcsOf(world).filter((npc) => npc.id !== heir.characterId);
 
   const handleTalk = () => {
     flushSync(() => {
@@ -288,28 +322,52 @@ function HeirCard({
         <MeterBar label={t('world.lineage.aptitude.learning')} value={heir.aptitude.learning} />
       </div>
 
-      {(tutor || heir.backing) && (
-        <div className="court-official__meta">
-          {tutor && (
-            <span>
-              {t('world.lineage.tutor')}:{' '}
-              <button
-                type="button"
-                className="link-btn"
-                lang={lang}
-                onClick={() => openDossier(tutor.id)}
-              >
-                {tutor.name}
-              </button>
-            </span>
+      <div className="court-official__meta">
+        <span>
+          {t('world.lineage.tutor')}:{' '}
+          {tutor ? (
+            <button
+              type="button"
+              className="link-btn"
+              lang={lang}
+              onClick={() => openDossier(tutor.id)}
+            >
+              {tutor.name}
+            </button>
+          ) : (
+            <span className="muted">{t('world.lineage.ops.unassignedTutor')}</span>
           )}
-          {heir.backing && (
-            <span lang={lang}>
-              {t('world.lineage.backing')}: {heir.backing}
-            </span>
-          )}
-        </div>
-      )}
+        </span>
+        {candidateTutors.length > 0 && (
+          <select
+            className="op-select op-select--inline"
+            aria-label={t('world.lineage.ops.assignTutor')}
+            value={heir.tutorId ?? ''}
+            disabled={!canOperate}
+            onChange={(e) => {
+              const nextId = e.target.value || null;
+              void executeDirective({
+                moduleId: 'lineage',
+                op: 'assign_tutor',
+                params: { character_id: heir.characterId, tutor_id: nextId },
+                label: `${name} · ${t('world.lineage.ops.assignTutor')}`,
+              });
+            }}
+          >
+            <option value="">{t('world.lineage.ops.unassignedTutor')}</option>
+            {candidateTutors.map((npc) => (
+              <option key={npc.id} value={npc.id}>
+                {npc.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {heir.backing && (
+          <span lang={lang}>
+            {t('world.lineage.backing')}: {heir.backing}
+          </span>
+        )}
+      </div>
 
       <div className="card__actions">
         <div className="card__actions-left">
@@ -319,10 +377,27 @@ function HeirCard({
               {t('world.dossier.open')}
             </button>
           )}
-          <button type="button" className="disclosure" onClick={handleNurtureDraft}>
+          <button
+            type="button"
+            className="disclosure"
+            aria-expanded={nurtureOpen}
+            onClick={() => setNurtureOpen((v) => !v)}
+          >
             <Icon name="book" size={14} />
             {t('world.lineage.nurtureAction')}
           </button>
+          {!heir.isHeirApparent && (
+            <ModuleOpButtons
+              directive={{
+                moduleId: 'lineage',
+                op: 'designate_heir',
+                params: { character_id: heir.characterId },
+                label: `${t('world.lineage.ops.designateHeir')} · ${name}`,
+              }}
+              instantLabel={t('world.lineage.ops.designateHeir')}
+              compact
+            />
+          )}
         </div>
         {talkable && (
           <button
@@ -335,6 +410,56 @@ function HeirCard({
           </button>
         )}
       </div>
+
+      {nurtureOpen && (
+        <div className="op-drawer">
+          <div className="op-drawer__row op-drawer__row--chips">
+            {(['governance', 'martial', 'virtue', 'learning'] as const).map((key) => (
+              <button
+                key={key}
+                type="button"
+                className="chip-button"
+                aria-pressed={focus === key}
+                disabled={!canOperate}
+                onClick={() => setFocus(key)}
+              >
+                {t(`world.lineage.aptitude.${key}`)}
+              </button>
+            ))}
+          </div>
+          <div className="op-drawer__row op-drawer__row--chips">
+            {(['gentle', 'strict', 'harsh'] as const).map((lvl) => (
+              <button
+                key={lvl}
+                type="button"
+                className="chip-button"
+                aria-pressed={intensity === lvl}
+                disabled={!canOperate}
+                onClick={() => setIntensity(lvl)}
+              >
+                {t(`world.lineage.ops.intensity.${lvl}`)}
+              </button>
+            ))}
+          </div>
+          <div className="op-drawer__foot">
+            <ModuleOpButtons
+              directive={{
+                moduleId: 'lineage',
+                op: 'nurture_heir',
+                params: { character_id: heir.characterId, focus, intensity },
+                label: `${name} · ${t(`world.lineage.aptitude.${focus}`)}`,
+              }}
+              instantLabel={t('world.lineage.ops.examineNow')}
+              compact
+              onAfter={() => setNurtureOpen(false)}
+            />
+            <button type="button" className="disclosure" onClick={handleNurtureDraft}>
+              <Icon name="speech" size={13} />
+              {t('world.court.ops.draftChat')}
+            </button>
+          </div>
+        </div>
+      )}
     </li>
   );
 }

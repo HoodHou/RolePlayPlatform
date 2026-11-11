@@ -50,9 +50,48 @@ export interface GameTool {
   run(world: WorldState, input: unknown, ctx: ToolContext): ToolOutcome;
 }
 
+export const DEFAULT_ID_DESCRIPTION =
+  'Short stable id in lowercase ASCII snake_case. Reuse it to update the same thing later.';
+
+function compactJsonSchema(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(compactJsonSchema);
+  if (!node || typeof node !== 'object') return node;
+
+  const raw = node as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  const isIdBounds = raw.type === 'string' && raw.minLength === 1 && raw.maxLength === 64;
+
+  for (const [key, value] of Object.entries(raw)) {
+    if (key === '$schema') continue;
+    if (key === 'additionalProperties' && value === false) continue;
+    if (key === 'description' && value === DEFAULT_ID_DESCRIPTION) continue;
+    if (key === 'minLength' && value === 1) continue;
+    if (key === 'maxLength' && isIdBounds) continue;
+    if (
+      (key === 'minimum' || key === 'maximum' || key === 'exclusiveMaximum') &&
+      typeof value === 'number' &&
+      Math.abs(value) >= 9999
+    ) {
+      continue;
+    }
+
+    if (key === 'properties' && value && typeof value === 'object' && !Array.isArray(value)) {
+      const props: Record<string, unknown> = {};
+      for (const [propKey, propVal] of Object.entries(value as Record<string, unknown>)) {
+        props[propKey] = compactJsonSchema(propVal);
+      }
+      out.properties = props;
+      continue;
+    }
+
+    out[key] = compactJsonSchema(value);
+  }
+
+  return out;
+}
+
 export function toJsonSchema(schema: z.ZodType): Record<string, unknown> {
-  const { $schema: _, ...rest } = z.toJSONSchema(schema) as Record<string, unknown>;
-  return rest;
+  return compactJsonSchema(z.toJSONSchema(schema)) as Record<string, unknown>;
 }
 
 export function invalidInput(error: z.ZodError, input: unknown): ToolOutcome {
@@ -71,7 +110,7 @@ export const id = z
   .min(1)
   .max(64)
   .refine((value) => !isReserved(value), 'This word is reserved. Choose another id.')
-  .describe('Short stable id in lowercase ASCII snake_case. Reuse it to update the same thing later.');
+  .describe(DEFAULT_ID_DESCRIPTION);
 
 export interface EntryError {
   at: string;

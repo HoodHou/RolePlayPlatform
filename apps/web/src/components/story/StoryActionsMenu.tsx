@@ -4,15 +4,19 @@ import { useTranslation } from 'react-i18next';
 import { toUiError, type UiError } from '../../api/errors';
 import { languageTag } from '../../i18n';
 import { describeError } from '../../lib/describe';
-import {
-  downloadJson,
-  downloadText,
-  formatStoryHtml,
-  formatStoryMarkdown,
-  safeFileSlug,
-} from '../../lib/exportStory';
 import { useGame } from '../../store/game';
 import { Icon } from '../Icon';
+
+function fileSlug(title: string, fallback: string): string {
+  const cleaned = title
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 60);
+  return cleaned || fallback;
+}
 
 /**
  * Header popover for exporting the open story (full save backup, illustrated
@@ -54,14 +58,17 @@ export function StoryActionsMenu({ session }: { session: Session }) {
     setError(null);
   }, [session.id]);
 
-  const slug = safeFileSlug(session.world.title || session.seed.premise, `story-${session.id}`);
+  const slug = fileSlug(session.world.title || session.seed.premise, `story-${session.id}`);
   const storyTag = languageTag(session.language);
 
   const onExportJson = async () => {
     setBusy(true);
     setError(null);
     try {
-      const backup = await exportSave();
+      const [{ downloadJson }, backup] = await Promise.all([
+        import('../../lib/exportStory'),
+        exportSave(),
+      ]);
       if (!backup) return;
       downloadJson(`${slug}.roleplay.json`, backup);
       setOpen(false);
@@ -76,7 +83,10 @@ export function StoryActionsMenu({ session }: { session: Session }) {
     setBusy(true);
     setError(null);
     try {
-      const backup = await exportSave();
+      const [{ downloadText, formatStoryHtml }, backup] = await Promise.all([
+        import('../../lib/exportStory'),
+        exportSave(),
+      ]);
       if (!backup) return;
       const html = formatStoryHtml(backup.session, t, storyTag, backup.images);
       downloadText(`${slug}.html`, html, 'text/html');
@@ -88,10 +98,19 @@ export function StoryActionsMenu({ session }: { session: Session }) {
     }
   };
 
-  const onExportMarkdown = () => {
-    const md = formatStoryMarkdown(session, t, storyTag);
-    downloadText(`${slug}.md`, md, 'text/markdown');
-    setOpen(false);
+  const onExportMarkdown = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const { downloadText, formatStoryMarkdown } = await import('../../lib/exportStory');
+      const md = formatStoryMarkdown(session, t, storyTag);
+      downloadText(`${slug}.md`, md, 'text/markdown');
+      setOpen(false);
+    } catch (err) {
+      setError(toUiError(err));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const onBranch = async () => {
@@ -151,7 +170,7 @@ export function StoryActionsMenu({ session }: { session: Session }) {
             className="story-actions__item"
             role="menuitem"
             disabled={busy || session.messages.length === 0}
-            onClick={onExportMarkdown}
+            onClick={() => void onExportMarkdown()}
           >
             <Icon name="code" size={16} />
             <div>

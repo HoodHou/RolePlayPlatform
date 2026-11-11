@@ -131,6 +131,10 @@ export interface DiceState {
 export const STANCES = ['war', 'hostile', 'neutral', 'friendly', 'allied'] as const;
 export type Stance = (typeof STANCES)[number];
 
+/** Strategic landmark archetypes used for map tokens and siege modifiers. */
+export const SANDBOX_REGION_KINDS = ['capital', 'pass', 'fortress', 'city', 'frontier', 'wilderness'] as const;
+export type SandboxRegionKind = (typeof SANDBOX_REGION_KINDS)[number];
+
 /** The map is a grid of this many cells; a region sits in one of them. */
 export const SANDBOX_GRID = { columns: 12, rows: 8 } as const;
 
@@ -167,6 +171,8 @@ export interface SandboxRegion {
   description: string;
   /** Free label: "plains", "mountain pass", "港口". */
   terrain: string;
+  /** Optional strategic landmark kind; inferred from name/terrain on legacy saves when omitted. */
+  kind?: SandboxRegionKind;
   /** Faction id, or null when nobody holds it. */
   ownerId: string | null;
   /** Cell on the map grid, 0-based from the top left. */
@@ -178,8 +184,18 @@ export interface SandboxRegion {
    * both ends exist.
    */
   neighbors: string[];
-  /** How strongly it is held (garrison, walls), when that is tracked. */
+  /** Garrison troop strength, when tracked. */
   strength: number | null;
+  /** Wall and fortification rating, 0 to 100. */
+  defense?: number;
+  /** Local public order, morale and livelihood stability, 0 to 100. */
+  stability?: number;
+  /** Tax base, farmland and trade prosperity index, 0 to 100. */
+  prosperity?: number;
+  /** Character id (`world.characters`) of the stationed general or governor, if any. */
+  commanderId?: string | null;
+  /** Short regional condition or crisis tag ("大旱赤地", "流民四起", "重兵云集"). */
+  status?: string;
 }
 
 export interface SandboxRelation {
@@ -200,6 +216,212 @@ export interface SandboxState {
   regions: Record<string, SandboxRegion>;
   /** Pairs with no entry are neutral. */
   relations: SandboxRelation[];
+}
+
+const CRISIS_RE = /旱|灾|乱|叛|饥|匪|疫|流民|unrest|famine|drought|rebel|plague|siege|围困|残破/i;
+const GRAIN_RE = /grain|food|ration|rice|wheat|provision|粮|粟|米|草料|刍/i;
+const MANPOWER_RE = /troop|manpower|soldier|army|levy|recruit|reserve|force|兵|军|丁|卒|骑|动员|预备/i;
+const FUNDS_RE = /silver|gold|treasury|coin|money|wealth|credit|fund|银|金|钱|库|饷|财|两|贯|钞/i;
+
+function clampPercent(value: number): number {
+  return Math.min(100, Math.max(0, Math.round(value)));
+}
+
+/** Infers a region's strategic landmark archetype when not explicitly recorded. */
+export function inferSandboxRegionKind(
+  region: Pick<SandboxRegion, 'name' | 'terrain' | 'ownerId' | 'kind'>,
+): SandboxRegionKind {
+  if (region.kind && (SANDBOX_REGION_KINDS as readonly string[]).includes(region.kind)) {
+    return region.kind;
+  }
+  const text = `${region.name} ${region.terrain}`;
+  if (/京|都|皇城|王城|capital|throne|imperial/i.test(text)) return 'capital';
+  if (/关(?!外|内|中|东|西)|隘|山口|峡口|\bpass\b|\bgate\b/i.test(text)) return 'pass';
+  if (/军镇|边镇|卫所|镇|堡|卫|寨|营|fort|bastion|garrison|stronghold|citadel|keep/i.test(text)) return 'fortress';
+  if (/关外|塞外|草原|边塞|边疆|北疆|steppe|frontier|march|borderland/i.test(text)) return 'frontier';
+  if (/荒|漠|野|泽|林|旱区|waste|desert|marsh|fens|wild/i.test(text)) return 'wilderness';
+  return 'city';
+}
+
+export function sandboxRegionDefense(region: SandboxRegion): number {
+  if (typeof region.defense === 'number' && Number.isFinite(region.defense)) {
+    return clampPercent(region.defense);
+  }
+  const kind = inferSandboxRegionKind(region);
+  const base: Record<SandboxRegionKind, number> = {
+    capital: 75,
+    pass: 80,
+    fortress: 70,
+    city: 55,
+    frontier: 40,
+    wilderness: 25,
+  };
+  return base[kind];
+}
+
+export function sandboxRegionStability(region: SandboxRegion): number {
+  if (typeof region.stability === 'number' && Number.isFinite(region.stability)) {
+    return clampPercent(region.stability);
+  }
+  const cue = `${region.name} ${region.status ?? ''} ${region.description}`;
+  if (CRISIS_RE.test(cue)) return 28;
+  if (!region.ownerId) return 42;
+  return 68;
+}
+
+export function sandboxRegionProsperity(region: SandboxRegion): number {
+  if (typeof region.prosperity === 'number' && Number.isFinite(region.prosperity)) {
+    return clampPercent(region.prosperity);
+  }
+  const kind = inferSandboxRegionKind(region);
+  const base: Record<SandboxRegionKind, number> = {
+    capital: 80,
+    city: 65,
+    pass: 45,
+    fortress: 45,
+    frontier: 35,
+    wilderness: 20,
+  };
+  const cue = `${region.name} ${region.status ?? ''} ${region.description}`;
+  return clampPercent(base[kind] - (CRISIS_RE.test(cue) ? 20 : 0));
+}
+
+export interface MatchedSandboxPools {
+  funds?: SandboxResource;
+  grain?: SandboxResource;
+  manpower?: SandboxResource;
+}
+
+/** Matches free-form world resources ("可用银两估计", "Gold", "粮草", "可动员兵力") to strategic roles. */
+export function matchSandboxResourcePools(board: SandboxState): MatchedSandboxPools {
+  const labelOf = (r: SandboxResource) => `${r.id} ${r.name}`;
+  const grain = board.resources.find((r) => GRAIN_RE.test(labelOf(r)));
+  const manpower = board.resources.find((r) => r.id !== grain?.id && MANPOWER_RE.test(labelOf(r)));
+  const funds =
+    board.resources.find((r) => r.id !== grain?.id && r.id !== manpower?.id && FUNDS_RE.test(labelOf(r))) ??
+    board.resources.find((r) => r.id !== grain?.id && r.id !== manpower?.id);
+  return {
+    ...(funds ? { funds } : {}),
+    ...(grain ? { grain } : {}),
+    ...(manpower ? { manpower } : {}),
+  };
+}
+
+/** Rounds a raw estimate to a clean human-friendly strategy integer (e.g. 5, 10, 250, 1000, 3000). */
+export function niceSandboxNumber(raw: number, min = 1): number {
+  if (!Number.isFinite(raw) || raw <= min) return min;
+  const exp = Math.floor(Math.log10(raw));
+  const base = 10 ** Math.max(0, exp - 1);
+  if (base <= 1) return Math.max(min, Math.round(raw));
+  const steps = [10, 12, 15, 20, 25, 30, 40, 50, 60, 75, 80, 100];
+  const scaled = raw / base;
+  let best = steps[0]!;
+  let bestDiff = Infinity;
+  for (const s of steps) {
+    const diff = Math.abs(scaled - s);
+    if (diff < bestDiff) {
+      best = s;
+      bestDiff = diff;
+    }
+  }
+  return Math.max(min, best * base);
+}
+
+/** Returns 3 clean batch presets (small / standard / heavy) calibrated to an available garrison or reserve pool. */
+export function sandboxStepPresets(available: number): number[] {
+  const cap = Math.floor(Math.max(0, available));
+  if (cap <= 0) return [];
+  if (cap <= 3) return [1, cap].filter((v, i, a) => v <= cap && a.indexOf(v) === i);
+  const candidates = [
+    niceSandboxNumber(cap * 0.15, 1),
+    niceSandboxNumber(cap * 0.35, 1),
+    niceSandboxNumber(cap * 0.7, 1),
+  ].map((v) => Math.min(v, cap));
+  return [...new Set(candidates.filter((v) => v > 0))].sort((a, b) => a - b);
+}
+
+export interface SandboxEconomicScale {
+  fortifyCost: number;
+  pacifyGrainCost: number;
+  pacifyFundsCost: number;
+  developCost: number;
+  developFundsYield: number;
+  developGrainYield: number;
+  costPerTroop: number;
+}
+
+/** Calibrates decree costs and yields proportionally to the campaign's resource scale. */
+export function sandboxEconomicScale(board: SandboxState): SandboxEconomicScale {
+  const pools = matchSandboxResourcePools(board);
+  const player = Object.values(board.factions).find((f) => f.isPlayer);
+  const maxHeld = (resId: string | undefined) =>
+    resId ? Math.max(0, ...Object.values(board.factions).map((f) => f.resources[resId] ?? 0)) : 0;
+
+  const fundsId = pools.funds?.id;
+  const grainId = pools.grain?.id;
+  const manpowerId = pools.manpower?.id;
+
+  const fundsRef = fundsId
+    ? Math.max(player?.resources[fundsId] ?? 0, Math.abs(player?.income[fundsId] ?? 0) * 4, maxHeld(fundsId), 25)
+    : 100;
+  const grainRef = grainId
+    ? Math.max(player?.resources[grainId] ?? 0, Math.abs(player?.income[grainId] ?? 0) * 4, maxHeld(grainId), 25)
+    : fundsRef;
+
+  const maxRegionStrength = Math.max(0, ...Object.values(board.regions).map((r) => r.strength ?? 0));
+  const troopRef = Math.max(
+    manpowerId ? (player?.resources[manpowerId] ?? 0) : 0,
+    maxRegionStrength * 3,
+    20,
+  );
+
+  const fortifyCost = fundsId ? niceSandboxNumber(fundsRef * 0.04, 5) : 0;
+  const pacifyFundsCost = fundsId ? niceSandboxNumber(fundsRef * 0.035, 5) : 0;
+  const pacifyGrainCost = grainId ? niceSandboxNumber(grainRef * 0.1, 5) : 0;
+  const developCost = fundsId ? niceSandboxNumber(fundsRef * 0.05, 5) : 0;
+  const developFundsYield = fundsId ? niceSandboxNumber(Math.max(1, developCost * 0.3), 1) : 0;
+  const developGrainYield = grainId ? niceSandboxNumber(Math.max(1, grainRef * 0.03), 1) : 0;
+  const costPerTroop = fundsId ? Math.min(10, Math.max(0.05, fundsRef / (troopRef * 2))) : 0;
+
+  return {
+    fortifyCost,
+    pacifyGrainCost,
+    pacifyFundsCost,
+    developCost,
+    developFundsYield,
+    developGrainYield,
+    costPerTroop,
+  };
+}
+
+/** True when `fromId` and `toId` are owned by `factionId` and linked through an unbroken chain of `factionId` regions. */
+export function areFriendlyRegionsConnected(
+  board: SandboxState,
+  fromId: string,
+  toId: string,
+  factionId: string,
+): boolean {
+  if (fromId === toId) return false;
+  const start = board.regions[fromId];
+  const goal = board.regions[toId];
+  if (!start || !goal || start.ownerId !== factionId || goal.ownerId !== factionId) return false;
+
+  const visited = new Set<string>([fromId]);
+  const queue = [fromId];
+  while (queue.length > 0) {
+    const currId = queue.shift()!;
+    const curr = board.regions[currId];
+    if (!curr) continue;
+    for (const other of Object.values(board.regions)) {
+      if (visited.has(other.id) || other.ownerId !== factionId) continue;
+      if (curr.neighbors.includes(other.id) || other.neighbors.includes(currId)) {
+        if (other.id === toId) return true;
+        visited.add(other.id);
+        queue.push(other.id);
+      }
+    }
+  }
+  return false;
 }
 
 // --- oracle: the story's open questions, answered by fate ---------------------------

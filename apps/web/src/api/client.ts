@@ -3,8 +3,10 @@ import type {
   GeneratePortraitResponse,
   ModelListResponse,
   ModelListTarget,
+  ModuleDirective,
   ModuleLibraryEntry,
   ModuleLibraryResponse,
+  ModuleOperationResponse,
   PluginManifest,
   PublicSettings,
   RetryImageResponse,
@@ -66,17 +68,23 @@ export const api = {
 
   listSessions: () => request<SessionSummary[]>('/api/sessions'),
   createSession: (create: CreateSessionRequest) =>
-    request<Session>('/api/sessions', { method: 'POST', body: create }),
+    request<Session>('/api/sessions?slim=1', { method: 'POST', body: create }),
   importSession: (backup: unknown) =>
-    request<Session>('/api/sessions/import', { method: 'POST', body: backup }),
-  getSession: (id: string) => request<Session>(sessionPath(id)),
+    request<Session>('/api/sessions/import?slim=1', { method: 'POST', body: backup }),
+  getSession: (id: string) => request<Session>(`${sessionPath(id)}?slim=1`),
   exportSession: (id: string) => request<SessionBackup>(`${sessionPath(id)}/export`),
   rollbackSession: (id: string, toTurn: number) =>
-    request<Session>(`${sessionPath(id)}/rollback`, { method: 'POST', body: { toTurn } }),
+    request<Session>(`${sessionPath(id)}/rollback?slim=1`, { method: 'POST', body: { toTurn } }),
   forkSession: (id: string, upToTurn?: number) =>
-    request<Session>(`${sessionPath(id)}/fork`, {
+    request<Session>(`${sessionPath(id)}/fork?slim=1`, {
       method: 'POST',
       body: upToTurn !== undefined ? { upToTurn } : {},
+    }),
+  /** Zero-token instant server-side module operation (court rescript, region decree, market trade, etc.). */
+  executeModuleAction: (id: string, directive: ModuleDirective) =>
+    request<ModuleOperationResponse>(`${sessionPath(id)}/actions`, {
+      method: 'POST',
+      body: { directive },
     }),
   retryImage: (id: string, messageId: string) =>
     request<RetryImageResponse>(`${sessionPath(id)}/images/${encodeURIComponent(messageId)}/retry`, {
@@ -92,7 +100,7 @@ export const api = {
     ),
   /** Refused with `turn_in_progress` while a turn is being generated. */
   updateSession: (id: string, update: UpdateSessionRequest) =>
-    request<Session>(sessionPath(id), { method: 'PATCH', body: update }),
+    request<Session>(`${sessionPath(id)}?slim=1`, { method: 'PATCH', body: update }),
   deleteSession: (id: string) => request<{ ok: true }>(sessionPath(id), { method: 'DELETE' }),
 
   turnsPath: (id: string) => `${sessionPath(id)}/turns`,

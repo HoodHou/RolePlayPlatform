@@ -28,7 +28,7 @@ import { sandboxModule } from './sandbox';
 import { travelModule } from './travel';
 import type { GameModule } from './types';
 
-export type { GameModule } from './types';
+export type { GameModule, ModuleOperationOutcome } from './types';
 export { compilePluginManifest, PluginStore, pluginManifestSchema, type CompiledPlugin } from './plugins';
 
 const BUILTIN_MODULES: Record<ModuleId, GameModule> = {
@@ -86,7 +86,7 @@ export function allModuleIds(): ModuleId[] {
   return [...MODULE_IDS, ...extra];
 }
 
-function lookupModule(id: ModuleId): GameModule | undefined {
+export function lookupModule(id: ModuleId): GameModule | undefined {
   return (BUILTIN_MODULES as Record<string, GameModule | undefined>)[id] ?? externalPlugins.get(id)?.module;
 }
 

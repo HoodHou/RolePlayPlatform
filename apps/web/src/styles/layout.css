@@ -29,6 +29,20 @@
   min-height: 0;
 }
 
+@media (min-width: 960px) {
+  .app.app--workspace {
+    grid-template-columns: var(--sidebar-w) minmax(24rem, 1fr) clamp(440px, 46vw, 720px);
+  }
+}
+
+@media (min-width: 1280px) {
+  .app--workspace .world__body .cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
 @media (max-width: 959.98px) {
   .app {
     grid-template-columns: minmax(0, 1fr);

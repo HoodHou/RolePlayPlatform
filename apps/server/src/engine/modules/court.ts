@@ -632,6 +632,119 @@ const zh = `## 朝堂与百官
 
 当君主推行变法诏令、廷议军国大事或委派大臣督办政务时，先调用 hold_court 传入主理大臣（lead_official_id）、检定维度（domain）、阻挠党派（opposing_faction_id）及预期国力变化（metric_changes），再叙述廷议与施政经过。服务端会结合大臣能力、忠心与党争阻力投掷 d20，自动结算党派势力消长与社稷指标增减（smooth 政令畅行、compromise 折冲妥协、deadlock 廷议僵持、backlash 阳奉阴违/朝野反噬）。`;
 
+function viewCourtForGM(world: WorldState): unknown {
+  const state = world.modules.court;
+  if (!state) return undefined;
+
+  const memorials: Record<string, unknown> = {};
+  const allMemorials = Object.values(state.memorials);
+  const pending = allMemorials.filter((m) => m.status === 'pending');
+  const settled = allMemorials.filter((m) => m.status !== 'pending').slice(-8);
+  for (const m of pending) memorials[m.id] = m;
+  for (const m of settled) {
+    memorials[m.id] = {
+      id: m.id,
+      title: m.title,
+      authorName: m.authorName,
+      status: m.status,
+      ...(m.ruling ? { ruling: m.ruling } : {}),
+    };
+  }
+
+  const edicts: Record<string, unknown> = {};
+  for (const e of Object.values(state.edicts)) {
+    edicts[e.id] = e.active ? e : { id: e.id, title: e.title, active: false };
+  }
+
+  return {
+    ...state,
+    memorials,
+    edicts,
+  };
+}
+
+const ruleMemorialOpSchema = z.strictObject({
+  id,
+  status: z.enum(['approved', 'rejected', 'shelved']),
+  ruling: z.string().optional(),
+  issue_edict: z.boolean().optional(),
+});
+
+const manageOfficialOpSchema = officialEntry;
+const toggleEdictOpSchema = edictEntry;
+
+function operateCourt(
+  world: WorldState,
+  op: string,
+  params: Record<string, unknown>,
+): { events: WorldEvent[]; summary: string } {
+  const state = ensureCourt(world);
+
+  if (op === 'rule_memorial') {
+    const parsed = ruleMemorialOpSchema.safeParse(params);
+    if (!parsed.success) throw new WorldOpError(z.prettifyError(parsed.error));
+    const existing = state.memorials[parsed.data.id];
+    if (!existing) throw new WorldOpError(`There is no memorial with id "${parsed.data.id}".`);
+    const defaultRuling =
+      parsed.data.status === 'approved'
+        ? '准奏，着有司即刻遵行。'
+        : parsed.data.status === 'rejected'
+          ? '所奏不准，发还重议。'
+          : '留中待议。';
+    const ruling = parsed.data.ruling?.trim() || existing.ruling || defaultRuling;
+    const events = upsertMemorial(world, state, {
+      id: parsed.data.id,
+      status: parsed.data.status,
+      ruling,
+    });
+    if (parsed.data.issue_edict && parsed.data.status === 'approved') {
+      const edictId = `edict_${existing.id}`;
+      events.push(
+        ...upsertEdict(world, state, {
+          id: edictId,
+          title: existing.title.replace(/^[《「]|[》」]$/g, ''),
+          description: existing.summary,
+          effect: existing.proposal || ruling,
+          active: true,
+        }),
+      );
+    }
+    const statusLabel =
+      parsed.data.status === 'approved' ? '准奏' : parsed.data.status === 'rejected' ? '驳回' : '留中';
+    return {
+      events,
+      summary: `朱批《${existing.title}》：${statusLabel}（${ruling}）`,
+    };
+  }
+
+  if (op === 'manage_official') {
+    const parsed = manageOfficialOpSchema.safeParse(params);
+    if (!parsed.success) throw new WorldOpError(z.prettifyError(parsed.error));
+    const charName = world.characters[parsed.data.character_id]?.name ?? parsed.data.character_id;
+    const events = upsertOfficial(world, state, parsed.data);
+    const summary = parsed.data.remove
+      ? `罢免 ${charName} 官职`
+      : `吏部铨叙 ${charName}：${[parsed.data.office, parsed.data.assignment].filter(Boolean).join(' · ') || '职务调整'}`;
+    return { events, summary };
+  }
+
+  if (op === 'toggle_edict') {
+    const parsed = toggleEdictOpSchema.safeParse(params);
+    if (!parsed.success) throw new WorldOpError(z.prettifyError(parsed.error));
+    const existing = state.edicts[parsed.data.id];
+    const events = upsertEdict(world, state, parsed.data);
+    const title = state.edicts[parsed.data.id]?.title ?? existing?.title ?? parsed.data.id;
+    const summary = parsed.data.remove
+      ? `移除诏令《${title}》`
+      : state.edicts[parsed.data.id]?.active
+        ? `颁行诏令《${title}》`
+        : `废止诏令《${title}》`;
+    return { events, summary };
+  }
+
+  throw new WorldOpError(`Unknown court operation "${op}".`);
+}
+
 export const courtModule: GameModule = {
   id: 'court',
   keptWhenUnused: false,
@@ -650,4 +763,6 @@ export const courtModule: GameModule = {
   record: { schema: courtSection, apply: applyCourt },
   guide: { en, zh },
   shownToCharacter: { tag: 'court_standing', of: courtStandingView },
+  viewForGM: viewCourtForGM,
+  operate: operateCourt,
 };

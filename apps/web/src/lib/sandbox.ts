@@ -1,4 +1,5 @@
 import {
+  areFriendlyRegionsConnected,
   SANDBOX_COLORS,
   type SandboxFaction,
   type SandboxRegion,
@@ -104,4 +105,44 @@ export function bordersOf(board: SandboxState): Border[] {
     }
   }
   return borders;
+}
+
+/** Total garrison strength across every region currently held by `factionId`. */
+export function totalGarrisonOf(board: SandboxState, factionId: string): number | null {
+  let sum = 0;
+  let tracked = false;
+  for (const region of Object.values(board.regions)) {
+    if (region.ownerId === factionId && region.strength !== null) {
+      sum += region.strength;
+      tracked = true;
+    }
+  }
+  return tracked ? sum : null;
+}
+
+/** Other friendly regions connected to `regionId` through an unbroken friendly supply corridor (direct neighbors first). */
+export function connectedFriendlyRegionsOf(
+  board: SandboxState,
+  regionId: string,
+  factionId: string,
+): SandboxRegion[] {
+  const directIds = new Set(neighborsOf(board, regionId).map((r) => r.id));
+  return Object.values(board.regions)
+    .filter((other) => other.id !== regionId && areFriendlyRegionsConnected(board, regionId, other.id, factionId))
+    .sort(
+      (a, b) =>
+        Number(directIds.has(b.id)) - Number(directIds.has(a.id)) ||
+        (b.strength ?? 0) - (a.strength ?? 0),
+    );
+}
+
+/** Adjacent player-owned regions capable of marching into `targetRegionId`, ordered by largest garrison. */
+export function borderingPlayerRegionsOf(
+  board: SandboxState,
+  targetRegionId: string,
+  playerFactionId: string,
+): SandboxRegion[] {
+  return neighborsOf(board, targetRegionId)
+    .filter((other) => other.ownerId === playerFactionId)
+    .sort((a, b) => (b.strength ?? 0) - (a.strength ?? 0));
 }

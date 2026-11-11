@@ -22,9 +22,11 @@ import {
   buildTurnInit,
   DEFAULT_TUNING,
   findDroppedTranscript,
+  type ExecutedDirectiveNote,
   type Tuning,
 } from './context';
 import { isPresent } from './memory';
+import { executeDirectivesBatch } from './moduleOps';
 import { getPrompts } from './prompts';
 import { StreamingStringField } from './streamingField';
 import { getModules, playableModules, settleModules } from './modules';
@@ -117,7 +119,10 @@ export function validateTurn(session: Session, request: TurnRequest): void {
     return;
   }
   if (!begun) throw new AppError('bad_request', 'The opening scene has not been generated yet.');
-  if (!request.text.trim()) throw new AppError('bad_request', 'There is nothing to say or do.');
+  const hasDirectives = request.kind === 'action' && (request.directives?.length ?? 0) > 0;
+  if (!request.text.trim() && !hasDirectives) {
+    throw new AppError('bad_request', 'There is nothing to say or do.');
+  }
 
   if (request.kind === 'talk') {
     const character = world.characters[request.characterId];
@@ -473,14 +478,15 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
       return combined.length > 2400 ? combined.slice(combined.length - 2400) : combined;
     };
 
-    if (deps.provider.kind === 'mock') {
+    const summaryProvider = deps.actorProvider ?? deps.provider;
+    if (summaryProvider.kind === 'mock') {
       session.world.storySummary = appendDigest();
       session.world.summarizedUpToTurn = dropped.upToTurn;
       return;
     }
 
     try {
-      const summaryConv = deps.provider.startConversation(buildSummaryInit(session, dropped.transcript));
+      const summaryConv = summaryProvider.startConversation(buildSummaryInit(session, dropped.transcript));
       const result = await summaryConv.step({
         signal: deps.signal,
         onTextDelta: () => {},
@@ -504,9 +510,36 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
     } else {
       session.world.suggestions = [];
       await archiveDroppedTurns();
-      const init = buildTurnInit(session, request, turn, contextOptions);
+
+      let executedDirectives: ExecutedDirectiveNote[] | undefined;
+      let batchEvents: WorldEvent[] = [];
+      if (request.kind === 'action' && request.directives && request.directives.length > 0) {
+        const batch = executeDirectivesBatch(session.world, request.directives, ctx.random);
+        batchEvents = batch.events;
+        executedDirectives = batch.reports.map((r) => ({
+          label: r.directive.label,
+          summary: r.summary,
+          ...(r.directive.aiNote ? { aiNote: r.directive.aiNote } : {}),
+        }));
+      }
+
+      const init = buildTurnInit(session, request, turn, contextOptions, executedDirectives);
       session.world.turn = turn;
-      if (request.kind === 'action') push({ ...stamp(), kind: 'player', text: request.text.trim() });
+      if (request.kind === 'action') {
+        const prefix =
+          executedDirectives && executedDirectives.length > 0
+            ? executedDirectives
+                .map((d) => (session.language === 'zh' ? `【部署】${d.label}` : `[Directive] ${d.label}`))
+                .join(' · ')
+            : '';
+        const typed = request.text.trim();
+        const playerDisplay = prefix && typed ? `${prefix}\n${typed}` : prefix || typed;
+        push({ ...stamp(), kind: 'player', text: playerDisplay });
+        if (batchEvents.length > 0) {
+          for (const event of batchEvents) push({ ...stamp(), kind: 'event', event });
+          deps.emit({ type: 'world', world: session.world });
+        }
+      }
       // The opening turn is all set-up: the panels filling in say it better than
       // a dozen "added" notices under the first paragraph.
       await runGameMaster(init, request.kind === 'action');

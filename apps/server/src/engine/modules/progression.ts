@@ -310,6 +310,51 @@ const zh = `## 境界功法与晋升体系
 
 冲击瓶颈或渡劫晋升时，切勿直接口头拍板：先调用 breakthrough 传入目标境界与灵丹/阵法/顿悟加成（catalyst_bonus），再叙述冲关经过。服务端会根据修为圆满度与心魔隐患投掷 d100，结算圆满破境（transcendent）、成功晋升（success）、冲关受阻（stalled）或走火入魔反噬（backlash）。`;
 
+const toggleAbilityOpSchema = z.strictObject({
+  ability_id: id,
+  equipped: z.boolean(),
+});
+
+const cultivateOpSchema = z.strictObject({
+  mode: z.enum(['meditate', 'cleanse']),
+  amount: z.number().int().min(1).max(100_000).optional(),
+});
+
+function operateProgression(
+  world: WorldState,
+  op: string,
+  params: Record<string, unknown>,
+): { events: WorldEvent[]; summary: string } {
+  const state = ensureProgression(world);
+
+  if (op === 'toggle_ability') {
+    const parsed = toggleAbilityOpSchema.safeParse(params);
+    if (!parsed.success) throw new WorldOpError(z.prettifyError(parsed.error));
+    const existing = state.abilities[parsed.data.ability_id];
+    if (!existing) throw new WorldOpError(`There is no ability with id "${parsed.data.ability_id}".`);
+    const events = upsertAbility(state, { id: parsed.data.ability_id, equipped: parsed.data.equipped });
+    return {
+      events,
+      summary: `功法【${existing.name}】设为${parsed.data.equipped ? '主修运使' : '暂歇收起'}`,
+    };
+  }
+
+  if (op === 'cultivate') {
+    const parsed = cultivateOpSchema.safeParse(params);
+    if (!parsed.success) throw new WorldOpError(z.prettifyError(parsed.error));
+    if (parsed.data.mode === 'meditate') {
+      const gain = parsed.data.amount ?? Math.max(10, Math.round(state.xpMax * 0.15));
+      state.xp = Math.max(0, state.xp + gain);
+      return { events: [], summary: `闭关吐纳精进（修为 +${gain} → ${state.xp}/${state.xpMax}）` };
+    }
+    const drop = parsed.data.amount ?? 15;
+    state.deviation = clamp(state.deviation - drop, 0, 100);
+    return { events: [], summary: `凝神涤虑平复心魔（心魔隐患 -${drop} → ${state.deviation}%）` };
+  }
+
+  throw new WorldOpError(`Unknown progression operation "${op}".`);
+}
+
 export const progressionModule: GameModule = {
   id: 'progression',
   keptWhenUnused: false,
@@ -327,4 +372,5 @@ export const progressionModule: GameModule = {
   ],
   record: { schema: progressionSection, apply: applyProgression },
   guide: { en, zh },
+  operate: operateProgression,
 };

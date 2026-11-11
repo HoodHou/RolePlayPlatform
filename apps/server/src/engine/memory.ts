@@ -1,4 +1,5 @@
 import { MODULE_IDS, type Character, type Memory, type ModuleId, type WorldState } from '@roleplay/shared';
+import { lookupModule } from './modules';
 
 /**
  * Remembering. A character can hold hundreds of memories; a prompt can carry
@@ -190,6 +191,39 @@ export function sceneFocus(world: WorldState, text = ''): RecallFocus {
  * Of the play modules, only the state of those in `modules` is shown: the game
  * master should not try to keep up a board it has no tools for.
  */
+function compactMemoryForGM(memory: Memory) {
+  return {
+    turn: memory.turn,
+    ...(memory.time ? { time: memory.time } : {}),
+    ...(memory.locationId ? { locationId: memory.locationId } : {}),
+    text: memory.text,
+    ...(memory.about.length > 0 ? { about: memory.about } : {}),
+    importance: memory.importance,
+    ...(memory.toldBy ? { toldBy: memory.toldBy } : {}),
+  };
+}
+
+function compactCharacterForGM(character: Character, inPlay: boolean, memories: Memory[], omitted: number) {
+  return {
+    id: character.id,
+    name: character.name,
+    ...(character.isPlayer ? { isPlayer: true } : {}),
+    ...(character.role ? { role: character.role } : {}),
+    ...(character.description ? { description: character.description } : {}),
+    ...(inPlay && character.appearance ? { appearance: character.appearance } : {}),
+    ...(character.personality ? { personality: character.personality } : {}),
+    ...(character.status ? { status: character.status } : {}),
+    ...(character.attitude ? { attitude: character.attitude } : {}),
+    locationId: character.locationId,
+    ...(character.stats.length > 0 ? { stats: character.stats } : {}),
+    ...(inPlay && character.voice ? { voice: character.voice } : {}),
+    ...(character.goals ? { goals: character.goals } : {}),
+    ...(character.secrets ? { secrets: character.secrets } : {}),
+    memories: memories.map(compactMemoryForGM),
+    ...(omitted > 0 ? { memories_not_shown: omitted } : {}),
+  };
+}
+
 export function gameMasterView(
   world: WorldState,
   playerText: string,
@@ -202,21 +236,83 @@ export function gameMasterView(
       const inPlay = focus.around.has(character.id) || focus.cues.has(character.id);
       const memories = inPlay ? recall(character.memories, focus, perCharacter) : [];
       const omitted = character.memories.length - memories.length;
-      return [character.id, { ...character, memories, ...(omitted > 0 ? { memories_not_shown: omitted } : {}) }];
+      return [character.id, compactCharacterForGM(character, inPlay, memories, omitted)];
     }),
   );
-  const states = Object.fromEntries(Object.entries(world.modules).filter(([id]) => modules.includes(id as ModuleId)));
+
+  const locations = Object.fromEntries(
+    Object.values(world.locations).map((loc) => [
+      loc.id,
+      {
+        id: loc.id,
+        name: loc.name,
+        ...(loc.description ? { description: loc.description } : {}),
+        ...(loc.connections.length > 0 ? { connections: loc.connections } : {}),
+      },
+    ]),
+  );
+
+  const items = Object.fromEntries(
+    Object.values(world.items).map((item) => [
+      item.id,
+      {
+        id: item.id,
+        name: item.name,
+        ...(item.description ? { description: item.description } : {}),
+        quantity: item.quantity,
+        ownerId: item.ownerId,
+      },
+    ]),
+  );
+
+  const quests = Object.fromEntries(
+    Object.values(world.quests).map((quest) => [
+      quest.id,
+      {
+        id: quest.id,
+        title: quest.title,
+        ...(quest.description ? { description: quest.description } : {}),
+        status: quest.status,
+        ...(quest.progress ? { progress: quest.progress } : {}),
+      },
+    ]),
+  );
+
+  const states: Record<string, unknown> = {};
+  for (const [id, rawState] of Object.entries(world.modules)) {
+    if (id === 'custom' || rawState === undefined) continue;
+    if (!modules.includes(id as ModuleId)) continue;
+    const mod = lookupModule(id as ModuleId);
+    const projected = mod?.viewForGM ? mod.viewForGM(world) : rawState;
+    if (projected !== undefined) states[id] = projected;
+  }
   if (world.modules.custom) {
     const custom = Object.fromEntries(
       Object.entries(world.modules.custom).filter(([id]) => modules.includes(id as ModuleId)),
     );
     if (Object.keys(custom).length > 0) states.custom = custom;
   }
-  const { storySummary, summarizedUpToTurn: _summarizedUpToTurn, ...rest } = world;
+
+  const scene = {
+    locationId: world.scene.locationId,
+    ...(world.scene.time ? { time: world.scene.time } : {}),
+    ...(world.scene.weather ? { weather: world.scene.weather } : {}),
+    ...(world.scene.summary ? { summary: world.scene.summary } : {}),
+  };
+
   return {
-    ...rest,
-    ...(storySummary ? { storySummary } : {}),
+    turn: world.turn,
+    ...(world.title ? { title: world.title } : {}),
+    ...(world.premise ? { premise: world.premise } : {}),
+    ...(world.artStyle ? { artStyle: world.artStyle } : {}),
+    playerId: world.playerId,
+    scene,
+    locations,
     characters,
+    items,
+    quests,
+    lore: world.lore,
+    ...(world.storySummary ? { storySummary: world.storySummary } : {}),
     modules: states,
   };
 }

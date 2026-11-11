@@ -1,5 +1,46 @@
 import type { MarketShop, MarketState, WorldState } from '@roleplay/shared';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { languageTag, useLocale } from '../../i18n';
+import { formatNumber } from '../../lib/text';
+import { inventoryOf } from '../../lib/world';
+import { Icon } from '../Icon';
+import { ModuleOpButtons } from './ModuleOpControls';
+
+const COMMON_CURRENCY_STATS = [
+  'gold',
+  'silver',
+  'coin',
+  'coins',
+  'credits',
+  'money',
+  'wealth',
+  '银两',
+  '铜钱',
+  '金币',
+  '灵石',
+  '钱银',
+];
+
+function playerBalanceOf(world: WorldState, market: MarketState): number | null {
+  const player = world.playerId ? world.characters[world.playerId] : undefined;
+  if (!player) return null;
+  const currencyStat = market.currencyStat;
+  if (currencyStat) {
+    const exact = player.stats.find(
+      (s) => typeof s.value === 'number' && s.name.toLowerCase() === currencyStat.toLowerCase(),
+    );
+    if (exact && typeof exact.value === 'number') return exact.value;
+  }
+  const byCurrency = player.stats.find(
+    (s) => typeof s.value === 'number' && s.name.toLowerCase() === market.currency.toLowerCase(),
+  );
+  if (byCurrency && typeof byCurrency.value === 'number') return byCurrency.value;
+  const byCommon = player.stats.find(
+    (s) => typeof s.value === 'number' && COMMON_CURRENCY_STATS.includes(s.name.toLowerCase()),
+  );
+  return byCommon && typeof byCommon.value === 'number' ? byCommon.value : null;
+}
 
 function ShopCard({
   shop,
@@ -39,39 +80,139 @@ function ShopCard({
       {wares.length === 0 ? (
         <p className="world-note">{t('world.market.emptyShop')}</p>
       ) : (
-        <ul className="chips">
-          {wares.map((ware) => (
-            <li key={ware.id} className="chip" title={ware.description || undefined}>
-              <span className="chip__name" lang={lang}>
-                {ware.name}
-              </span>
-              <span className="chip__val">
-                {ware.price} {currency}
-                {ware.stock !== null ? ` (${t('world.market.stock', { count: ware.stock })})` : ''}
-              </span>
-            </li>
-          ))}
+        <ul className="ware-list">
+          {wares.map((ware) => {
+            const inStock = ware.stock === null || ware.stock > 0;
+            return (
+              <li key={ware.id} className="ware-row" title={ware.description || undefined}>
+                <div className="ware-row__info">
+                  <span className="ware-row__name" lang={lang}>
+                    {ware.name}
+                  </span>
+                  <span className="ware-row__val">
+                    {ware.price} {currency}
+                    {ware.stock !== null ? ` (${t('world.market.stock', { count: ware.stock })})` : ''}
+                  </span>
+                </div>
+                {inStock && (
+                  <div className="ware-row__ops">
+                    <ModuleOpButtons
+                      directive={{
+                        moduleId: 'market',
+                        op: 'trade',
+                        params: { side: 'buy', shop_id: shop.id, item_id: ware.id, quantity: 1 },
+                        label: `${t('world.market.ops.buy')} · ${ware.name}`,
+                      }}
+                      instantLabel={t('world.market.ops.buy')}
+                      compact
+                    />
+                    <ModuleOpButtons
+                      directive={{
+                        moduleId: 'market',
+                        op: 'trade',
+                        params: { side: 'buy', shop_id: shop.id, item_id: ware.id, quantity: 1, haggle: true },
+                        label: `${t('world.market.ops.haggle')} · ${ware.name}`,
+                      }}
+                      instantLabel={t('world.market.ops.haggle')}
+                      hideStage
+                      compact
+                    />
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </li>
   );
 }
 
-/** Read-only view of the market ledger: currency and shops with their wares and prices. */
+/** Interactive view of the market ledger: currency, balance, shops, and direct buy/haggle/sell operations. */
 export function MarketTab({ market, world, lang }: { market: MarketState; world: WorldState; lang: string }) {
   const { t } = useTranslation();
+  const uiTag = languageTag(useLocale());
+  const [sellOpen, setSellOpen] = useState(false);
+
   const shops = Object.values(market.shops);
+  const firstShop =
+    shops.find((s) => s.locationId !== null && s.locationId === world.scene.locationId) ?? shops[0];
+  const balance = playerBalanceOf(world, market);
+  const items = inventoryOf(world);
 
   return (
     <div className="market">
-      <p className="world-note">
-        {t('world.market.currency')}: <strong lang={lang}>{market.currency}</strong>
-      </p>
+      <div className="op-bar op-bar--spread">
+        <p className="world-note">
+          {t('world.market.currency')}: <strong lang={lang}>{market.currency}</strong>
+        </p>
+        {balance !== null && (
+          <span className="tag tag--accent" lang={lang}>
+            {t('world.market.ops.yourBalance', {
+              amount: formatNumber(balance, uiTag),
+              currency: market.currency,
+            })}
+          </span>
+        )}
+      </div>
+
       <ul className="cards">
         {shops.map((shop) => (
           <ShopCard key={shop.id} shop={shop} currency={market.currency} world={world} lang={lang} />
         ))}
       </ul>
+
+      {firstShop && items.length > 0 && (
+        <section className="world-section">
+          <button
+            type="button"
+            className="disclosure"
+            aria-expanded={sellOpen}
+            onClick={() => setSellOpen((v) => !v)}
+          >
+            {t('world.market.ops.sellSection')} ({items.length})
+            <Icon name="chevron" size={14} className="disclosure__chevron" />
+          </button>
+          {sellOpen && (
+            <ul className="ware-list">
+              {items.map((item) => {
+                const listed = firstShop.wares[item.id];
+                const unitPrice = listed ? Math.max(1, Math.round(listed.price * 0.6)) : 5;
+                return (
+                  <li key={item.id} className="ware-row">
+                    <div className="ware-row__info">
+                      <span className="ware-row__name" lang={lang}>
+                        {item.name} ×{item.quantity}
+                      </span>
+                      <span className="ware-row__val">
+                        {unitPrice} {market.currency}
+                      </span>
+                    </div>
+                    <div className="ware-row__ops">
+                      <ModuleOpButtons
+                        directive={{
+                          moduleId: 'market',
+                          op: 'trade',
+                          params: {
+                            side: 'sell',
+                            shop_id: firstShop.id,
+                            item_id: item.id,
+                            quantity: 1,
+                            unit_price: unitPrice,
+                          },
+                          label: `${t('world.market.ops.sell')} · ${item.name}`,
+                        }}
+                        instantLabel={t('world.market.ops.sell')}
+                        compact
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      )}
     </div>
   );
 }

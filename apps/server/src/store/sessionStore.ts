@@ -78,6 +78,15 @@ function summarize(session: Session): SessionSummary {
   };
 }
 
+/** Strips bulky engine checkpoints for slim browser fetches while keeping checkpoint turn numbers. */
+export function toClientSession(session: Session): Session {
+  const { snapshots, ...rest } = session;
+  return {
+    ...rest,
+    snapshotTurns: (snapshots ?? []).map((snap) => snap.turn),
+  };
+}
+
 /** Records or replaces the engine checkpoint for `session.world.turn`. */
 export function recordSnapshot(session: Session): void {
   const list = (session.snapshots ??= []);
