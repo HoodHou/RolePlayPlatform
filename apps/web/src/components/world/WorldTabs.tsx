@@ -128,7 +128,7 @@ function countFor(tab: WorldTab, world: WorldState, showSecrets: boolean): numbe
     case 'places':
       return Object.keys(world.locations).length;
     case 'lore':
-      return splitLore(world).visible.length;
+      return splitLore(world).visible.length + (world.chronicle ?? []).filter((e) => !e.secret).length;
   }
 }
 

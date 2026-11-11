@@ -12,7 +12,7 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { draftSummonOrSeek } from '../../lib/characterRoles';
 import { focusComposer } from '../../lib/composer';
-import { canTalkTo, isPresent, npcsOf } from '../../lib/world';
+import { canTalkTo, isPresent } from '../../lib/world';
 import { useGame } from '../../store/game';
 import { useUi } from '../../store/ui';
 import { CharacterAvatar } from '../CharacterAvatar';
@@ -162,30 +162,6 @@ function ConsortCard({
         </p>
       )}
 
-      <div className="op-drawer__row op-drawer__row--chips">
-        <ModuleOpButtons
-          directive={{
-            moduleId: 'lineage',
-            op: 'update_consort',
-            params: { character_id: consort.characterId, favor_delta: 5 },
-            label: `${name} · ${t('world.lineage.ops.rewardFavor')}`,
-          }}
-          instantLabel={t('world.lineage.ops.rewardFavor')}
-          compact
-        />
-        <ModuleOpButtons
-          directive={{
-            moduleId: 'lineage',
-            op: 'update_consort',
-            params: { character_id: consort.characterId, favor_delta: -5 },
-            label: `${name} · ${t('world.lineage.ops.coolFavor')}`,
-          }}
-          instantLabel={t('world.lineage.ops.coolFavor')}
-          hideStage
-          compact
-        />
-      </div>
-
       {character && (
         <div className="card__actions">
           <button type="button" className="disclosure" onClick={() => openDossier(character.id)}>
@@ -229,7 +205,6 @@ function HeirCard({
   const startTalking = useGame((s) => s.startTalking);
   const stopTalking = useGame((s) => s.stopTalking);
   const setDraft = useGame((s) => s.setDraft);
-  const executeDirective = useGame((s) => s.executeDirective);
   const canOperate = useCanOperateModule();
 
   const [nurtureOpen, setNurtureOpen] = useState(false);
@@ -243,7 +218,6 @@ function HeirCard({
   const talkable = canTalkTo(world, heir.characterId);
   const talking = talkable && talkingTo === heir.characterId;
   const tutor = heir.tutorId ? world.characters[heir.tutorId] : undefined;
-  const candidateTutors = npcsOf(world).filter((npc) => npc.id !== heir.characterId);
 
   const handleTalk = () => {
     flushSync(() => {
@@ -338,30 +312,23 @@ function HeirCard({
             <span className="muted">{t('world.lineage.ops.unassignedTutor')}</span>
           )}
         </span>
-        {candidateTutors.length > 0 && (
-          <select
-            className="op-select op-select--inline"
-            aria-label={t('world.lineage.ops.assignTutor')}
-            value={heir.tutorId ?? ''}
-            disabled={!canOperate}
-            onChange={(e) => {
-              const nextId = e.target.value || null;
-              void executeDirective({
-                moduleId: 'lineage',
-                op: 'assign_tutor',
-                params: { character_id: heir.characterId, tutor_id: nextId },
-                label: `${name} · ${t('world.lineage.ops.assignTutor')}`,
-              });
-            }}
-          >
-            <option value="">{t('world.lineage.ops.unassignedTutor')}</option>
-            {candidateTutors.map((npc) => (
-              <option key={npc.id} value={npc.id}>
-                {npc.name}
-              </option>
-            ))}
-          </select>
-        )}
+        <ModuleOpButtons
+          directive={{
+            moduleId: 'lineage',
+            op: 'advisor_note',
+            params: {
+              intent: 'assign_tutor',
+              character_id: heir.characterId,
+              current_tutor_id: heir.tutorId ?? null,
+            },
+            label: `${name} · ${tutor ? t('world.lineage.ops.changeTutor') : t('world.lineage.ops.assignTutor')}`,
+            aiNote: tutor
+              ? `拟旨为${heir.order || ''}${name}改派授业太傅（现任太傅：${tutor.name}）。请从朝中德才兼备、符合身份立场的重臣儒士中择定合适人选，演述朝野与东宫反应，并更新 record.lineage.heirs 的 tutor_id。`
+              : `拟旨为${heir.order || ''}${name}遴选授业太傅。请从朝中德才兼备、符合身份立场的在案大臣或鸿儒中择定太傅人选，演述授职经过，并写入 record.lineage.heirs 的 tutor_id。`,
+          }}
+          instantLabel={tutor ? t('world.lineage.ops.changeTutor') : t('world.lineage.ops.assignTutor')}
+          compact
+        />
         {heir.backing && (
           <span lang={lang}>
             {t('world.lineage.backing')}: {heir.backing}
@@ -390,9 +357,10 @@ function HeirCard({
             <ModuleOpButtons
               directive={{
                 moduleId: 'lineage',
-                op: 'designate_heir',
-                params: { character_id: heir.characterId },
+                op: 'advisor_note',
+                params: { intent: 'designate_heir', character_id: heir.characterId },
                 label: `${t('world.lineage.ops.designateHeir')} · ${name}`,
+                aiNote: `颁诏册立${heir.order || ''}${name}为东宫储君。请结合继统法度、前朝朋党与后宫外戚反应裁定推演（若礼制或局势有重大阻力亦请如实呈现），并更新 record.lineage.heirs 的 is_heir_apparent 与封号。`,
               }}
               instantLabel={t('world.lineage.ops.designateHeir')}
               compact
@@ -445,9 +413,10 @@ function HeirCard({
             <ModuleOpButtons
               directive={{
                 moduleId: 'lineage',
-                op: 'nurture_heir',
-                params: { character_id: heir.characterId, focus, intensity },
-                label: `${name} · ${t(`world.lineage.aptitude.${focus}`)}`,
+                op: 'advisor_note',
+                params: { intent: 'nurture_heir', character_id: heir.characterId, focus, intensity },
+                label: `${name} · ${t('world.lineage.nurtureAction')}（${t(`world.lineage.aptitude.${focus}`)}）`,
+                aiNote: `考校并督导${heir.order || ''}${name}修习「${t(`world.lineage.aptitude.${focus}`)}」（尺度：${t(`world.lineage.ops.intensity.${intensity}`)}）。请先调用 nurture_heir 工具（character_id: "${heir.characterId}", focus: "${focus}", intensity: "${intensity}"）结算进境，再叙述考校授业情景。`,
               }}
               instantLabel={t('world.lineage.ops.examineNow')}
               compact

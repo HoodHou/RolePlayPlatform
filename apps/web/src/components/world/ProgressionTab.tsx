@@ -44,19 +44,6 @@ function AbilityCard({ ability, lang }: { ability: ProgressionAbility; lang: str
           {ability.description}
         </p>
       )}
-      <div className="card__actions">
-        <ModuleOpButtons
-          directive={{
-            moduleId: 'progression',
-            op: 'toggle_ability',
-            params: { ability_id: ability.id, equipped: !ability.equipped },
-            label: `${ability.equipped ? t('world.progression.ops.unequip') : t('world.progression.ops.equip')} · ${ability.name}`,
-          }}
-          instantLabel={ability.equipped ? t('world.progression.ops.unequip') : t('world.progression.ops.equip')}
-          hideStage
-          compact
-        />
-      </div>
     </li>
   );
 }
@@ -130,9 +117,10 @@ export function ProgressionTab({ world, lang }: { world: WorldState; lang: strin
           <ModuleOpButtons
             directive={{
               moduleId: 'progression',
-              op: 'cultivate',
-              params: { mode: 'meditate' },
+              op: 'advisor_note',
+              params: { intent: 'meditate' },
               label: t('world.progression.ops.meditate'),
+              aiNote: `闭关潜修运转功法（当前境界：${state.realm || t('world.progression.unawakened')}，修为进度 ${state.xp}/${state.xpMax}）。请结合当前所处环境、时局安危与耗用时辰裁定修为进益，并更新 record.progression。`,
             }}
             instantLabel={t('world.progression.ops.meditate')}
             compact
@@ -141,12 +129,12 @@ export function ProgressionTab({ world, lang }: { world: WorldState; lang: strin
             <ModuleOpButtons
               directive={{
                 moduleId: 'progression',
-                op: 'cultivate',
-                params: { mode: 'cleanse' },
+                op: 'advisor_note',
+                params: { intent: 'cleanse' },
                 label: t('world.progression.ops.cleanse'),
+                aiNote: `凝神静气、涤虑宁神以平复真元躁动与心魔隐患（当前隐患 ${state.deviation}%）。请结合所处环境与心境推演调息过程并更新 record.progression.deviation。`,
               }}
               instantLabel={t('world.progression.ops.cleanse')}
-              hideStage
               compact
             />
           )}
@@ -154,12 +142,15 @@ export function ProgressionTab({ world, lang }: { world: WorldState; lang: strin
             <ModuleOpButtons
               directive={{
                 moduleId: 'progression',
-                op: 'breakthrough',
+                op: 'advisor_note',
                 params: {
+                  intent: 'breakthrough',
                   target_realm: targetRealm,
-                  reason: state.bottleneck || breakthroughLabel,
                 },
                 label: breakthroughLabel,
+                aiNote: `正式发起境界冲关，冲击「${targetRealm}」${
+                  state.bottleneck ? `（当前瓶颈：${state.bottleneck}）` : ''
+                }。请先调用 breakthrough 工具（target_realm: "${targetRealm}"）按当前修为盈满度与准备投掷 d100 裁定成败，再演绎冲关异象或反噬后果并同步更新 record.progression。`,
               }}
               instantLabel={breakthroughLabel}
               compact

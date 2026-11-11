@@ -15,6 +15,13 @@ interface AdvancedPanelProps {
   onChange: (value: GenerationForm) => void;
 }
 
+const MEMORY_PRESETS = [
+  { id: 'standard', historyTurns: '', memoriesRecalled: '' },
+  { id: 'long', historyTurns: '120', memoriesRecalled: '24' },
+  { id: 'epic1m', historyTurns: '400', memoriesRecalled: '48' },
+  { id: 'max1m', historyTurns: '1000', memoriesRecalled: '80' },
+] as const;
+
 export function AdvancedPanel({ id, value, onChange }: AdvancedPanelProps) {
   const { t } = useTranslation();
   const numbers = new Intl.NumberFormat(languageTag(useLocale()));
@@ -34,6 +41,33 @@ export function AdvancedPanel({ id, value, onChange }: AdvancedPanelProps) {
         >
           {t('settings.advanced.reset')}
         </button>
+      </div>
+
+      <div className="field">
+        <span className="field__label">{t('settings.advanced.presetsLabel')}</span>
+        <div className="advanced-presets" role="group" aria-label={t('settings.advanced.presetsLabel')}>
+          {MEMORY_PRESETS.map((preset) => {
+            const active =
+              value.historyTurns === preset.historyTurns && value.memoriesRecalled === preset.memoriesRecalled;
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                className={`btn btn--small${active ? ' btn--primary' : ''}`}
+                onClick={() =>
+                  onChange({
+                    ...value,
+                    historyTurns: preset.historyTurns,
+                    memoriesRecalled: preset.memoriesRecalled,
+                  })
+                }
+              >
+                {t(`settings.advanced.presets.${preset.id}`)}
+              </button>
+            );
+          })}
+        </div>
+        <p className="field__hint">{t('settings.advanced.presetsHint')}</p>
       </div>
 
       {GENERATION_FIELDS.map((field) => {

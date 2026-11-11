@@ -156,13 +156,19 @@ function AgentCard({
               <ModuleOpButtons
                 directive={{
                   moduleId: 'espionage',
-                  op: 'run_operation',
+                  op: 'advisor_note',
                   params: {
+                    intent: 'run_operation',
                     agent_id: agent.id,
                     operation,
                     reason: opReason,
                   },
                   label: `${agent.codename} · ${opName}`,
+                  aiNote: `密令潜伏暗桩「${agent.codename}」${
+                    targetLabel ? `针对【${targetLabel}】` : ''
+                  }执行「${opName}」行动。请先调用 run_operation 工具（agent_id: "${
+                    agent.id
+                  }", operation: "${operation}", reason: "${opReason}"）结算渗透与暴露检定；若成功查获秘辛把柄，请在 record.espionage.dossiers 中补录具体情报密档。`,
                 }}
                 instantLabel={t('world.espionage.ops.dispatch')}
                 compact
@@ -173,19 +179,22 @@ function AgentCard({
             <ModuleOpButtons
               directive={{
                 moduleId: 'espionage',
-                op: 'set_agent_status',
+                op: 'advisor_note',
                 params: {
+                  intent: agent.status === 'active' ? 'recall_agent' : 'redeploy_agent',
                   agent_id: agent.id,
-                  status: agent.status === 'active' ? 'recalled' : 'active',
                 },
                 label: `${agent.codename} · ${
                   agent.status === 'active' ? t('world.espionage.ops.recall') : t('world.espionage.ops.redeploy')
                 }`,
+                aiNote:
+                  agent.status === 'active'
+                    ? `密令撤回潜伏于${targetLabel || '目标处'}的暗桩「${agent.codename}」暂避风头（当前暴露热度 ${agent.exposure}/10），请推演撤离过程并更新 record.espionage.agents 状态为 recalled。`
+                    : `密令暗桩「${agent.codename}」重新潜伏回${targetLabel || '目标处'}恢复刺探，请推演潜入过程并更新 record.espionage.agents 状态为 active。`,
               }}
               instantLabel={
                 agent.status === 'active' ? t('world.espionage.ops.recall') : t('world.espionage.ops.redeploy')
               }
-              hideStage
               compact
             />
           </div>

@@ -1,6 +1,5 @@
 import type { CardDeck, DeckState, RandomTable } from '@roleplay/shared';
 import { useTranslation } from 'react-i18next';
-import { ModuleOpButtons } from './ModuleOpControls';
 
 function DeckCardView({ deck, lang }: { deck: CardDeck; lang: string }) {
   const { t } = useTranslation();
@@ -37,32 +36,6 @@ function DeckCardView({ deck, lang }: { deck: CardDeck; lang: string }) {
           </ul>
         </div>
       )}
-      <div className="card__actions">
-        <ModuleOpButtons
-          directive={{
-            moduleId: 'deck',
-            op: 'draw',
-            params: { deck_id: deck.id, reason: deck.name },
-            label: `${t('world.deck.ops.drawCard')} · ${deck.name}`,
-          }}
-          instantLabel={t('world.deck.ops.drawCard')}
-          disabled={deck.remaining.length === 0}
-          compact
-        />
-        {deck.drawn.length > 0 && (
-          <ModuleOpButtons
-            directive={{
-              moduleId: 'deck',
-              op: 'reset_deck',
-              params: { deck_id: deck.id },
-              label: `${t('world.deck.ops.resetDeck')} · ${deck.name}`,
-            }}
-            instantLabel={t('world.deck.ops.resetDeck')}
-            hideStage
-            compact
-          />
-        )}
-      </div>
     </li>
   );
 }
@@ -93,19 +66,6 @@ function TableCardView({ table, lang }: { table: RandomTable; lang: string }) {
           </li>
         ))}
       </ul>
-      <div className="card__actions">
-        <ModuleOpButtons
-          directive={{
-            moduleId: 'deck',
-            op: 'draw',
-            params: { table_id: table.id, reason: table.name },
-            label: `${t('world.deck.ops.rollTable')} · ${table.name}`,
-          }}
-          instantLabel={t('world.deck.ops.rollTable')}
-          disabled={table.entries.length === 0}
-          compact
-        />
-      </div>
     </li>
   );
 }

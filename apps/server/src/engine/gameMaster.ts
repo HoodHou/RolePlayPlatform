@@ -31,7 +31,7 @@ import { getPrompts } from './prompts';
 import { StreamingStringField } from './streamingField';
 import { getModules, playableModules, settleModules } from './modules';
 import { getToolbox, NARRATE, type PictureRequest, type ToolContext } from './tools';
-import { addMemory, attachPicture, buildCharacterPortraitPrompt, WorldOpError } from './world';
+import { addMemory, attachPicture, autoCaptureChronicleFromEvents, buildCharacterPortraitPrompt, WorldOpError } from './world';
 
 /**
  * The turn loop.
@@ -179,6 +179,7 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
 
   // --- Pictures, painted in the background -----------------------------------
   const pictures: Promise<void>[] = [];
+  const turnWorldEvents: WorldEvent[] = [];
   const paintAbort = new AbortController();
   const stopPainting = () => paintAbort.abort();
   deps.signal.addEventListener('abort', stopPainting, { once: true });
@@ -378,6 +379,10 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
       if (announce) {
         for (const event of applied.events) push({ ...stamp(), kind: 'event', event });
       }
+      turnWorldEvents.push(...applied.events);
+      if (told && finished && applied.settled) {
+        autoCaptureChronicleFromEvents(session.world, turnWorldEvents, session.language);
+      }
       deps.emit({ type: 'world', world: session.world });
 
       // The next turn is rebuilt from the world state, not from this exchange,
@@ -468,6 +473,7 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
       nameOf,
       tuning.historyTurns,
       session.world.summarizedUpToTurn ?? 0,
+      tuning.contextWindow,
     );
     if (!dropped) return;
 
@@ -475,7 +481,11 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
       const combined = session.world.storySummary
         ? `${session.world.storySummary}\n${dropped.fallbackDigest}`
         : dropped.fallbackDigest;
-      return combined.length > 2400 ? combined.slice(combined.length - 2400) : combined;
+      if (combined.length <= 4800) return combined;
+      // Preserve foundational early turns alongside recent archived turns rather than slicing off Turn 1.
+      const head = combined.slice(0, 1200);
+      const tail = combined.slice(combined.length - 3500);
+      return `${head}\n…\n${tail}`;
     };
 
     const summaryProvider = deps.actorProvider ?? deps.provider;
@@ -516,9 +526,11 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
       if (request.kind === 'action' && request.directives && request.directives.length > 0) {
         const batch = executeDirectivesBatch(session.world, request.directives, ctx.random);
         batchEvents = batch.events;
+        turnWorldEvents.push(...batchEvents);
         executedDirectives = batch.reports.map((r) => ({
           label: r.directive.label,
           summary: r.summary,
+          scheduled: r.directive.op === 'advisor_note',
           ...(r.directive.aiNote ? { aiNote: r.directive.aiNote } : {}),
         }));
       }

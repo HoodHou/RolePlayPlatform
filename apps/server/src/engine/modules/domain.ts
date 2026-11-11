@@ -257,8 +257,36 @@ function upsertFacility(world: WorldState, state: DomainState, entry: z.infer<ty
   if (!existing && !name) {
     throw new WorldOpError(`Facility "${entry.id}" needs "name" when created.`);
   }
-  if (entry.steward_id && !world.characters[entry.steward_id]) {
-    throw new WorldOpError(`Steward character "${entry.steward_id}" does not exist.`);
+  if (entry.steward_id) {
+    const steward = world.characters[entry.steward_id];
+    if (!steward) {
+      throw new WorldOpError(`Steward character "${entry.steward_id}" does not exist.`);
+    }
+    if (steward.isPlayer) {
+      throw new WorldOpError('The player character cannot be assigned as a facility steward.');
+    }
+    const board = world.modules.sandbox;
+    if (board) {
+      const rivalFaction = Object.values(board.factions).find(
+        (faction) => faction.leaderId === entry.steward_id && !faction.isPlayer,
+      );
+      if (rivalFaction) {
+        throw new WorldOpError(
+          `"${steward.name}" leads rival faction "${rivalFaction.name}" and cannot be appointed as a domain steward.`,
+        );
+      }
+      const rivalPost = Object.values(board.regions).find(
+        (region) =>
+          region.commanderId === entry.steward_id &&
+          region.ownerId !== null &&
+          !board.factions[region.ownerId]?.isPlayer,
+      );
+      if (rivalPost) {
+        throw new WorldOpError(
+          `"${steward.name}" commands "${rivalPost.name}" for another faction and cannot be appointed as a domain steward.`,
+        );
+      }
+    }
   }
 
   const prevLevel = existing?.level;

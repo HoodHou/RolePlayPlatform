@@ -1,4 +1,11 @@
-import type { DialogueMessage, ModuleDirective, Session } from '@roleplay/shared';
+import {
+  CONNECTION_DEFAULTS,
+  formatContextWindow,
+  resolveModelContextWindow,
+  type DialogueMessage,
+  type ModuleDirective,
+  type Session,
+} from '@roleplay/shared';
 import { useLayoutEffect, useRef, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { languageTag, useLocale } from '../../i18n';
@@ -48,7 +55,8 @@ export function ComposerArea({ session }: { session: Session }) {
   const forkSession = useGame((s) => s.forkSession);
   const paintCharacterPortrait = useGame((s) => s.paintCharacterPortrait);
   const paintingCharacters = useGame((s) => s.paintingCharacters);
-  const illustrationsActive = useSettings((s) => s.settings?.illustrationsActive ?? false);
+  const settings = useSettings((s) => s.settings);
+  const illustrationsActive = settings?.illustrationsActive ?? false;
   const openLightbox = useUi((s) => s.openLightbox);
   const openDossier = useUi((s) => s.openDossier);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -76,6 +84,20 @@ export function ComposerArea({ session }: { session: Session }) {
   const totalTokens = (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0);
   const cachePct =
     usage && usage.inputTokens > 0 ? Math.round((usage.cachedInputTokens / usage.inputTokens) * 100) : 0;
+  const activeProvider = settings?.gameMaster.provider ?? 'mock';
+  const activeModel =
+    activeProvider === 'mock'
+      ? ''
+      : settings?.gameMaster.model.trim() ||
+        settings?.connections[activeProvider]?.model.trim() ||
+        CONNECTION_DEFAULTS[activeProvider].model;
+  const contextLimit = resolveModelContextWindow(activeProvider, activeModel);
+  const contextLimitLabel = formatContextWindow(contextLimit);
+  const lastTurnInput = usage?.lastTurn?.inputTokens ?? 0;
+  const contextPct =
+    lastTurnInput > 0 && contextLimit > 0
+      ? Math.min(100, Math.round((lastTurnInput / contextLimit) * 1000) / 10)
+      : 0;
 
   // Grow with the text up to the CSS max-height.
   useLayoutEffect(() => {
@@ -418,13 +440,25 @@ export function ComposerArea({ session }: { session: Session }) {
                   input: formatNumber(usage.inputTokens, uiTag),
                   output: formatNumber(usage.outputTokens, uiTag),
                   cached: formatNumber(usage.cachedInputTokens, uiTag),
-                  lastInput: formatNumber(usage.lastTurn?.inputTokens ?? 0, uiTag),
-                  lastOutput: formatNumber(usage.lastTurn?.outputTokens ?? 0, uiTag),
+                  lastInput: formatNumber(lastTurnInput, uiTag),
+                  contextLimit: contextLimitLabel,
+                  contextPct,
                 })}
               >
-                {cachePct > 0
-                  ? t('story.usageWithCache', { tokens: compactTokens(totalTokens, uiTag), cache: cachePct })
-                  : t('story.usageTokens', { tokens: compactTokens(totalTokens, uiTag) })}
+                {lastTurnInput > 0
+                  ? cachePct > 0
+                    ? t('story.usageContextWithCache', {
+                        used: compactTokens(lastTurnInput, uiTag),
+                        limit: contextLimitLabel,
+                        cache: cachePct,
+                      })
+                    : t('story.usageContext', {
+                        used: compactTokens(lastTurnInput, uiTag),
+                        limit: contextLimitLabel,
+                      })
+                  : cachePct > 0
+                    ? t('story.usageWithCache', { tokens: compactTokens(totalTokens, uiTag), cache: cachePct })
+                    : t('story.usageTokens', { tokens: compactTokens(totalTokens, uiTag) })}
               </span>
             )}
             <p id="composer-hint" className="composer__hint">

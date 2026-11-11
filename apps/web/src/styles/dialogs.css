@@ -274,6 +274,13 @@
   gap: 1.1rem;
 }
 
+.advanced-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.35rem 0 0.25rem;
+}
+
 .settings-panel__intro {
   display: flex;
   align-items: flex-start;

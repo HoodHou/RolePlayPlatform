@@ -73,35 +73,93 @@ export interface ChatModelPreset {
   label: string;
   badge?: ModelBadgeKind;
   defaultEffort?: Effort;
+  /** Maximum input context window in tokens (e.g. 1_000_000 for 1M context models). */
+  contextWindow?: number;
 }
 
 /** Curated flagship and fast chat models per connection for one-click switching. */
 export const CHAT_MODEL_PRESETS: Record<ConnectionKind, readonly ChatModelPreset[]> = {
   gemini: [
-    { provider: 'gemini', model: 'gemini-4-carbon', label: 'Gemini 4 Carbon', badge: 'new', defaultEffort: 'high' },
-    { provider: 'gemini', model: 'gemini-4-argon', label: 'Gemini 4 Argon', badge: 'new', defaultEffort: 'medium' },
-    { provider: 'gemini', model: DEFAULT_GEMINI_MODEL, label: 'Gemini 3.8 Flash', badge: 'fast', defaultEffort: 'medium' },
-    { provider: 'gemini', model: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', badge: 'reasoning' },
-    { provider: 'gemini', model: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', badge: 'fast' },
+    { provider: 'gemini', model: 'gemini-4-carbon', label: 'Gemini 4 Carbon', badge: 'new', defaultEffort: 'high', contextWindow: 1_000_000 },
+    { provider: 'gemini', model: 'gemini-4-argon', label: 'Gemini 4 Argon', badge: 'new', defaultEffort: 'medium', contextWindow: 1_000_000 },
+    { provider: 'gemini', model: DEFAULT_GEMINI_MODEL, label: 'Gemini 3.8 Flash', badge: 'fast', defaultEffort: 'medium', contextWindow: 1_000_000 },
+    { provider: 'gemini', model: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', badge: 'reasoning', contextWindow: 1_000_000 },
+    { provider: 'gemini', model: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', badge: 'fast', contextWindow: 1_000_000 },
   ],
   anthropic: [
-    { provider: 'anthropic', model: DEFAULT_ANTHROPIC_MODEL, label: 'Claude Opus 5.5', badge: 'new', defaultEffort: 'medium' },
-    { provider: 'anthropic', model: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', badge: 'new', defaultEffort: 'medium' },
-    { provider: 'anthropic', model: 'claude-opus-4-6', label: 'Claude Opus 4.6', badge: 'reasoning' },
-    { provider: 'anthropic', model: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', badge: 'fast' },
-    { provider: 'anthropic', model: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', badge: 'fast' },
+    { provider: 'anthropic', model: DEFAULT_ANTHROPIC_MODEL, label: 'Claude Opus 5.5', badge: 'new', defaultEffort: 'medium', contextWindow: 1_000_000 },
+    { provider: 'anthropic', model: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', badge: 'new', defaultEffort: 'medium', contextWindow: 1_000_000 },
+    { provider: 'anthropic', model: 'claude-opus-4-6', label: 'Claude Opus 4.6', badge: 'reasoning', contextWindow: 1_000_000 },
+    { provider: 'anthropic', model: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', badge: 'fast', contextWindow: 1_000_000 },
+    { provider: 'anthropic', model: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', badge: 'fast', contextWindow: 200_000 },
   ],
   openai: [
-    { provider: 'openai', model: DEFAULT_OPENAI_MODEL, label: 'GPT-6.1 Sol', badge: 'new', defaultEffort: 'medium' },
-    { provider: 'openai', model: 'gpt-5.4', label: 'GPT-5.4', badge: 'reasoning' },
-    { provider: 'openai', model: 'gpt-5.4-mini', label: 'GPT-5.4 Mini', badge: 'fast' },
-    { provider: 'openai', model: 'o4-mini', label: 'o4-mini', badge: 'reasoning' },
+    { provider: 'openai', model: DEFAULT_OPENAI_MODEL, label: 'GPT-6.1 Sol', badge: 'new', defaultEffort: 'medium', contextWindow: 1_000_000 },
+    { provider: 'openai', model: 'gpt-6.1-terra', label: 'GPT-6.1 Terra', badge: 'new', defaultEffort: 'high', contextWindow: 1_000_000 },
+    { provider: 'openai', model: 'gpt-5.4', label: 'GPT-5.4', badge: 'reasoning', contextWindow: 1_000_000 },
+    { provider: 'openai', model: 'gpt-5.4-mini', label: 'GPT-5.4 Mini', badge: 'fast', contextWindow: 1_000_000 },
+    { provider: 'openai', model: 'o4-mini', label: 'o4-mini', badge: 'reasoning', contextWindow: 200_000 },
   ],
   custom: [
-    { provider: 'custom', model: 'deepseek-chat', label: 'DeepSeek V3', badge: 'fast' },
-    { provider: 'custom', model: 'deepseek-reasoner', label: 'DeepSeek R1', badge: 'reasoning' },
+    { provider: 'custom', model: 'deepseek-chat', label: 'DeepSeek V3', badge: 'fast', contextWindow: 128_000 },
+    { provider: 'custom', model: 'deepseek-reasoner', label: 'DeepSeek R1', badge: 'reasoning', contextWindow: 128_000 },
   ],
 };
+
+/** Whether a Claude model supports Anthropic's 1M token context window (`context-1m-2025-08-07` / native 1M). */
+export function supportsAnthropic1MContext(model: string): boolean {
+  const normalized = model.trim().toLowerCase().replace(/^anthropic\//, '');
+  if (!normalized) return true;
+  if (/^claude-haiku/i.test(normalized)) return false;
+  return (
+    /^claude-(?:opus-(?:4-6|4\.6|5)|sonnet-(?:4|5)|fable-5)/i.test(normalized) ||
+    /^claude-(?:4|5)/i.test(normalized)
+  );
+}
+
+/** Resolves the effective input context window (in tokens) for any provider and model ID. */
+export function resolveModelContextWindow(
+  provider: ProviderKind,
+  model: string,
+  longContext = true,
+): number {
+  if (provider === 'mock') return 1_000_000;
+  const raw = model.trim() || CONNECTION_DEFAULTS[provider].model;
+  const normalized = raw.toLowerCase().replace(/^(?:models\/|openai\/|anthropic\/|google\/)/, '');
+
+  if (provider === 'anthropic' || normalized.startsWith('claude-')) {
+    if (supportsAnthropic1MContext(normalized)) {
+      return longContext ? 1_000_000 : 200_000;
+    }
+    return 200_000;
+  }
+
+  for (const list of Object.values(CHAT_MODEL_PRESETS)) {
+    const hit = list.find((preset) => preset.model.toLowerCase() === normalized);
+    if (hit?.contextWindow) return hit.contextWindow;
+  }
+
+  if (normalized.includes('2m')) return 2_000_000;
+  if (normalized.includes('1m')) return 1_000_000;
+  if (/^gemini-1\.5-pro/.test(normalized)) return 2_000_000;
+  if (provider === 'gemini' || /^gemini-(?:1\.5|2|3|4)/.test(normalized)) return 1_000_000;
+  if (/^gpt-(?:4\.1|5\.4|6)/.test(normalized)) return 1_000_000;
+  if (/^gpt-5/.test(normalized)) return 400_000;
+  if (/^(?:o1|o3|o4)/.test(normalized)) return 200_000;
+  if (/^(?:deepseek|gpt-4o)/.test(normalized)) return 128_000;
+  if (/^(?:qwen-long|minimax)/.test(normalized)) return 1_000_000;
+
+  return 200_000;
+}
+
+/** Formats a context window size compactly (e.g. `1_000_000` -> `'1M'`, `200_000` -> `'200K'`). */
+export function formatContextWindow(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    const m = tokens / 1_000_000;
+    return Number.isInteger(m) ? `${m}M` : `${m.toFixed(1)}M`;
+  }
+  return `${Math.round(tokens / 1000)}K`;
+}
 
 /** Turns a raw model ID into a clean human-readable label when it matches a known preset or naming pattern. */
 export function formatModelDisplayName(provider: ProviderKind, model: string): string {
@@ -223,8 +281,8 @@ export const GENERATION_DEFAULTS: GenerationSettings = {
 export const GENERATION_LIMITS = {
   maxOutputTokens: { min: 256, max: 128_000 },
   temperature: { min: 0, max: 2 },
-  historyTurns: { min: 4, max: 200 },
-  memoriesRecalled: { min: 2, max: 40 },
+  historyTurns: { min: 4, max: 1_000 },
+  memoriesRecalled: { min: 2, max: 120 },
 } as const;
 
 /**

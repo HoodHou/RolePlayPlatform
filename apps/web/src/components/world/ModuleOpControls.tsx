@@ -1,6 +1,7 @@
 import type { ModuleDirective } from '@roleplay/shared';
 import { useTranslation } from 'react-i18next';
 import { sameDirective, useGame } from '../../store/game';
+import { useUi } from '../../store/ui';
 import { Icon } from '../Icon';
 
 const EMPTY_DIRECTIVES: readonly ModuleDirective[] = [];
@@ -29,9 +30,9 @@ interface ModuleOpButtonsProps {
 }
 
 /**
- * Dual-mode module operation trigger:
- * - Instant (`⚡`): executes on the server immediately at 0 LLM tokens.
- * - Stage (`+`): queues into the next turn's batched directive tray (`TurnRequest.directives`).
+ * Dual-mode AI-scheduled module directive trigger:
+ * - Dispatch (`▶`): sends the directive (plus any queued orders) as a real AI turn for GM scheduling & narration.
+ * - Stage (`+`): queues into the current turn's batched directive tray (`TurnRequest.directives`) at 0 tokens.
  */
 export function ModuleOpButtons({
   directive,
@@ -45,8 +46,9 @@ export function ModuleOpButtons({
 }: ModuleOpButtonsProps) {
   const { t } = useTranslation();
   const canOperate = useCanOperateModule();
-  const executeDirective = useGame((s) => s.executeDirective);
+  const dispatchDirective = useGame((s) => s.dispatchDirective);
   const stageDirective = useGame((s) => s.stageDirective);
+  const closeDrawer = useUi((s) => s.closeDrawer);
   const stagedList = useGame((s) => (s.current ? (s.stagedDirectives[s.current.id] ?? EMPTY_DIRECTIVES) : EMPTY_DIRECTIVES));
   const isStaged = stagedList.some((d) => sameDirective(d, directive));
   const blocked = !canOperate || disabled;
@@ -68,12 +70,12 @@ export function ModuleOpButtons({
           disabled={blocked}
           title={t('world.workspace.instantHint')}
           onClick={() => {
-            void executeDirective(directive).then((ok) => {
-              if (ok) onAfter?.();
-            });
+            dispatchDirective(directive);
+            closeDrawer();
+            onAfter?.();
           }}
         >
-          <Icon name="bolt" size={12} />
+          <Icon name="send" size={12} />
           <span>{instantLabel ?? t('world.workspace.instant')}</span>
         </button>
       )}

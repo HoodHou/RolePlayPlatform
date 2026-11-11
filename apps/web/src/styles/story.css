@@ -139,6 +139,14 @@
   overflow-wrap: anywhere;
 }
 
+.scene__chapter {
+  margin-top: 0.16rem;
+  color: var(--text-soft);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
 .scene__where {
   margin-top: 0.2rem;
   color: var(--accent);
@@ -2189,6 +2197,26 @@ button.illustration__frame:hover {
 
 .model-row.is-active .model-row__label {
   font-weight: 640;
+}
+
+.model-pill__ctx,
+.model-row__ctx {
+  flex: none;
+  padding: 0.04rem 0.38rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  font-size: 0.67rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+}
+
+.model-pill__ctx.is-1m,
+.model-row__ctx.is-1m {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .model-row__effort {

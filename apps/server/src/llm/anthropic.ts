@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { TokenUsage } from '@roleplay/shared';
+import { supportsAnthropic1MContext, type TokenUsage } from '@roleplay/shared';
 import { AppError } from '../errors';
 import {
   NO_USAGE,
@@ -31,6 +31,11 @@ export interface AnthropicOptions {
   effort: AnthropicEffort | null;
   /** null uses a generous default. */
   maxOutputTokens: number | null;
+  /**
+   * Controls Anthropic's 1M token context beta (`context-1m-2025-08-07`) on capable Claude models.
+   * Defaults to enabled on Anthropic's official endpoint and auto-enabled past ~165k estimated input tokens on gateways.
+   */
+  longContext?: boolean;
 }
 
 // Streaming keeps long generations clear of HTTP timeouts, so the cap can be generous.
@@ -44,6 +49,9 @@ const FALLBACK_MODELS = new Set([
   'claude-sonnet-5-5',
 ]);
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
+export const CONTEXT_1M_BETA = 'context-1m-2025-08-07';
+// Conservative char threshold (~165k+ tokens) where even custom gateways need the 1M beta header to cross 200K.
+const GATEWAY_1M_CHAR_THRESHOLD = 500_000;
 
 const MAX_BAD_JSON_RETRIES = 2;
 
@@ -139,11 +147,35 @@ class AnthropicConversation implements Conversation {
     this.messages.push({ role: 'user', content: init.prompt });
   }
 
+  private estimateInputChars(): number {
+    let chars = this.system.length;
+    for (const msg of this.messages) {
+      if (typeof msg.content === 'string') {
+        chars += msg.content.length;
+      } else if (Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if ('text' in block && typeof block.text === 'string') chars += block.text.length;
+          else if ('content' in block && typeof block.content === 'string') chars += block.content.length;
+        }
+      }
+    }
+    return chars;
+  }
+
   private createStream(signal: AbortSignal) {
-    const { model, effort, maxOutputTokens } = this.options;
+    const { model, effort, maxOutputTokens, longContext } = this.options;
     // Role-play wanders into dark material now and then; where the model supports
     // it, let the API retry a declined request on its default fallback model.
     const useFallbacks = this.officialEndpoint && FALLBACK_MODELS.has(model);
+    const capable1M = supportsAnthropic1MContext(model);
+    const use1MContext =
+      capable1M &&
+      longContext !== false &&
+      (longContext === true || this.officialEndpoint || this.estimateInputChars() >= GATEWAY_1M_CHAR_THRESHOLD);
+    const betas = [
+      ...(useFallbacks ? [FALLBACK_BETA] : []),
+      ...(use1MContext ? [CONTEXT_1M_BETA] : []),
+    ];
 
     return this.client.beta.messages.stream(
       {
@@ -155,7 +187,8 @@ class AnthropicConversation implements Conversation {
         // Caches up to the newest block, which covers the tool loop within a turn.
         cache_control: { type: 'ephemeral' },
         ...(effort ? { output_config: { effort } } : {}),
-        ...(useFallbacks ? { betas: [FALLBACK_BETA], fallbacks: 'default' as const } : {}),
+        ...(betas.length > 0 ? { betas } : {}),
+        ...(useFallbacks ? { fallbacks: 'default' as const } : {}),
       },
       { signal },
     );

@@ -7,21 +7,28 @@ import path from 'node:path';
 import { test } from 'node:test';
 import {
   createEmptyWorld,
+  formatContextWindow,
+  GENERATION_LIMITS,
   inferSandboxRegionKind,
   matchSandboxResourcePools,
   MODULE_IDS,
+  resolveModelContextWindow,
   sandboxRegionStability,
   sandboxStepPresets,
+  supportsAnthropic1MContext,
+  type Message,
   type ModuleOperationResponse,
   type Session,
 } from '@roleplay/shared';
 import { createApp } from './app';
-import { buildTurnInit, DEFAULT_TUNING } from './engine/context';
-import { gameMasterView } from './engine/memory';
+import { buildActorInit, characterView } from './engine/actor';
+import { buildHistory, buildSummaryInit, buildTurnInit, DEFAULT_TUNING, findDroppedTranscript } from './engine/context';
+import { gameMasterView, mentionedIds, recall } from './engine/memory';
 import { executeDirective } from './engine/moduleOps';
 import { clearPlugins, lookupModule, PluginStore } from './engine/modules';
 import { getPrompts } from './engine/prompts';
 import { getToolbox, type ToolContext } from './engine/tools';
+import { addMemory, autoCaptureChronicleFromEvents } from './engine/world';
 import { AppError } from './errors';
 import { MockPainter } from './images/mock';
 import { MockProvider } from './llm/mock';
@@ -54,10 +61,10 @@ test('Schema & prompt compaction: strips redundant JSON Schema boilerplate while
     !serializedTools.includes('"additionalProperties":false'),
     'recursive additionalProperties:false boilerplate should be stripped from tool schemas',
   );
-  assert.ok(recordChars < 44_000, `expected compacted record schema < 44k chars, got ${recordChars}`);
+  assert.ok(recordChars < 45_500, `expected compacted record schema < 45.5k chars, got ${recordChars}`);
   assert.ok(
-    serializedTools.length < 61_000,
-    `expected compacted 17-module tools < 61k chars, got ${serializedTools.length}`,
+    serializedTools.length < 62_500,
+    `expected compacted 17-module tools < 62.5k chars, got ${serializedTools.length}`,
   );
 
   // Runtime Zod strictness must still reject unknown properties.
@@ -624,12 +631,46 @@ test('Zero-token instant actions, batched directive turns, atomic rollback, and 
 
     assert.equal(providerCalls - callsBeforeBatchedTurn, 1, '3 directives settled in 1 single GM conversation');
     assert.match(lastGmPrompt, /<executed_directives>/);
+    assert.match(lastGmPrompt, /<player_directives>/);
     assert.match(lastGmPrompt, /准奏裁撤冗驿/);
     assert.match(lastGmPrompt, /孙承宗：宜先裁驿站浮费/);
 
     const afterBatched = (await (await app.request(`/api/sessions/${created.id}?slim=1`)).json()) as Session;
     assert.equal(afterBatched.world.turn, 2);
     assert.equal(afterBatched.world.modules.court?.memorials.mem_tax?.status, 'approved');
+
+    // 6. Pure AI-scheduled `<player_directives>` turn (UI panel dispatch mode: 0 pre-turn blind state mutation)
+    const scheduledTurnRes = await app.request(`/api/sessions/${created.id}/turns`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'action',
+        text: '',
+        directives: [
+          {
+            moduleId: 'sandbox',
+            op: 'advisor_note',
+            params: { intent: 'appoint_commander', region_id: 'ningyuan' },
+            label: '宁远 · 拟旨选将',
+            aiNote: '拟旨为【宁远】选派驻守主将，请由兵部从我方臣将中择定人选并更新 record.sandbox.regions。',
+          },
+          {
+            moduleId: 'domain',
+            op: 'advisor_note',
+            params: { intent: 'develop_domain', facility_id: 'foundry' },
+            label: '神机铸炮局 · 督办营造',
+            aiNote: '督办神机铸炮局营造，请调用 develop_domain 结算工期。',
+          },
+        ],
+      }),
+    });
+    assert.equal(scheduledTurnRes.status, 200);
+    const scheduledSse = await scheduledTurnRes.text();
+    assert.match(scheduledSse, /event: done/);
+    assert.doesNotMatch(lastGmPrompt, /<executed_directives>/);
+    assert.match(lastGmPrompt, /<player_directives>/);
+    assert.match(lastGmPrompt, /拟旨为【宁远】选派驻守主将/);
+    assert.match(lastGmPrompt, /调度与裁定要求/);
   } finally {
     clearPlugins();
     await rm(dataDir, { recursive: true, force: true });
@@ -877,6 +918,78 @@ test('Strategic Sandbox overhaul: legacy《大虞危局》compatibility, corrido
   assert.equal(sunView.you_command.region, '辽东军镇');
   assert.equal(sunView.you_command.garrison, 9075);
 
+  // Reject assigning rival faction leader (乌勒罕) or player monarch (朱承钧) as player garrison commander
+  assert.throws(() =>
+    executeDirective(world, {
+      moduleId: 'sandbox',
+      op: 'assign_commander',
+      params: { region_id: 'liaodong', commander_id: 'wule' },
+      label: '敌酋不可任我方守将',
+    }),
+  );
+  assert.throws(() =>
+    executeDirective(world, {
+      moduleId: 'sandbox',
+      op: 'assign_commander',
+      params: { region_id: 'liaodong', commander_id: 'emp' },
+      label: '君主本人不可设为下属守将',
+    }),
+  );
+
+  // Rival leader 乌勒罕 CAN command his own faction's region (关外草原), and loses command once conquered
+  const steppeCmdRes = recordTool.run(
+    world,
+    { suggestions: ['北望塞外'], sandbox: { regions: [{ id: 'steppe', commander_id: 'wule' }] } },
+    dummyToolCtx(1),
+  );
+  assert.equal(steppeCmdRes.isError, false, steppeCmdRes.content);
+  assert.equal(board.regions.steppe!.commanderId, 'wule');
+
+  // Also verify domain steward & lineage tutor reject rival faction leader 乌勒罕
+  const fullToolbox = getToolbox({ modules: ['court', 'sandbox', 'domain', 'lineage'], illustrations: false });
+  const fullRecord = fullToolbox.get('record')!;
+  const domainLineageRes = fullRecord.run(
+    world,
+    {
+      suggestions: ['巡视将作监'],
+      characters: [{ id: 'prince', name: '朱慈烺', role: '皇长子', location_id: 'hall' }],
+      domain: {
+        name: '京师将作监',
+        facilities: [{ id: 'arsenal', name: '军器局', level: 1, status: 'operational' }],
+      },
+      lineage: {
+        house_name: '大虞朱氏',
+        heirs: [{ character_id: 'prince', order: '皇长子' }],
+      },
+    },
+    dummyToolCtx(1),
+  );
+  assert.equal(domainLineageRes.isError, false, domainLineageRes.content);
+  assert.throws(() =>
+    executeDirective(world, {
+      moduleId: 'domain',
+      op: 'assign_steward',
+      params: { facility_id: 'arsenal', steward_id: 'wule' },
+      label: '敌酋不可任将作主理',
+    }),
+  );
+  assert.throws(() =>
+    executeDirective(world, {
+      moduleId: 'lineage',
+      op: 'assign_tutor',
+      params: { character_id: 'prince', tutor_id: 'wule' },
+      label: '敌酋不可任东宫太傅',
+    }),
+  );
+  assert.throws(() =>
+    executeDirective(world, {
+      moduleId: 'lineage',
+      op: 'assign_tutor',
+      params: { character_id: 'prince', tutor_id: 'prince' },
+      label: '皇嗣不可自任太傅',
+    }),
+  );
+
   // 6. March from 潼关 into unclaimed 陕内旱区, then pacify & develop it
   executeDirective(world, {
     moduleId: 'sandbox',
@@ -921,8 +1034,273 @@ test('Strategic Sandbox overhaul: legacy《大虞危局》compatibility, corrido
     () => 0.75, // solid attacker roll
   );
   assert.equal(board.regions.steppe!.ownerId, 'dayu');
+  assert.equal(board.regions.steppe!.commanderId, null, 'conquered region clears rival commander');
   assert.ok((board.regions.steppe!.strength ?? 0) > 0 && (board.regions.steppe!.strength ?? 0) < 8000);
   assert.equal(board.regions.liaodong!.strength, 1075);
   assert.ok(campaignReport.events.some((ev) => ev.type === 'sandbox_battle' && ev.winner === 'attacker'));
   assert.ok(board.relations.some((rel) => rel.stance === 'war'));
+});
+
+test('1M context window: model metadata, raised generation limits, and token-budget history guard', () => {
+  // 1. Model context window resolution across Gemini, OpenAI, Anthropic, and Custom endpoints
+  assert.equal(resolveModelContextWindow('gemini', 'gemini-4-carbon'), 1_000_000);
+  assert.equal(resolveModelContextWindow('gemini', 'gemini-3.8-flash'), 1_000_000);
+  assert.equal(resolveModelContextWindow('gemini', 'gemini-2.5-pro'), 1_000_000);
+  assert.equal(resolveModelContextWindow('openai', 'gpt-6.1-sol'), 1_000_000);
+  assert.equal(resolveModelContextWindow('openai', 'gpt-5.4'), 1_000_000);
+  assert.equal(resolveModelContextWindow('openai', 'gpt-4.1'), 1_000_000);
+  assert.equal(resolveModelContextWindow('openai', 'o4-mini'), 200_000);
+  assert.equal(resolveModelContextWindow('anthropic', 'claude-opus-5-5'), 1_000_000);
+  assert.equal(resolveModelContextWindow('anthropic', 'claude-sonnet-4-6'), 1_000_000);
+  assert.equal(resolveModelContextWindow('anthropic', 'claude-haiku-4-5'), 200_000);
+  assert.equal(resolveModelContextWindow('custom', 'deepseek-chat'), 128_000);
+
+  assert.equal(supportsAnthropic1MContext('claude-opus-5-5'), true);
+  assert.equal(supportsAnthropic1MContext('claude-sonnet-4-5-20250929'), true);
+  assert.equal(supportsAnthropic1MContext('claude-haiku-4-5'), false);
+
+  assert.equal(formatContextWindow(1_000_000), '1M');
+  assert.equal(formatContextWindow(200_000), '200K');
+  assert.equal(formatContextWindow(128_000), '128K');
+
+  assert.equal(GENERATION_LIMITS.historyTurns.max, 1_000);
+  assert.equal(GENERATION_LIMITS.memoriesRecalled.max, 120);
+
+  // 2. Token-budget history guard: 1M keeps all turns intact; small contextWindow trims safely & archives dropped turns
+  const messages: Message[] = [];
+  for (let turn = 1; turn <= 40; turn++) {
+    messages.push({
+      id: `p_${turn}`,
+      kind: 'player',
+      turn,
+      text: `第${turn}回合诏令：${'整顿京营边防粮饷调度'.repeat(25)}`,
+      createdAt: '2026-11-11T00:00:00Z',
+    });
+    messages.push({
+      id: `n_${turn}`,
+      kind: 'narration',
+      turn,
+      text: `第${turn}回合纪事：${'六部堂官与边镇主将奉旨行事，战局渐次推进。'.repeat(30)}`,
+      createdAt: '2026-11-11T00:00:01Z',
+    });
+  }
+
+  const history1M = buildHistory(messages, '[opening]', (id) => id, 500, 1_000_000);
+  assert.equal(history1M.length, 80, '1M context window keeps all 40 player/assistant turn pairs');
+  const dropped1M = findDroppedTranscript(messages, '[opening]', (id) => id, 500, 0, 1_000_000);
+  assert.equal(dropped1M, null);
+
+  // Under a tiny 12k token window, 75% budget (~9k tokens) cannot fit all 40 turns (~30k+ tokens)
+  const historySmall = buildHistory(messages, '[opening]', (id) => id, 500, 12_000);
+  assert.ok(historySmall.length < 80 && historySmall.length >= 4, `expected trimmed history, got ${historySmall.length}`);
+  const droppedSmall = findDroppedTranscript(messages, '[opening]', (id) => id, 500, 0, 12_000);
+  assert.ok(droppedSmall !== null && droppedSmall.upToTurn > 0, 'expected dropped turns to be identified for summary archival');
+  assert.ok(droppedSmall.transcript.includes('第1回合诏令'));
+});
+
+test('Story progression & multi-layer memory: arc, chronicle, auto-capture, NPC public_events, and core memory anchors', () => {
+  const world = createEmptyWorld();
+  world.turn = 1;
+  world.scene.time = '崇祯十七年春';
+
+  const toolbox = getToolbox({ modules: ['court', 'sandbox'], illustrations: false });
+  const recordTool = toolbox.get('record')!;
+
+  // 1. Record macro story progression (`progress`) and manual `chronicle` entries (public, private, and secret)
+  const res = recordTool.run(
+    world,
+    {
+      suggestions: ['召见内阁', '整饬京营'],
+      locations: [{ id: 'hall', name: '文华殿', description: '御前议政之所' }],
+      characters: [
+        { id: 'emp', name: '朱由检', is_player: true, location_id: 'hall' },
+        { id: 'envoy', name: '林使臣', role: '远道使节', location_id: 'hall' },
+      ],
+      scene: { location_id: 'hall', time: '崇祯十七年春', summary: '新政初立，中外震动。' },
+      progress: {
+        chapter: '第一卷：南迁北拒',
+        summary: '朝廷确立整军经武之策，辽沈与关中两线承压。',
+        threads: ['太仓银饷将于三月内见底', '黑水铁骑在关外集结'],
+      },
+      chronicle: [
+        {
+          id: 'chr_decree_tax',
+          kind: 'decree',
+          title: '颁行官绅一体纳粮诏',
+          summary: '皇帝力排众议颁布追饷新政。',
+          impact: '国库稍缓，江南士绅暗生怨怼。',
+          public: true,
+        },
+        {
+          id: 'chr_private_vow',
+          kind: 'milestone',
+          title: '密室独誓',
+          summary: '皇帝于宫中立下整肃厂卫之私誓。',
+          public: false,
+        },
+        {
+          id: 'chr_secret_plot',
+          kind: 'betrayal',
+          title: '黑水暗桩潜入神机营',
+          summary: '敌国细作已买通副千户。',
+          secret: true,
+        },
+      ],
+      sandbox: {
+        factions: [{ id: 'heishui', name: '黑水铁骑', description: '关外劲敌' }],
+        regions: [{ id: 'liaodong', name: '辽东军镇', owner_id: 'heishui', strength: 5000 }],
+      },
+    },
+    dummyToolCtx(1),
+  );
+  assert.equal(res.isError, false, res.content);
+  assert.equal(world.storyArc?.chapter, '第一卷：南迁北拒');
+  assert.equal(world.storyArc?.threads.length, 2);
+  assert.equal(world.chronicle?.length, 3);
+  assert.ok(res.events.some((e) => e.type === 'chapter_changed' && e.chapter === '第一卷：南迁北拒'));
+  assert.equal(
+    res.events.filter((e) => e.type === 'chronicle_recorded').length,
+    2,
+    'secret chronicle entries do not emit player-visible chronicle_recorded events',
+  );
+
+  // GM view sees storyArc and all 3 chronicle entries (including secret)
+  const gmView = gameMasterView(world, '', 12, ['court', 'sandbox']) as Record<string, any>;
+  assert.equal(gmView.storyArc?.chapter, '第一卷：南迁北拒');
+  assert.equal(gmView.chronicle?.length, 3);
+
+  const session: Session = {
+    id: 'ses_mem_test',
+    createdAt: '2026-11-11T00:00:00Z',
+    updatedAt: '2026-11-11T00:00:00Z',
+    language: 'zh',
+    seed: { premise: '大虞危局', playerName: '朱由检', playerConcept: '天子' },
+    modules: ['court', 'sandbox'],
+    modulesAuto: false,
+    world,
+    messages: [],
+    snapshots: [],
+    usage: { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 },
+  };
+
+  // Summary prompt incorporates <current_arc> and <recorded_milestones>
+  const sumInit = buildSummaryInit(session, 'Turn 1 transcript');
+  assert.ok(sumInit.prompt.includes('<current_arc>'));
+  assert.ok(sumInit.prompt.includes('第一卷：南迁北拒'));
+  assert.ok(sumInit.prompt.includes('<recorded_milestones>'));
+  assert.ok(sumInit.prompt.includes('颁行官绅一体纳粮诏'));
+
+  // 2. NPC 3-scope chronicle visibility: sees public=true, NEVER sees secret=true or private public=false
+  const envoy = world.characters.envoy!;
+  const view = characterView(world, envoy, '贵国近来有何大事？', 10);
+  assert.equal(view.public_events.length, 1);
+  assert.equal(view.public_events[0]!.title, '颁行官绅一体纳粮诏');
+
+  const actorInit = buildActorInit(session, envoy, '近来朝局如何？', 1, 10, ['court', 'sandbox']);
+  assert.ok(actorInit.prompt.includes('<public_events>'));
+  assert.ok(actorInit.prompt.includes('颁行官绅一体纳粮诏'));
+  assert.ok(!actorInit.prompt.includes('密室独誓'), 'private milestone must not leak to NPC');
+  assert.ok(!actorInit.prompt.includes('黑水暗桩潜入神机营'), 'secret plot must not leak to NPC');
+
+  // 3. Auto-capture chronicle from major world events when GM did not record one manually on that turn
+  world.turn = 2;
+  autoCaptureChronicleFromEvents(
+    world,
+    [
+      {
+        type: 'region_taken',
+        regionId: 'liaodong',
+        regionName: '辽东军镇',
+        fromId: 'heishui',
+        fromName: '黑水铁骑',
+        toId: 'dayu',
+        toName: '大虞朝廷',
+      },
+      { type: 'quest_completed', id: 'q_courier', title: '查明密使下落' },
+    ],
+    'zh',
+  );
+  const turn2Entries = (world.chronicle ?? []).filter((e) => e.turn === 2);
+  assert.equal(turn2Entries.length, 2);
+  const regionEntry = turn2Entries.find((e) => e.title.includes('辽东军镇'))!;
+  const questEntry = turn2Entries.find((e) => e.title.includes('查明密使下落'))!;
+  assert.equal(regionEntry.public, true, 'realm-wide region capture is public news');
+  assert.equal(questEntry.public ?? false, false, 'player quest completion stays private from random NPCs');
+
+  // Calling autoCapture again on the same turn does not duplicate
+  autoCaptureChronicleFromEvents(
+    world,
+    [
+      {
+        type: 'region_taken',
+        regionId: 'liaodong',
+        regionName: '辽东军镇',
+        fromId: 'heishui',
+        fromName: '黑水铁骑',
+        toId: 'dayu',
+        toName: '大虞朝廷',
+      },
+    ],
+    'zh',
+  );
+  assert.equal((world.chronicle ?? []).filter((e) => e.turn === 2).length, 2);
+
+  // 4. Memory deduplication, permanent importance=5 anchors, eviction protection, and sandbox entity cueing
+  world.turn = 1;
+  addMemory(world, {
+    characterId: 'envoy',
+    text: '我曾立下血誓：绝不向黑水铁骑透露关宁火器图谱。',
+    about: ['heishui'],
+    importance: 5,
+  });
+  // Duplicate same-turn memory text is deduplicated in-place rather than stored twice
+  addMemory(world, {
+    characterId: 'envoy',
+    text: '我曾立下血誓：绝不向黑水铁骑透露关宁火器图谱。',
+    importance: 3,
+  });
+  assert.equal(envoy.memories.length, 1);
+  assert.equal(envoy.memories[0]!.importance, 5);
+
+  // Add 30 newer ordinary/medium memories across turns 2..31
+  for (let t = 2; t <= 31; t++) {
+    world.turn = t;
+    addMemory(world, {
+      characterId: 'envoy',
+      text: `第${t}日与礼部官员商议馆驿茶马琐务。`,
+      importance: 3,
+    });
+  }
+  assert.equal(envoy.memories.length, 31);
+
+  // Even on turn 40 with an unrelated query and limit=6, the importance=5 core oath survives recall!
+  const recalledUnrelated = recall(
+    envoy.memories,
+    { cues: new Set(), around: new Set(), turn: 40, query: '今日天气如何？' },
+    6,
+  );
+  assert.equal(recalledUnrelated.length, 6);
+  assert.ok(
+    recalledUnrelated.some((m) => m.importance === 5 && m.text.includes('血誓')),
+    'importance=5 core anchor memory must never be drowned out by recent medium chatter',
+  );
+
+  // Mentioning sandbox faction "黑水铁骑" cues its ID (`heishui`) via mentionedIds()
+  const sandboxCues = mentionedIds(world, '你对黑水铁骑怎么看？');
+  assert.ok(sandboxCues.includes('heishui'), 'sandbox faction name should resolve to faction id cue');
+
+  // Fill beyond MEMORY_LIMIT (500) with importance=2 chatter and verify importance=5 anchor is never evicted
+  for (let t = 32; t <= 560; t++) {
+    world.turn = t;
+    addMemory(world, {
+      characterId: 'envoy',
+      text: `第${t}日驿馆日常起居纪略。`,
+      importance: 2,
+    });
+  }
+  assert.equal(envoy.memories.length, 500);
+  assert.ok(
+    envoy.memories.some((m) => m.importance === 5 && m.text.includes('血誓')),
+    'importance=5 core memory must survive capacity eviction at MEMORY_LIMIT',
+  );
 });

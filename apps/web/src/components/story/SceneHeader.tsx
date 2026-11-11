@@ -10,6 +10,7 @@ export function SceneHeader({ session }: { session: Session }) {
 
   const locationName = world.scene.locationId ? world.locations[world.scene.locationId]?.name : undefined;
   const where = [locationName, world.scene.time, world.scene.weather].filter((part): part is string => Boolean(part));
+  const chapter = world.storyArc?.chapter?.trim() ?? '';
   // Until the game master names the world, the premise is a subtitle, not a headline:
   // a whole sentence set in the title face overwhelms the page.
   const subtitle = world.scene.summary || (world.title ? '' : snippet(session.seed.premise || world.premise, 120));
@@ -19,6 +20,11 @@ export function SceneHeader({ session }: { session: Session }) {
       <h1 className="scene__title" lang={world.title ? storyLang : undefined}>
         {world.title || t('scene.untitledWorld')}
       </h1>
+      {chapter && (
+        <p className="scene__chapter" lang={storyLang}>
+          {chapter}
+        </p>
+      )}
       {where.length > 0 && (
         <p className="scene__where" lang={storyLang}>
           {where.join(' · ')}

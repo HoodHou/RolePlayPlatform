@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { isFull, visibleClocks } from '../../lib/clocks';
 import { useUi } from '../../store/ui';
 import { ClockDial } from './ClockDial';
-import { ModuleOpButtons } from './ModuleOpControls';
 import { SecretsSwitch } from './SecretsSwitch';
 
 function ClockCard({ clock, lang }: { clock: Clock; lang: string }) {
@@ -36,32 +35,6 @@ function ClockCard({ clock, lang }: { clock: Clock; lang: string }) {
             <span lang={lang}>{clock.description}</span>
           </p>
         )}
-        <div className="card__actions">
-          <ModuleOpButtons
-            directive={{
-              moduleId: 'clocks',
-              op: 'tick_clock',
-              params: { id: clock.id, delta: 1 },
-              label: `${clock.name} ${t('world.clocks.ops.tickUp')}`,
-            }}
-            instantLabel={t('world.clocks.ops.tickUp')}
-            disabled={full}
-            compact
-          />
-          {clock.filled > 0 && (
-            <ModuleOpButtons
-              directive={{
-                moduleId: 'clocks',
-                op: 'tick_clock',
-                params: { id: clock.id, delta: -1 },
-                label: `${clock.name} ${t('world.clocks.ops.tickDown')}`,
-              }}
-              instantLabel={t('world.clocks.ops.tickDown')}
-              hideStage
-              compact
-            />
-          )}
-        </div>
       </div>
     </li>
   );

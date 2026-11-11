@@ -30,11 +30,15 @@ const running = (instruments: boolean) =>
     'The panels are the player\'s only view of the world besides your words, so the two must agree. Before you record, go back over what you just told: everyone you named, every place entered, everything gained, lost or used, every promise and discovery, and the time that passed should each be in the record.',
   ].join('\n');
 
-const rest = `# Building the world
+const rest = `# Building the world and tracking story progression
 
-When a story begins, record the world's title and premise, the player character (is_player: true) with whatever stats suit this world, the starting place with a couple of places connected to it, the people present, and an opening goal. Invent the game system the genre calls for: hit points and gold for an adventure, sanity for horror, a cultivation realm for xianxia, reputation for intrigue.
+When a story begins, record the world's title and premise, set the opening chapter and overarching situation in record.progress (chapter, summary, threads), create the player character (is_player: true) with whatever stats suit this world, the starting place with a couple of places connected to it, the people present, and an opening goal. Invent the game system the genre calls for: hit points and gold for an adventure, sanity for horror, a cultivation realm for xianxia, reputation for intrigue.
 
-Keep the world growing as the story moves. Bring in new characters whenever the scene calls for them. Update characters as they change; remove them only when they are gone for good.
+Keep the world growing and keep story progression up to date as the story moves:
+- **Story arc (record.progress)**: Update chapter, summary, and active threads whenever the campaign enters a new stage, shifts its central tension, or opens/resolves major plotlines.
+- **Chronicle milestones (record.chronicle)**: Record pivotal turning points, major choices, decrees, battles, alliances, betrayals, revelations, and irreversible consequences in chronicle. Set public: true when word of the event spreads across the world so NPCs have heard of it; set secret: true when it happened behind the scenes.
+
+Bring in new characters whenever the scene calls for them. Update characters as they change; remove them only when they are gone for good.
 
 Stay consistent with the recorded state. If the story needs something to be different, change the record rather than contradict it.
 
@@ -111,6 +115,7 @@ function buildActorSystemEn(activeModules: readonly ModuleId[]): string {
       "<your_memories> is what you remember. It is everything you know of what has happened: only things you witnessed or were told. If something is not there and not in front of you now, you do not know it. Do not produce knowledge of events you were not part of. Say you don't know, guess, or deflect, as your character would. What you were told may be wrong, and you may believe it anyway.",
       '<here_and_now> is what you can perceive: where you are, the hour, who else is here.',
       '<common_knowledge>, when it is there, is what anyone in this world would know.',
+      '<public_events>, when it is there, lists recent realm-wide public events (decrees, battles, shifts in power) that word has spread of.',
       ...moduleLines,
       '<speaking_to_you> is the person addressing you. Their name is null if you have never learned it.',
       '',
@@ -168,7 +173,7 @@ export const en: PromptPack = {
   actorReminder:
     '(Note from the game engine: nothing you wrote reached the other person. Call respond with what your character says.)',
   summarySystem:
-    'You maintain a concise, factual "Story So Far" chronicle for a long-running tabletop role-play campaign. Output plain text only (150-350 words). Preserve key plot causality, promises, unresolved mysteries, major choices, alliances, betrayals, and irreversible consequences. Do not invent anything.',
+    'You maintain a structured "Story So Far" memory dossier for a long-running tabletop role-play campaign. Output plain text only (250-600 words) organized under three headings: [Current Arc], [Key Turning Points & Causality], and [Unresolved Threads & Promises]. Preserve early foundational setup, major choices, alliances, betrayals, and irreversible consequences. Do not invent anything.',
   summarize: (existingSummary, droppedTranscript) =>
     [
       existingSummary ? `<previous_summary>\n${existingSummary}\n</previous_summary>\n` : '',
@@ -176,7 +181,7 @@ export const en: PromptPack = {
       droppedTranscript,
       '</newly_archived_turns>',
       '',
-      'Write the updated cumulative Story So Far summary in English, integrating the newly archived turns into any previous summary.',
+      'Write the updated cumulative Story So Far dossier in English, integrating the newly archived turns with any previous summary so overall story progression stays continuous.',
     ]
       .filter(Boolean)
       .join('\n'),

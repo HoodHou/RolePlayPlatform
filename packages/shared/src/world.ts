@@ -117,6 +117,44 @@ export interface Scene {
   summary: string;
 }
 
+export const CHRONICLE_KINDS = [
+  'milestone',
+  'turning_point',
+  'decree',
+  'battle',
+  'alliance',
+  'betrayal',
+  'revelation',
+  'consequence',
+] as const;
+export type ChronicleKind = (typeof CHRONICLE_KINDS)[number];
+
+/** Current macro chapter / narrative phase of the story. */
+export interface StoryArc {
+  /** Current chapter or act title, e.g. "第一卷：辽沈烽烟" or "Act I: The Drowned Road". */
+  chapter: string;
+  /** Concise macro summary of where the overarching plot stands right now. */
+  summary: string;
+  /** Active narrative tensions, looming crises, or unresolved plot threads. */
+  threads: string[];
+}
+
+/** One pivotal plot milestone recorded on the campaign chronicle timeline. */
+export interface ChronicleEntry {
+  id: string;
+  turn: number;
+  time: string;
+  kind: ChronicleKind;
+  title: string;
+  summary: string;
+  /** Resulting shift in power, stakes, or relationships. */
+  impact: string;
+  /** True if known only behind the scenes (hidden from NPCs and hidden from player unless secrets are revealed). */
+  secret: boolean;
+  /** True when the event is realm-wide / public news that characters across the world would have heard of. */
+  public?: boolean;
+}
+
 export interface WorldState {
   title: string;
   premise: string;
@@ -133,6 +171,10 @@ export interface WorldState {
   modules: ModuleStates;
   /** Next moves the game master proposes; replaced every turn. */
   suggestions: string[];
+  /** Current overarching chapter, situation, and active narrative threads. */
+  storyArc: StoryArc;
+  /** Ordered timeline of pivotal plot milestones and turning points across turns. */
+  chronicle: ChronicleEntry[];
   /** Rolling recap of earlier chapters once older turns slide out of the transcript window. */
   storySummary: string;
   /** Highest turn number already folded into `storySummary`. */
@@ -155,6 +197,8 @@ export function createEmptyWorld(): WorldState {
     lore: {},
     modules: {},
     suggestions: [],
+    storyArc: { chapter: '', summary: '', threads: [] },
+    chronicle: [],
     storySummary: '',
     summarizedUpToTurn: 0,
     turn: 0,

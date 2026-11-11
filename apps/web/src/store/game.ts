@@ -83,6 +83,8 @@ interface GameState {
   sendAction: (text: string) => void;
   /** Executes a module operation immediately on the server at 0 LLM tokens. */
   executeDirective: (directive: ModuleDirective) => Promise<boolean>;
+  /** Dispatches a structured panel directive (merged with any queued directives) as an AI-adjudicated turn. */
+  dispatchDirective: (directive: ModuleDirective) => void;
   /** Adds (or toggles off) a module operation in the next turn's staged directive queue. */
   stageDirective: (directive: ModuleDirective) => void;
   removeDirective: (directiveId: string) => void;
@@ -476,6 +478,27 @@ export const useGame = create<GameState>()((set, get) => {
       } finally {
         set({ moduleBusy: false });
       }
+    },
+
+    dispatchDirective: (directive) => {
+      const { current, turn, historyBusy, moduleBusy, stagedDirectives, drafts } = get();
+      if (!current || turn || historyBusy || moduleBusy || current.world.turn < 1) return;
+      const staged = stagedDirectives[current.id] ?? [];
+      const id = directive.id ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const entry: ModuleDirective = { ...directive, id };
+      const combined = staged.some((d) => sameDirective(d, entry)) ? [...staged] : [...staged, entry];
+      const draftText = (drafts[current.id] ?? '').trim();
+      set((s) => ({
+        stagedDirectives: { ...s.stagedDirectives, [current.id]: [] },
+        drafts: draftText ? { ...s.drafts, [current.id]: '' } : s.drafts,
+        talkingTo: null,
+        lastModuleNotice: null,
+      }));
+      void runTurn({
+        kind: 'action',
+        text: draftText,
+        directives: combined,
+      });
     },
 
     stageDirective: (directive) => {

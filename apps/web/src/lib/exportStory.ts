@@ -84,6 +84,22 @@ export function formatStoryMarkdown(
     const stats = player.stats.map((s) => `${s.name}: ${s.value}${s.max !== undefined ? `/${s.max}` : ''}`).join(' · ');
     lines.push(`**${player.name}**${player.role ? ` (${player.role})` : ''}${stats ? ` — ${stats}` : ''}`, '');
   }
+  if (world.storyArc && (world.storyArc.chapter || world.storyArc.summary)) {
+    lines.push(
+      `## ${world.storyArc.chapter || t('export.storyArcHeading')}`,
+      '',
+      ...(world.storyArc.summary ? [world.storyArc.summary.trim(), ''] : []),
+    );
+  }
+  const publicChronicle = (world.chronicle ?? []).filter((e) => !e.secret);
+  if (publicChronicle.length > 0) {
+    lines.push(`## ${t('export.chronicleHeading')}`, '');
+    for (const item of publicChronicle) {
+      const when = [t('world.lore.chronicleTurn', { turn: item.turn }), item.time].filter(Boolean).join(' · ');
+      lines.push(`- **${item.title}** (${when})${item.summary ? ` — ${item.summary}` : ''}`);
+    }
+    lines.push('');
+  }
   if (world.storySummary) {
     lines.push(`## ${t('export.storySummaryHeading')}`, '', world.storySummary.trim(), '');
   }
@@ -225,6 +241,11 @@ export function formatStoryHtml(
     ${premise ? `<p class="premise">${escapeHtml(premise)}</p>` : ''}
     ${player ? `<p class="sheet">${escapeHtml(player.name)}${stats ? ` · ${stats}` : ''}</p>` : ''}
   </header>
+  ${
+    world.storyArc && (world.storyArc.chapter || world.storyArc.summary)
+      ? `<section class="summary"><h2>${escapeHtml(world.storyArc.chapter || t('export.storyArcHeading'))}</h2>${world.storyArc.summary ? `<div>${escapeHtml(world.storyArc.summary)}</div>` : ''}</section>`
+      : ''
+  }
   ${
     world.storySummary
       ? `<section class="summary"><h2>${escapeHtml(t('export.storySummaryHeading'))}</h2><div>${escapeHtml(world.storySummary)}</div></section>`

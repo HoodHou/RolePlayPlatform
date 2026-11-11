@@ -183,6 +183,42 @@ function placeAt(board: SandboxState, x: number, y: number, self?: string): { x:
   return best ?? wanted;
 }
 
+function assertValidRegionCommander(
+  world: WorldState,
+  board: SandboxState,
+  commanderId: string,
+  ownerId: string | null,
+  disallowPlayer = false,
+): void {
+  const character = world.characters[commanderId];
+  if (!character) {
+    throw new WorldOpError(
+      `Character "${commanderId}" does not exist, so they cannot command a region. Record them under characters first.`,
+    );
+  }
+  if (disallowPlayer && character.isPlayer) {
+    throw new WorldOpError('The player character cannot be appointed as a subordinate garrison commander.');
+  }
+  const rivalFaction = Object.values(board.factions).find(
+    (faction) => faction.leaderId === commanderId && faction.id !== ownerId,
+  );
+  if (rivalFaction) {
+    throw new WorldOpError(
+      `"${character.name}" leads faction "${rivalFaction.name}" and cannot command a region held by another power.`,
+    );
+  }
+  if (ownerId && board.factions[ownerId]?.isPlayer) {
+    const rivalPost = Object.values(board.regions).find(
+      (other) => other.commanderId === commanderId && other.ownerId !== null && other.ownerId !== ownerId,
+    );
+    if (rivalPost) {
+      throw new WorldOpError(
+        `"${character.name}" commands "${rivalPost.name}" for another faction and cannot be stationed in ${board.factions[ownerId]!.name}.`,
+      );
+    }
+  }
+}
+
 function upsertRegion(
   world: WorldState,
   board: SandboxState,
@@ -205,13 +241,13 @@ function upsertRegion(
   },
 ): WorldEvent[] {
   if (entry.owner_id) requireFaction(board, entry.owner_id);
-  if (entry.commander_id && !world.characters[entry.commander_id]) {
-    throw new WorldOpError(
-      `Character "${entry.commander_id}" does not exist, so they cannot command a region. Record them under characters first.`,
-    );
+  const existing = board.regions[entry.id];
+  const targetOwnerId = entry.owner_id !== undefined ? entry.owner_id : (existing?.ownerId ?? null);
+  if (entry.commander_id) {
+    assertValidRegionCommander(world, board, entry.commander_id, targetOwnerId, false);
   }
   const events: WorldEvent[] = [];
-  let region = board.regions[entry.id];
+  let region = existing;
 
   if (!region) {
     const name = requireName(entry.name, 'Region', entry.id);
@@ -276,6 +312,9 @@ function changeHands(board: SandboxState, region: SandboxRegion, ownerId: string
   const nameOf = (factionId: string | null) => (factionId ? (board.factions[factionId]?.name ?? '') : '');
   const fromId = region.ownerId;
   region.ownerId = ownerId;
+  if (fromId !== ownerId) {
+    region.commanderId = null;
+  }
   return {
     type: 'region_taken',
     regionId: region.id,
@@ -1150,10 +1189,8 @@ function operateSandbox(
       };
     }
 
-    const character = world.characters[commander_id];
-    if (!character) {
-      throw new WorldOpError(`Character "${commander_id}" does not exist.`);
-    }
+    assertValidRegionCommander(world, board, commander_id, player.id, true);
+    const character = world.characters[commander_id]!;
     for (const other of Object.values(board.regions)) {
       if (other.id !== region.id && other.commanderId === commander_id) {
         other.commanderId = null;

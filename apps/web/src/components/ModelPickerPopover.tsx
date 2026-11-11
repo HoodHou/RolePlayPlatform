@@ -2,8 +2,10 @@ import {
   CHAT_MODEL_PRESETS,
   CONNECTION_DEFAULTS,
   CONNECTION_KINDS,
+  formatContextWindow,
   formatModelDisplayName,
   PROVIDER_EFFORTS,
+  resolveModelContextWindow,
   type ConnectionKind,
   type Effort,
   type ModelBadgeKind,
@@ -27,6 +29,7 @@ interface ModelOption {
   label: string;
   badge?: ModelBadgeKind | 'setup';
   defaultEffort: Effort | null;
+  contextWindow: number;
   configured: boolean;
 }
 
@@ -60,6 +63,7 @@ function buildModelOptions(
         label: demoLabel,
         badge: 'demo',
         defaultEffort: null,
+        contextWindow: 1_000_000,
         configured: true,
       },
     ];
@@ -102,6 +106,7 @@ function buildModelOptions(
         label: formatModelDisplayName(kind, connSavedModel),
         badge: configured ? presetHit?.badge : 'setup',
         defaultEffort: presetHit?.defaultEffort ?? (PROVIDER_EFFORTS[kind].includes('medium') ? 'medium' : null),
+        contextWindow: presetHit?.contextWindow ?? resolveModelContextWindow(kind, connSavedModel),
         configured,
       });
     }
@@ -115,6 +120,7 @@ function buildModelOptions(
         label: formatModelDisplayName(kind, activeModel),
         badge: configured ? presetHit?.badge : 'setup',
         defaultEffort: settings.gameMaster.effort ?? presetHit?.defaultEffort ?? null,
+        contextWindow: presetHit?.contextWindow ?? resolveModelContextWindow(kind, activeModel),
         configured,
       });
     }
@@ -130,6 +136,7 @@ function buildModelOptions(
         label: preset.label,
         badge: configured ? preset.badge : 'setup',
         defaultEffort: preset.defaultEffort ?? null,
+        contextWindow: preset.contextWindow ?? resolveModelContextWindow(kind, preset.model),
         configured,
       });
     }
@@ -143,6 +150,7 @@ function buildModelOptions(
           model: remoteId,
           label: formatModelDisplayName(kind, remoteId),
           defaultEffort: null,
+          contextWindow: resolveModelContextWindow(kind, remoteId),
           configured: true,
         });
       }
@@ -156,6 +164,7 @@ function buildModelOptions(
     label: demoLabel,
     badge: 'demo',
     defaultEffort: null,
+    contextWindow: 1_000_000,
     configured: true,
   });
 
@@ -276,6 +285,12 @@ export function ModelPickerPopover({ usage, disabled = false, align = 'left' }: 
   const cachePct =
     usage && usage.inputTokens > 0 ? Math.round((usage.cachedInputTokens / usage.inputTokens) * 100) : 0;
   const lastTurn = usage && 'lastTurn' in usage ? usage.lastTurn : undefined;
+  const activeContextWindow = resolveModelContextWindow(activeProvider, activeModel);
+  const activeContextLabel = formatContextWindow(activeContextWindow);
+  const lastTurnContextPct =
+    lastTurn && activeContextWindow > 0
+      ? Math.min(100, Math.round((lastTurn.inputTokens / activeContextWindow) * 1000) / 10)
+      : 0;
 
   return (
     <div className={`model-picker-pop${align === 'right' ? ' is-right' : ''}`} ref={rootRef}>
@@ -293,6 +308,11 @@ export function ModelPickerPopover({ usage, disabled = false, align = 'left' }: 
         }}
       >
         <span className="model-pill__name">{pillLabel}</span>
+        {activeProvider !== 'mock' && (
+          <span className={`model-pill__ctx${activeContextWindow >= 1_000_000 ? ' is-1m' : ''}`}>
+            {activeContextLabel}
+          </span>
+        )}
         {activeEffort && activeProvider !== 'mock' && (
           <span className="model-pill__effort">{t(`settings.effort.levels.${activeEffort}`)}</span>
         )}
@@ -342,6 +362,11 @@ export function ModelPickerPopover({ usage, disabled = false, align = 'left' }: 
                       onClick={() => void selectModel(opt)}
                     >
                       <span className="model-row__label">{opt.label}</span>
+                      {opt.provider !== 'mock' && (
+                        <span className={`model-row__ctx${opt.contextWindow >= 1_000_000 ? ' is-1m' : ''}`}>
+                          {formatContextWindow(opt.contextWindow)}
+                        </span>
+                      )}
                       {rowEffort && opt.provider !== 'mock' && (
                         <span className="model-row__effort">{t(`settings.effort.levels.${rowEffort}`)}</span>
                       )}
@@ -423,32 +448,43 @@ export function ModelPickerPopover({ usage, disabled = false, align = 'left' }: 
 
             {showUsage && (
               <div className="model-popover__usage">
-                {totalTokens > 0 && usage ? (
-                  <dl className="usage-grid">
-                    <div>
-                      <dt>{t('modelPicker.inputTokens')}</dt>
-                      <dd>{formatNumber(usage.inputTokens, uiTag)}</dd>
-                    </div>
-                    <div>
-                      <dt>{t('modelPicker.outputTokens')}</dt>
-                      <dd>{formatNumber(usage.outputTokens, uiTag)}</dd>
-                    </div>
-                    <div>
-                      <dt>{t('modelPicker.cachedTokens')}</dt>
-                      <dd>
-                        {formatNumber(usage.cachedInputTokens, uiTag)} ({cachePct}%)
-                      </dd>
-                    </div>
-                    {lastTurn && (
+                <dl className="usage-grid">
+                  <div>
+                    <dt>{t('modelPicker.contextWindow')}</dt>
+                    <dd>
+                      {lastTurn && lastTurn.inputTokens > 0
+                        ? `${formatNumber(lastTurn.inputTokens, uiTag)} / ${activeContextLabel} (${lastTurnContextPct}%)`
+                        : t('modelPicker.contextLimitOnly', { limit: activeContextLabel })}
+                    </dd>
+                  </div>
+                  {totalTokens > 0 && usage && (
+                    <>
                       <div>
-                        <dt>{t('modelPicker.lastTurn')}</dt>
+                        <dt>{t('modelPicker.inputTokens')}</dt>
+                        <dd>{formatNumber(usage.inputTokens, uiTag)}</dd>
+                      </div>
+                      <div>
+                        <dt>{t('modelPicker.outputTokens')}</dt>
+                        <dd>{formatNumber(usage.outputTokens, uiTag)}</dd>
+                      </div>
+                      <div>
+                        <dt>{t('modelPicker.cachedTokens')}</dt>
                         <dd>
-                          +{formatNumber(lastTurn.inputTokens + lastTurn.outputTokens, uiTag)}
+                          {formatNumber(usage.cachedInputTokens, uiTag)} ({cachePct}%)
                         </dd>
                       </div>
-                    )}
-                  </dl>
-                ) : (
+                      {lastTurn && (
+                        <div>
+                          <dt>{t('modelPicker.lastTurn')}</dt>
+                          <dd>
+                            +{formatNumber(lastTurn.inputTokens + lastTurn.outputTokens, uiTag)}
+                          </dd>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </dl>
+                {totalTokens === 0 && (
                   <p className="model-popover__usage-empty">{t('modelPicker.noUsageYet')}</p>
                 )}
               </div>

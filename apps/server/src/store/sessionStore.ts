@@ -34,6 +34,11 @@ function upgradeWorld(world: WorldState): WorldState {
   const partial = world as Partial<WorldState> & WorldState;
   partial.artStyle ??= '';
   partial.modules ??= {};
+  partial.storyArc ??= { chapter: '', summary: '', threads: [] };
+  partial.storyArc.chapter ??= '';
+  partial.storyArc.summary ??= '';
+  partial.storyArc.threads ??= [];
+  partial.chronicle ??= [];
   partial.storySummary ??= '';
   partial.summarizedUpToTurn ??= 0;
   for (const character of Object.values(world.characters)) {

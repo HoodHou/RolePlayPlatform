@@ -1,3 +1,4 @@
+import type { ChronicleKind } from './world';
 import type {
   AttackOutcome,
   BreakthroughOutcome,
@@ -55,6 +56,8 @@ export type WorldEvent =
   | { type: 'quest_completed'; id: string; title: string }
   | { type: 'quest_failed'; id: string; title: string }
   | { type: 'lore_added'; id: string; title: string }
+  | { type: 'chapter_changed'; chapter: string; summary: string }
+  | { type: 'chronicle_recorded'; id: string; title: string; kind: ChronicleKind }
   | {
       type: 'dice_rolled';
       notation: string;

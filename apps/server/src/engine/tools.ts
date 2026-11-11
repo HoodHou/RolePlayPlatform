@@ -1,4 +1,4 @@
-import { IMAGE_SUBJECTS, MODULE_IDS, type ModuleId, type WorldEvent } from '@roleplay/shared';
+import { CHRONICLE_KINDS, IMAGE_SUBJECTS, MODULE_IDS, type ModuleId, type WorldEvent } from '@roleplay/shared';
 import { z } from 'zod';
 import type { ToolSpec } from '../llm/types';
 import { getModules, modulesKey, type GameModule } from './modules';
@@ -10,8 +10,10 @@ import {
   resolvePictureTarget,
   setScene,
   setSuggestions,
+  updateStoryArc,
   updateWorld,
   upsertCharacter,
+  upsertChronicle,
   upsertItem,
   upsertLocation,
   upsertLore,
@@ -195,8 +197,32 @@ const suggestions = z
   .max(4)
   .describe('Two to four things the player might do next, as short first-person actions in the story language. Shown as buttons; they are suggestions, not the only options.');
 
+const storyProgressSection = z
+  .strictObject({
+    chapter: z.string().optional().describe('Current chapter or act title.'),
+    summary: z.string().optional().describe('2-3 sentences on overarching plot state and central tension.'),
+    threads: z.array(z.string().min(1)).max(6).optional().describe('Active unresolved plot threads.'),
+  })
+  .describe('Macro story progression. Set on turn 1 and update when the overall arc shifts.');
+
+const chronicleEntry = z.strictObject({
+  id: id.optional().describe('Optional stable id to create or update.'),
+  kind: z.enum(CHRONICLE_KINDS).optional(),
+  title: z.string().optional().describe('Short milestone headline. Required when creating.'),
+  summary: z.string().optional().describe('1-2 factual sentences on what happened.'),
+  impact: z.string().optional().describe('Lasting consequence on stakes, power, or bonds.'),
+  secret: z.boolean().optional().describe('True hides a behind-the-scenes milestone from player and NPCs.'),
+  public: z.boolean().optional().describe('True broadcasts realm-wide public news to NPCs.'),
+});
+
 const RECORD_SECTIONS = {
   world: worldSection.optional(),
+  progress: storyProgressSection.optional(),
+  chronicle: z
+    .array(chronicleEntry)
+    .max(6)
+    .optional()
+    .describe('Pivotal turning points, decrees, battles, alliances, betrayals, or lasting consequences.'),
   locations: z
     .array(locationEntry)
     .optional()
@@ -278,8 +304,10 @@ function makeRecord(modules: GameModule[], choosing: boolean): GameTool {
       // characters arrive, because a newcomer with no stated whereabouts appears
       // where the scene is.
       one('world', worldSection, ({ art_style, ...rest }) => updateWorld(world, { ...rest, artStyle: art_style }));
+      one('progress', storyProgressSection, (patch) => updateStoryArc(world, patch));
       each('locations', locationEntry, (entry) => upsertLocation(world, entry));
       one('scene', sceneSection, ({ location_id, ...rest }) => setScene(world, { ...rest, locationId: location_id }));
+      each('chronicle', chronicleEntry, (entry) => upsertChronicle(world, entry));
       each('characters', characterEntry, ({ is_player, location_id, ...rest }) =>
         upsertCharacter(world, { ...rest, isPlayer: is_player, locationId: location_id }),
       );

@@ -86,6 +86,7 @@ function respondTool(modules: readonly ModuleId[]): RespondTool {
 // How much the character is given to work with, besides the memories they recall.
 const EXCHANGES_REPLAYED = 8;
 const COMMON_KNOWLEDGE_ENTRIES = 20;
+const PUBLIC_EVENTS_SHOWN = 12;
 
 /** The last few things the player and this character said to each other, word for word. */
 function conversationSoFar(messages: Message[], characterId: string): ChatTurn[] {
@@ -182,6 +183,15 @@ export function characterView(
       .filter((entry) => !entry.hidden)
       .slice(-COMMON_KNOWLEDGE_ENTRIES)
       .map((entry) => ({ title: entry.title, content: entry.content })),
+    public_events: (world.chronicle ?? [])
+      .filter((entry) => !entry.secret && entry.public)
+      .slice(-PUBLIC_EVENTS_SHOWN)
+      .map((entry) => ({
+        ...(entry.time ? { when: entry.time } : {}),
+        title: entry.title,
+        ...(entry.summary ? { summary: entry.summary } : {}),
+        ...(entry.impact ? { impact: entry.impact } : {}),
+      })),
     speaking_to_you: {
       name: met ? (player?.name ?? null) : null,
       met_before: met,
@@ -217,6 +227,7 @@ export function buildActorInit(
       section('your_memories', view.your_memories),
       section('here_and_now', view.here_and_now),
       ...(view.common_knowledge.length > 0 ? [section('common_knowledge', view.common_knowledge)] : []),
+      ...(view.public_events.length > 0 ? [section('public_events', view.public_events)] : []),
       ...fromModules,
       section('speaking_to_you', view.speaking_to_you),
       `<they_say>\n${said}\n</they_say>`,

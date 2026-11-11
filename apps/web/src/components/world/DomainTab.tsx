@@ -2,11 +2,9 @@ import type { DomainFacility, WorldState } from '@roleplay/shared';
 import { useTranslation } from 'react-i18next';
 import { languageTag, useLocale } from '../../i18n';
 import { formatNumber, formatSigned } from '../../lib/text';
-import { npcsOf } from '../../lib/world';
-import { useGame } from '../../store/game';
 import { useUi } from '../../store/ui';
 import { CharacterAvatar } from '../CharacterAvatar';
-import { ModuleOpButtons, useCanOperateModule } from './ModuleOpControls';
+import { ModuleOpButtons } from './ModuleOpControls';
 
 export function hasDomainContent(world: WorldState): boolean {
   const domain = world.modules?.domain;
@@ -27,10 +25,7 @@ function FacilityCard({
 }) {
   const { t } = useTranslation();
   const openDossier = useUi((s) => s.openDossier);
-  const executeDirective = useGame((s) => s.executeDirective);
-  const canOperate = useCanOperateModule();
   const steward = facility.stewardId ? world.characters[facility.stewardId] : undefined;
-  const npcs = npcsOf(world);
 
   const statusTag =
     facility.status === 'operational'
@@ -103,30 +98,25 @@ function FacilityCard({
         ) : (
           <span className="muted">{t('world.domain.unassigned')}</span>
         )}
-        {npcs.length > 0 && (
-          <select
-            className="op-select op-select--inline"
-            aria-label={t('world.domain.ops.assignSteward')}
-            value={facility.stewardId ?? ''}
-            disabled={!canOperate}
-            onChange={(e) => {
-              const nextId = e.target.value || null;
-              void executeDirective({
-                moduleId: 'domain',
-                op: 'assign_steward',
-                params: { facility_id: facility.id, steward_id: nextId },
-                label: `${facility.name} · ${t('world.domain.ops.assignSteward')}`,
-              });
-            }}
-          >
-            <option value="">{t('world.domain.unassigned')}</option>
-            {npcs.map((npc) => (
-              <option key={npc.id} value={npc.id}>
-                {npc.name}
-              </option>
-            ))}
-          </select>
-        )}
+        <ModuleOpButtons
+          directive={{
+            moduleId: 'domain',
+            op: 'advisor_note',
+            params: {
+              intent: 'assign_steward',
+              facility_id: facility.id,
+              current_steward_id: facility.stewardId ?? null,
+            },
+            label: `${facility.name} · ${
+              steward ? t('world.domain.ops.changeSteward') : t('world.domain.ops.assignSteward')
+            }`,
+            aiNote: steward
+              ? `拟旨改派领地设施「${facility.name}」的驻守主理人（现任：${steward.name}）。请从我方符合专长与身份的在案臣属/弟子中择定合适人选接任，妥善交接差遣，并更新 record.domain.facilities 的 steward_id。`
+              : `拟旨为领地设施「${facility.name}」委派驻守主理人。请从我方符合专长与身份的在案臣属/弟子中遴选合适人选主理，并写入 record.domain.facilities 的 steward_id。`,
+          }}
+          instantLabel={steward ? t('world.domain.ops.changeSteward') : t('world.domain.ops.assignSteward')}
+          compact
+        />
       </div>
 
       <div className="card__actions">
@@ -134,9 +124,10 @@ function FacilityCard({
           <ModuleOpButtons
             directive={{
               moduleId: 'domain',
-              op: 'set_facility_status',
-              params: { facility_id: facility.id, status: 'building' },
+              op: 'advisor_note',
+              params: { intent: 'upgrade_facility', facility_id: facility.id },
               label: `${facility.name} · ${t('world.domain.ops.startUpgrade')}`,
+              aiNote: `下令兴工扩建领地设施「${facility.name}」（当前 Lv.${facility.level}/${facility.maxLevel}）。请核验领地府库资源并扣除合理营造耗费，在 record.domain.facilities 中将其设为 status: "building"（或视工期调用 develop_domain 推进）。`,
             }}
             instantLabel={t('world.domain.ops.startUpgrade')}
             compact
@@ -146,9 +137,10 @@ function FacilityCard({
           <ModuleOpButtons
             directive={{
               moduleId: 'domain',
-              op: 'develop_domain',
-              params: { facility_id: facility.id },
+              op: 'advisor_note',
+              params: { intent: 'develop_domain', facility_id: facility.id },
               label: `${facility.name} · ${t('world.domain.ops.pushWorks')}`,
+              aiNote: `督办领地设施「${facility.name}」营造修缮（当前工期 ${facility.progress}/${facility.segments}）。请调用 develop_domain 工具（facility_id: "${facility.id}"）结算本期工程进度与资源产出，并叙述营造实况。`,
             }}
             instantLabel={t('world.domain.ops.pushWorks')}
             compact
@@ -182,18 +174,6 @@ export function DomainTab({ world, lang }: { world: WorldState; lang: string }) 
               {state.tier}
             </span>
           )}
-          <div className="regime-banner__cta">
-            <ModuleOpButtons
-              directive={{
-                moduleId: 'domain',
-                op: 'develop_domain',
-                params: {},
-                label: t('world.domain.ops.advanceCycle'),
-              }}
-              instantLabel={t('world.domain.ops.advanceCycle')}
-              compact
-            />
-          </div>
         </div>
         {(locationName || state.cycles > 0) && (
           <p className="regime-banner__meta">

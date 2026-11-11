@@ -21,7 +21,6 @@ import {
   playerFactionOf,
 } from '../../lib/sandbox';
 import { formatCompact, formatNumber } from '../../lib/text';
-import { npcsOf } from '../../lib/world';
 import { useUi } from '../../store/ui';
 import { Icon } from '../Icon';
 import { ModuleOpButtons } from './ModuleOpControls';
@@ -66,8 +65,6 @@ export function RegionDetails({ board, world, regionId, lang, onSelectRegion }: 
 
   const region = board.regions[regionId];
   const [activeTab, setActiveTab] = useState<CommandTab | null>(null);
-  const [editingCommander, setEditingCommander] = useState(false);
-  const [commanderDraft, setCommanderDraft] = useState<string>('');
   const [transferDir, setTransferDir] = useState<'in' | 'out'>('in');
   const [partnerId, setPartnerId] = useState<string>('');
   const [customAmount, setCustomAmount] = useState<number | null>(null);
@@ -76,7 +73,6 @@ export function RegionDetails({ board, world, regionId, lang, onSelectRegion }: 
 
   useEffect(() => {
     setActiveTab(null);
-    setEditingCommander(false);
     setPartnerId('');
     setCustomAmount(null);
   }, [regionId]);
@@ -95,12 +91,6 @@ export function RegionDetails({ board, world, regionId, lang, onSelectRegion }: 
   const commander = region.commanderId ? world.characters[region.commanderId] : undefined;
   const courtOfficials = world.modules.court?.officials;
   const commanderOfficial = commander && courtOfficials ? courtOfficials[commander.id] : undefined;
-
-  const castCandidates = [...npcsOf(world)].sort((a, b) => {
-    const milA = courtOfficials?.[a.id]?.military ?? -1;
-    const milB = courtOfficials?.[b.id]?.military ?? -1;
-    return milB - milA;
-  });
 
   const pools = matchSandboxResourcePools(board);
   const scale = sandboxEconomicScale(board);
@@ -225,49 +215,61 @@ export function RegionDetails({ board, world, regionId, lang, onSelectRegion }: 
             {region.strength !== null ? formatNumber(region.strength, uiTag) : t('world.sandbox.region.noGarrison')}
           </dd>
         </div>
-        <div className="facts__row">
-          <dt>{t('world.sandbox.region.commander')}</dt>
-          <dd className="region-card__commander">
-            {commander ? (
-              <button
-                type="button"
-                className="commander-chip"
-                onClick={() => openDossier(commander.id)}
-                title={t('world.dossier.openFor', { name: commander.name })}
-              >
-                {commander.imageUrl ? (
-                  <img src={commander.imageUrl} alt="" className="commander-chip__avatar" />
-                ) : (
-                  <Icon name="dossier" size={13} />
-                )}
-                <span lang={lang}>{commander.name}</span>
-                {commanderOfficial && (
-                  <span className="commander-chip__stat">
-                    {t('world.sandbox.ops.commanderMilitary', {
-                      mil: commanderOfficial.military,
-                      gov: commanderOfficial.governance,
-                    })}
-                  </span>
-                )}
-              </button>
-            ) : (
-              <span className="world-note">{t('world.sandbox.region.noCommander')}</span>
-            )}
-            {owner?.isPlayer && castCandidates.length > 0 && (
-              <button
-                type="button"
-                className="region-inline-link"
-                aria-expanded={editingCommander}
-                onClick={() => {
-                  setCommanderDraft(region.commanderId ?? castCandidates[0]?.id ?? '');
-                  setEditingCommander((v) => !v);
-                }}
-              >
-                {commander ? t('world.sandbox.region.changeCommander') : t('world.sandbox.region.assignBtn')}
-              </button>
-            )}
-          </dd>
-        </div>
+        {(commander || owner?.isPlayer) && (
+          <div className="facts__row">
+            <dt>{t('world.sandbox.region.commander')}</dt>
+            <dd className="region-card__commander">
+              {commander ? (
+                <button
+                  type="button"
+                  className="commander-chip"
+                  onClick={() => openDossier(commander.id)}
+                  title={t('world.dossier.openFor', { name: commander.name })}
+                >
+                  {commander.imageUrl ? (
+                    <img src={commander.imageUrl} alt="" className="commander-chip__avatar" />
+                  ) : (
+                    <Icon name="dossier" size={13} />
+                  )}
+                  <span lang={lang}>{commander.name}</span>
+                  {commanderOfficial && (
+                    <span className="commander-chip__stat">
+                      {t('world.sandbox.ops.commanderMilitary', {
+                        mil: commanderOfficial.military,
+                        gov: commanderOfficial.governance,
+                      })}
+                    </span>
+                  )}
+                </button>
+              ) : (
+                <span className="world-note">{t('world.sandbox.region.noCommander')}</span>
+              )}
+              {owner?.isPlayer && (
+                <ModuleOpButtons
+                  directive={{
+                    moduleId: 'sandbox',
+                    op: 'advisor_note',
+                    params: {
+                      intent: 'appoint_commander',
+                      region_id: region.id,
+                      current_commander_id: region.commanderId ?? null,
+                    },
+                    label: `${region.name} · ${
+                      commander ? t('world.sandbox.region.changeCommander') : t('world.sandbox.region.assignBtn')
+                    }`,
+                    aiNote: commander
+                      ? `拟旨调整【${region.name}】驻守主将（现任：${commander.name}）。请由朝廷/兵部结合战局与官制，从符合身份与阵营立场的我方臣将中推举或调派合适人选，妥善处置${commander.name}的原职交接，并同步更新 record.sandbox.regions 的 commander_id 与朝堂差遣。`
+                      : `拟旨为【${region.name}】选派驻守主将。请由朝廷/兵部从符合身份与阵营立场、堪任军务的我方在案臣将（或新擢拔将领）中择定镇守人选，兼顾原职交接，并同步写入 record.sandbox.regions 的 commander_id。`,
+                  }}
+                  instantLabel={
+                    commander ? t('world.sandbox.region.changeCommander') : t('world.sandbox.region.assignBtn')
+                  }
+                  compact
+                />
+              )}
+            </dd>
+          </div>
+        )}
         <div className="facts__row">
           <dt>{t('world.sandbox.region.borders')}</dt>
           <dd className="region-card__borders">
@@ -296,52 +298,6 @@ export function RegionDetails({ board, world, regionId, lang, onSelectRegion }: 
           </dd>
         </div>
       </dl>
-
-      {editingCommander && owner?.isPlayer && (
-        <div className="op-drawer region-commander-drawer">
-          <div className="op-drawer__row">
-            <select
-              className="op-select"
-              value={commanderDraft}
-              onChange={(e) => setCommanderDraft(e.target.value)}
-            >
-              <option value="">{`— ${t('world.sandbox.region.recallCommander')} —`}</option>
-              {castCandidates.map((c) => {
-                const off = courtOfficials?.[c.id];
-                const meta = off
-                  ? ` (${off.office || off.department} · ${t('world.court.stats.military')} ${off.military})`
-                  : c.role
-                    ? ` (${c.role})`
-                    : '';
-                return (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                    {meta}
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-          <div className="op-drawer__foot">
-            <ModuleOpButtons
-              directive={{
-                moduleId: 'sandbox',
-                op: 'assign_commander',
-                params: {
-                  region_id: region.id,
-                  commander_id: commanderDraft || null,
-                },
-                label: commanderDraft
-                  ? `${region.name} · ${t('world.sandbox.region.assignBtn')} ${world.characters[commanderDraft]?.name ?? ''}`
-                  : `${region.name} · ${t('world.sandbox.region.recallCommander')}`,
-              }}
-              instantLabel={t('world.sandbox.ops.executeAssign')}
-              disabled={(commanderDraft || null) === (region.commanderId ?? null)}
-              onAfter={() => setEditingCommander(false)}
-            />
-          </div>
-        </div>
-      )}
 
       <div className="region-metrics">
         <MetricGauge label={t('world.sandbox.region.defense')} value={defense} tone="accent" />
@@ -486,8 +442,9 @@ export function RegionDetails({ board, world, regionId, lang, onSelectRegion }: 
                       <ModuleOpButtons
                         directive={{
                           moduleId: 'sandbox',
-                          op: 'transfer_troops',
+                          op: 'advisor_note',
                           params: {
+                            intent: 'transfer_troops',
                             from_region_id: effectiveDir === 'in' ? selectedPartner.id : region.id,
                             to_region_id: effectiveDir === 'in' ? region.id : selectedPartner.id,
                             amount,
@@ -496,9 +453,14 @@ export function RegionDetails({ board, world, regionId, lang, onSelectRegion }: 
                             effectiveDir === 'in'
                               ? `${t('world.sandbox.ops.tabTransfer')}：${selectedPartner.name} → ${region.name} (${formatNumber(amount, uiTag)})`
                               : `${t('world.sandbox.ops.tabTransfer')}：${region.name} → ${selectedPartner.name} (${formatNumber(amount, uiTag)})`,
+                          aiNote:
+                            effectiveDir === 'in'
+                              ? `下令调兵移防：自友邻【${selectedPartner.name}】（现驻 ${selectedPartner.strength ?? 0}）经连通防线调拨 ${amount} 兵力增戍【${region.name}】（现驻 ${region.strength ?? 0}）。请核验沿途防务态势并同步更新 record.sandbox.regions 双方驻军。`
+                              : `下令调兵移防：自【${region.name}】（现驻 ${region.strength ?? 0}）经连通防线调拨 ${amount} 兵力移防【${selectedPartner.name}】（现驻 ${selectedPartner.strength ?? 0}）。请核验沿途防务态势并同步更新 record.sandbox.regions 双方驻军。`,
                         }}
                         instantLabel={t('world.sandbox.ops.executeTransfer')}
                         disabled={amount <= 0 || amount > maxTransfer}
+                        onAfter={() => setActiveTab(null)}
                       />
                     </div>
                   )}
@@ -565,17 +527,20 @@ export function RegionDetails({ board, world, regionId, lang, onSelectRegion }: 
                 <ModuleOpButtons
                   directive={{
                     moduleId: 'sandbox',
-                    op: 'reinforce_garrison',
+                    op: 'advisor_note',
                     params: {
+                      intent: 'reinforce_garrison',
                       region_id: region.id,
                       amount,
-                      ...(manpowerPool ? { manpower_resource_id: manpowerPool.id } : {}),
-                      ...(fundsPool && reinforceFee > 0 ? { cost_resource_id: fundsPool.id, cost: reinforceFee } : {}),
                     },
                     label: `${region.name} · ${t('world.sandbox.ops.tabReinforce')} +${formatNumber(amount, uiTag)}`,
+                    aiNote: `下令征调增戍：自后备兵源向【${region.name}】征发增派 ${amount} 兵力（当前驻军 ${region.strength ?? 0}${
+                      fundsPool && reinforceFee > 0 ? `，预计需支用${fundsPool.name}约 ${reinforceFee}` : ''
+                    }）。请核验并扣减我方势力可动员兵力与钱粮，同步更新 record.sandbox.factions 与 record.sandbox.regions。`,
                   }}
                   instantLabel={t('world.sandbox.ops.executeReinforce')}
                   disabled={!canReinforce}
+                  onAfter={() => setActiveTab(null)}
                 />
               </div>
             </div>
@@ -612,16 +577,19 @@ export function RegionDetails({ board, world, regionId, lang, onSelectRegion }: 
                     <ModuleOpButtons
                       directive={{
                         moduleId: 'sandbox',
-                        op: 'fortify_region',
+                        op: 'advisor_note',
                         params: {
+                          intent: 'fortify_region',
                           region_id: region.id,
-                          gain: 15,
-                          ...(fundsPool ? { resource_id: fundsPool.id, cost: scale.fortifyCost } : {}),
                         },
-                        label: `${region.name} · ${t('world.sandbox.ops.tabFortify')} (+15)`,
+                        label: `${region.name} · ${t('world.sandbox.ops.tabFortify')}`,
+                        aiNote: `下令修筑【${region.name}】城防工事（当前城防 ${defense}/100${
+                          fundsPool && scale.fortifyCost > 0 ? `，预计耗支${fundsPool.name}约 ${scale.fortifyCost}` : ''
+                        }）。请核扣钱粮、结合当地守将与工期实情裁定城防提升幅度，并更新 record.sandbox.regions 与 resources。`,
                       }}
                       instantLabel={t('world.sandbox.ops.executeFortify')}
                       disabled={!canFortify}
+                      onAfter={() => setActiveTab(null)}
                     />
                   </div>
                 </>
@@ -675,16 +643,22 @@ export function RegionDetails({ board, world, regionId, lang, onSelectRegion }: 
                     <ModuleOpButtons
                       directive={{
                         moduleId: 'sandbox',
-                        op: 'pacify_region',
+                        op: 'advisor_note',
                         params: {
+                          intent: 'pacify_region',
                           region_id: region.id,
-                          gain: 20,
-                          ...(activePacifyPool ? { resource_id: activePacifyPool.id, cost: pacifyCost } : {}),
+                          resource_id: activePacifyPool?.id ?? null,
                         },
-                        label: `${region.name} · ${t('world.sandbox.ops.tabPacify')} (+20)`,
+                        label: `${region.name} · ${t('world.sandbox.ops.tabPacify')}`,
+                        aiNote: `下令赈灾安民：向【${region.name}】拨付${
+                          activePacifyPool && pacifyCost > 0 ? `${activePacifyPool.name}约 ${pacifyCost}` : '赈济钱粮'
+                        }开仓抚恤流亡、平抑动荡（当前民心治安 ${stability}/100${
+                          region.status ? `，态势：${region.status}` : ''
+                        }）。请核扣钱粮、考察地方官吏清廉与执行实效，同步更新 record.sandbox.regions 的 stability 与 status。`,
                       }}
                       instantLabel={t('world.sandbox.ops.executePacify')}
                       disabled={!canPacify}
+                      onAfter={() => setActiveTab(null)}
                     />
                   </div>
                 </>
@@ -740,19 +714,20 @@ export function RegionDetails({ board, world, regionId, lang, onSelectRegion }: 
                     <ModuleOpButtons
                       directive={{
                         moduleId: 'sandbox',
-                        op: 'develop_region',
+                        op: 'advisor_note',
                         params: {
+                          intent: 'develop_region',
                           region_id: region.id,
-                          gain: 15,
-                          ...(fundsPool ? { resource_id: fundsPool.id, cost: scale.developCost } : {}),
-                          ...(activeYieldPool
-                            ? { yield_resource_id: activeYieldPool.id, income_gain: developYieldAmt }
-                            : {}),
+                          yield_resource_id: activeYieldPool?.id ?? null,
                         },
-                        label: `${region.name} · ${t('world.sandbox.ops.tabDevelop')} (+15)`,
+                        label: `${region.name} · ${t('world.sandbox.ops.tabDevelop')}`,
+                        aiNote: `下令在【${region.name}】兴修水利、清丈垦殖（当前富庶度 ${prosperity}/100${
+                          fundsPool && scale.developCost > 0 ? `，预计投入${fundsPool.name}约 ${scale.developCost}` : ''
+                        }，侧重提升每回合${activeYieldPool?.name ?? '税粮'}产出）。请核扣投入并同步更新 record.sandbox.regions.prosperity 及我方势力 income。`,
                       }}
                       instantLabel={t('world.sandbox.ops.executeDevelop')}
                       disabled={!canDevelop}
+                      onAfter={() => setActiveTab(null)}
                     />
                   </div>
                 </>
@@ -850,8 +825,9 @@ export function RegionDetails({ board, world, regionId, lang, onSelectRegion }: 
                       <ModuleOpButtons
                         directive={{
                           moduleId: 'sandbox',
-                          op: 'launch_campaign',
+                          op: 'advisor_note',
                           params: {
+                            intent: owner ? 'launch_campaign' : 'occupy_region',
                             from_region_id: selectedStaging.id,
                             target_region_id: region.id,
                             force: amount,
@@ -859,11 +835,15 @@ export function RegionDetails({ board, world, regionId, lang, onSelectRegion }: 
                           label: owner
                             ? `${t('world.sandbox.ops.tabCampaign')}：${selectedStaging.name} → ${region.name} (${formatNumber(amount, uiTag)})`
                             : `${t('world.sandbox.ops.tabOccupy')}：${selectedStaging.name} → ${region.name} (${formatNumber(amount, uiTag)})`,
+                          aiNote: owner
+                            ? `下令出师攻伐：自【${selectedStaging.name}】（现驻 ${selectedStaging.strength ?? 0}）发兵 ${amount} 讨伐【${owner.name}】所属【${region.name}】（敌驻军 ${region.strength ?? 0}，城防 ${defense}/100）。请务必先调用 simulate 工具裁定两军交战结果与伤亡折损，再依据战果更新 record.sandbox 的兵力、版图归属与交战关系。`
+                            : `下令发兵进驻：自【${selectedStaging.name}】（现驻 ${selectedStaging.strength ?? 0}）分兵 ${amount} 进驻无主之地【${region.name}】。请结合当地流民、险隘或潜在敌情裁定收复过程（遇抵抗时调用 simulate），并更新 record.sandbox.regions 的归属与驻军。`,
                         }}
                         instantLabel={
                           owner ? t('world.sandbox.ops.executeCampaign') : t('world.sandbox.ops.executeOccupy')
                         }
                         disabled={amount <= 0 || amount > maxCampaign}
+                        onAfter={() => setActiveTab(null)}
                       />
                     </div>
                   )}

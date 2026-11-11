@@ -1,4 +1,4 @@
-import type { TurnEvent } from '@roleplay/shared';
+import { resolveModelContextWindow, type TurnEvent } from '@roleplay/shared';
 import type { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { runTurn, validateTurn } from '../engine/gameMaster';
@@ -8,7 +8,7 @@ import type { LLMProvider } from '../llm/types';
 import type { SessionCoordinator } from '../sessionCoordinator';
 import type { ImageStore } from '../store/imageStore';
 import { recordSessionUsage, recordSnapshot, type SessionStore } from '../store/sessionStore';
-import type { ResolvedSettings, SettingsStore } from '../store/settingsStore';
+import { resolveRole, type ResolvedSettings, type SettingsStore } from '../store/settingsStore';
 import { readBody, turnSchema } from './schemas';
 
 export interface TurnRouteDeps {
@@ -48,6 +48,7 @@ export function registerTurnRoutes(app: Hono, deps: TurnRouteDeps): void {
         }
       }
 
+      const gmRole = resolveRole(current, 'gameMaster');
       return {
         session,
         provider: makeProvider(current, 'gameMaster'),
@@ -58,6 +59,7 @@ export function registerTurnRoutes(app: Hono, deps: TurnRouteDeps): void {
         tuning: {
           historyTurns: current.generation.historyTurns,
           memoriesRecalled: current.generation.memoriesRecalled,
+          contextWindow: resolveModelContextWindow(gmRole.provider, gmRole.model),
         },
       };
     })().catch((err: unknown) => {

@@ -99,7 +99,6 @@ function OfficialCard({
   const [editing, setEditing] = useState(false);
   const [officeInput, setOfficeInput] = useState(official.office);
   const [dutyInput, setDutyInput] = useState(official.assignment);
-  const [factionInput, setFactionInput] = useState(official.factionId ?? '');
 
   const handleAudience = () => {
     flushSync(() => {
@@ -120,26 +119,37 @@ function OfficialCard({
     focusComposer();
   };
 
+  const nextOffice = officeInput.trim() || official.office;
+  const nextDuty = dutyInput.trim();
+
   const manageDirective: ModuleDirective = {
     moduleId: 'court',
-    op: 'manage_official',
+    op: 'advisor_note',
     params: {
+      intent: 'manage_official',
       character_id: official.characterId,
-      office: officeInput.trim() || official.office,
-      assignment: dutyInput.trim(),
-      faction_id: factionInput || null,
+      office: nextOffice,
+      assignment: nextDuty,
     },
-    label: `${name} · ${officeInput.trim() || official.office}`,
+    label: `${name} · ${nextOffice}${nextDuty ? `（${nextDuty}）` : ''}`,
+    aiNote: `下旨调任或差遣朝臣${name}（原职：${official.office}${
+      official.assignment ? `，原差遣：${official.assignment}` : ''
+    }）改任「${nextOffice}」${
+      nextDuty ? `，差遣：「${nextDuty}」` : ''
+    }。请核验官制品级、本人资历立场与朝堂朋党反应，妥善交接原职，并同步更新 record.court.officials 及关联模块职务。`,
   };
 
   const dismissDirective: ModuleDirective = {
     moduleId: 'court',
-    op: 'manage_official',
+    op: 'advisor_note',
     params: {
+      intent: 'dismiss_official',
       character_id: official.characterId,
-      remove: true,
     },
     label: `${t('world.court.ops.dismissOfficial')} · ${name}`,
+    aiNote: `下旨罢免${name}（现任：${official.office}，权势 ${official.influence}，忠诚 ${official.loyalty}${
+      faction ? `，属${faction.name}` : ''
+    }）官职。请结合其朝堂根基与朋党势力如实推演罢官风波或反扑，并同步更新 record.court.officials 与兼任职务。`,
   };
 
   return (
@@ -232,7 +242,6 @@ function OfficialCard({
               if (!editing) {
                 setOfficeInput(official.office);
                 setDutyInput(official.assignment);
-                setFactionInput(official.factionId ?? '');
               }
               setEditing((v) => !v);
             }}
@@ -281,23 +290,6 @@ function OfficialCard({
               onChange={(e) => setDutyInput(e.target.value)}
             />
           </div>
-          {Object.keys(state.factions).length > 0 && (
-            <div className="op-drawer__row">
-              <select
-                className="op-select"
-                value={factionInput}
-                disabled={!canOperate}
-                onChange={(e) => setFactionInput(e.target.value)}
-              >
-                <option value="">{t('world.court.ops.none')}</option>
-                {Object.values(state.factions).map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
           <div className="op-drawer__foot">
             <ModuleOpButtons
               directive={manageDirective}
@@ -308,7 +300,6 @@ function OfficialCard({
             <ModuleOpButtons
               directive={dismissDirective}
               instantLabel={t('world.court.ops.dismissOfficial')}
-              hideStage
               compact
               onAfter={() => setEditing(false)}
             />
@@ -379,14 +370,22 @@ function MemorialCard({
 
   const ruleDirective: ModuleDirective = {
     moduleId: 'court',
-    op: 'rule_memorial',
+    op: 'advisor_note',
     params: {
+      intent: 'rule_memorial',
       id: memorial.id,
       status: decision,
       ...(rulingText.trim() ? { ruling: rulingText.trim() } : {}),
       ...(decision === 'approved' && issueEdict ? { issue_edict: true } : {}),
     },
     label: `${t(`world.court.memorialStatus.${decision}`)} · ${memorial.title}`,
+    aiNote: `御笔批答${authorLabel ? `${authorLabel}所呈` : ''}奏折《${memorial.title}》：裁定为【${t(
+      `world.court.memorialStatus.${decision}`,
+    )}】${rulingText.trim() ? `，朱批：「${rulingText.trim()}」` : ''}${
+      decision === 'approved' && issueEdict ? '，并同步颁为现行诏令' : ''
+    }。请核验奏折所请事项（${
+      memorial.proposal || memorial.summary
+    }）涉及的钱粮兵力与执行阻力，在 record.court.memorials 中记录批复结果，并将引发的国库/沙盘/民心等联动变化同步写入 record。`,
   };
 
   return (
@@ -625,12 +624,16 @@ function EdictCard({ edict, lang }: { edict: CourtEdict; lang: string }) {
   const { t } = useTranslation();
   const toggleDirective: ModuleDirective = {
     moduleId: 'court',
-    op: 'toggle_edict',
+    op: 'advisor_note',
     params: {
+      intent: edict.active ? 'repeal_edict' : 'enact_edict',
       id: edict.id,
       active: !edict.active,
     },
     label: `${edict.active ? t('world.court.ops.repealEdict') : t('world.court.ops.enactEdict')} · ${edict.title}`,
+    aiNote: `${edict.active ? `明诏废止现行诏令《${edict.title}》` : `重新颁行诏令《${edict.title}》`}（效力：${
+      edict.effect || edict.description || '见原档'
+    }）。请推演朝野反应与政局连锁影响，并同步更新 record.court.edicts 与社稷指标。`,
   };
 
   return (
@@ -662,16 +665,6 @@ function EdictCard({ edict, lang }: { edict: CourtEdict; lang: string }) {
       </div>
     </li>
   );
-}
-
-function nextEdictId(state: CourtState, turn: number): string {
-  let index = Object.keys(state.edicts).length + 1;
-  let candidate = `edict_${turn}_${index}`;
-  while (state.edicts[candidate]) {
-    index += 1;
-    candidate = `edict_${turn}_${index}`;
-  }
-  return candidate;
 }
 
 export function CourtTab({ session, lang }: { session: Session; lang: string }) {
@@ -725,26 +718,34 @@ export function CourtTab({ session, lang }: { session: Session; lang: string }) 
 
   const holdCourtDirective: ModuleDirective = {
     moduleId: 'court',
-    op: 'hold_court',
+    op: 'advisor_note',
     params: {
+      intent: 'hold_court',
       agenda: agenda.trim(),
       domain,
       ...(leadOfficialId ? { lead_official_id: leadOfficialId } : {}),
       ...(opposingFactionId ? { opposing_faction_id: opposingFactionId } : {}),
     },
     label: `${t('world.court.ops.conveneBtn')} · ${agenda.trim() || '…'}`,
+    aiNote: `召集早朝廷议商讨国策议题：「${agenda.trim()}」（领域：${t(`world.court.stats.${domain}`)}${
+      leadOfficialId ? `，主理大臣：${session.world.characters[leadOfficialId]?.name ?? leadOfficialId}` : ''
+    }${
+      opposingFactionId ? `，主要阻力朋党：${state.factions[opposingFactionId]?.name ?? opposingFactionId}` : ''
+    }）。请先调用 hold_court 工具投骰裁定廷议成败，再演绎百官交锋并将国策结果同步写入 record.court 与关联模块。`,
   };
 
   const newEdictDirective: ModuleDirective = {
     moduleId: 'court',
-    op: 'toggle_edict',
+    op: 'advisor_note',
     params: {
-      id: nextEdictId(state, session.world.turn),
+      intent: 'issue_edict',
       title: newEdictTitle.trim(),
       ...(newEdictEffect.trim() ? { effect: newEdictEffect.trim() } : {}),
-      active: true,
     },
     label: `${t('world.court.ops.newEdictBtn')} · ${newEdictTitle.trim() || '…'}`,
+    aiNote: `颁布新诏令《${newEdictTitle.trim()}》${
+      newEdictEffect.trim() ? `（政令纲要：${newEdictEffect.trim()}）` : ''
+    }。请核验朝堂执行条件与阻力（若有激烈朋党抗争可调用 hold_court 检定），演绎政令颁行反响并写入 record.court.edicts 及关联模块。`,
   };
 
   return (

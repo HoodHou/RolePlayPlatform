@@ -709,3 +709,55 @@ test('anthropic: keeps a stable quantized history cache breakpoint alongside the
     api.close();
   }
 });
+
+test('anthropic: enables context-1m-2025-08-07 beta on 1M-capable Claude models and omits it on 200K models', async () => {
+  const okReply = () => ({
+    body: anthropicMessage([{ start: { type: 'text', text: '' }, deltas: [{ type: 'text_delta', text: 'Ok.' }] }], 'end_turn'),
+  });
+  const api = await fakeApi([okReply(), okReply(), okReply()]);
+  try {
+    const sonnetLong = new AnthropicProvider({
+      apiKey: 'test-key',
+      hasKey: true,
+      baseUrl: api.url,
+      model: 'claude-sonnet-4-6',
+      effort: null,
+      maxOutputTokens: null,
+      longContext: true,
+    });
+    await sonnetLong.startConversation(init).step(handlers());
+
+    const opusAutoThreshold = new AnthropicProvider({
+      apiKey: 'test-key',
+      hasKey: true,
+      baseUrl: api.url,
+      model: 'claude-opus-5-5',
+      effort: null,
+      maxOutputTokens: null,
+    });
+    await opusAutoThreshold
+      .startConversation({ ...init, prompt: '长篇史料'.repeat(130_000) })
+      .step(handlers());
+
+    const haikuLong = new AnthropicProvider({
+      apiKey: 'test-key',
+      hasKey: true,
+      baseUrl: api.url,
+      model: 'claude-haiku-4-5',
+      effort: null,
+      maxOutputTokens: null,
+      longContext: true,
+    });
+    await haikuLong.startConversation(init).step(handlers());
+
+    const beta0 = String(api.requests[0]!.headers['anthropic-beta'] ?? '');
+    const beta1 = String(api.requests[1]!.headers['anthropic-beta'] ?? '');
+    const beta2 = String(api.requests[2]!.headers['anthropic-beta'] ?? '');
+
+    assert.ok(beta0.includes('context-1m-2025-08-07'), `expected 1M beta on claude-sonnet-4-6, got "${beta0}"`);
+    assert.ok(beta1.includes('context-1m-2025-08-07'), `expected auto 1M beta above 500k chars on claude-opus-5-5, got "${beta1}"`);
+    assert.ok(!beta2.includes('context-1m-2025-08-07'), `expected no 1M beta on claude-haiku-4-5, got "${beta2}"`);
+  } finally {
+    api.close();
+  }
+});

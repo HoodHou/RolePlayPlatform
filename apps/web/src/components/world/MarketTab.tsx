@@ -58,6 +58,7 @@ function ShopCard({
   const keeper = shop.keeperId ? world.characters[shop.keeperId] : undefined;
   const wares = Object.values(shop.wares);
   const here = shop.locationId !== null && shop.locationId === world.scene.locationId;
+  const canTradeHere = shop.locationId === null || here;
 
   return (
     <li className={`card${here ? ' is-here' : ''}`}>
@@ -94,14 +95,15 @@ function ShopCard({
                     {ware.stock !== null ? ` (${t('world.market.stock', { count: ware.stock })})` : ''}
                   </span>
                 </div>
-                {inStock && (
+                {inStock && canTradeHere && (
                   <div className="ware-row__ops">
                     <ModuleOpButtons
                       directive={{
                         moduleId: 'market',
-                        op: 'trade',
-                        params: { side: 'buy', shop_id: shop.id, item_id: ware.id, quantity: 1 },
+                        op: 'advisor_note',
+                        params: { intent: 'buy', shop_id: shop.id, item_id: ware.id, quantity: 1 },
                         label: `${t('world.market.ops.buy')} · ${ware.name}`,
+                        aiNote: `在「${shop.name}」按标价（${ware.price} ${currency}）购买 1 件「${ware.name}」。请调用 trade 工具（side: "buy", shop_id: "${shop.id}", item_id: "${ware.id}", quantity: 1）结算钱银与库存，并演绎交易细节。`,
                       }}
                       instantLabel={t('world.market.ops.buy')}
                       compact
@@ -109,12 +111,12 @@ function ShopCard({
                     <ModuleOpButtons
                       directive={{
                         moduleId: 'market',
-                        op: 'trade',
-                        params: { side: 'buy', shop_id: shop.id, item_id: ware.id, quantity: 1, haggle: true },
+                        op: 'advisor_note',
+                        params: { intent: 'haggle', shop_id: shop.id, item_id: ware.id, quantity: 1 },
                         label: `${t('world.market.ops.haggle')} · ${ware.name}`,
+                        aiNote: `在「${shop.name}」与掌柜讨价还价购买 1 件「${ware.name}」（标价 ${ware.price} ${currency}）。请调用 trade 工具（side: "buy", shop_id: "${shop.id}", item_id: "${ware.id}", quantity: 1, haggle: true）投骰裁定折扣并演绎议价经过。`,
                       }}
                       instantLabel={t('world.market.ops.haggle')}
-                      hideStage
                       compact
                     />
                   </div>
@@ -135,8 +137,7 @@ export function MarketTab({ market, world, lang }: { market: MarketState; world:
   const [sellOpen, setSellOpen] = useState(false);
 
   const shops = Object.values(market.shops);
-  const firstShop =
-    shops.find((s) => s.locationId !== null && s.locationId === world.scene.locationId) ?? shops[0];
+  const localShop = shops.find((s) => s.locationId === null || s.locationId === world.scene.locationId);
   const balance = playerBalanceOf(world, market);
   const items = inventoryOf(world);
 
@@ -162,7 +163,7 @@ export function MarketTab({ market, world, lang }: { market: MarketState; world:
         ))}
       </ul>
 
-      {firstShop && items.length > 0 && (
+      {localShop && items.length > 0 && (
         <section className="world-section">
           <button
             type="button"
@@ -176,7 +177,7 @@ export function MarketTab({ market, world, lang }: { market: MarketState; world:
           {sellOpen && (
             <ul className="ware-list">
               {items.map((item) => {
-                const listed = firstShop.wares[item.id];
+                const listed = localShop.wares[item.id];
                 const unitPrice = listed ? Math.max(1, Math.round(listed.price * 0.6)) : 5;
                 return (
                   <li key={item.id} className="ware-row">
@@ -192,15 +193,16 @@ export function MarketTab({ market, world, lang }: { market: MarketState; world:
                       <ModuleOpButtons
                         directive={{
                           moduleId: 'market',
-                          op: 'trade',
+                          op: 'advisor_note',
                           params: {
-                            side: 'sell',
-                            shop_id: firstShop.id,
+                            intent: 'sell',
+                            shop_id: localShop.id,
                             item_id: item.id,
                             quantity: 1,
                             unit_price: unitPrice,
                           },
                           label: `${t('world.market.ops.sell')} · ${item.name}`,
+                          aiNote: `在「${localShop.name}」变卖随身物品「${item.name}」×1（估价约 ${unitPrice} ${market.currency}）。请核验该物是否可售并调用 trade 工具（side: "sell", shop_id: "${localShop.id}", item_id: "${item.id}", quantity: 1, unit_price: ${unitPrice}）完成交割。`,
                         }}
                         instantLabel={t('world.market.ops.sell')}
                         compact

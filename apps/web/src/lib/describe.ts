@@ -123,6 +123,10 @@ export function describeEvent(t: TFunction, event: WorldEvent, context: Describe
       return isSecretLore(event.id)
         ? { glyph: '§', tone: 'neutral', text: t('events.lore_secret') }
         : { glyph: '§', tone: 'neutral', text: t('events.lore_added', { title: event.title }) };
+    case 'chapter_changed':
+      return { glyph: '✦', tone: 'notice', text: t('events.chapter_changed', { chapter: event.chapter }) };
+    case 'chronicle_recorded':
+      return { glyph: '◈', tone: 'notice', text: t('events.chronicle_recorded', { title: event.title }) };
     case 'dice_rolled': {
       const values = {
         notation: event.notation,

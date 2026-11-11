@@ -96,9 +96,9 @@ function weight(memory: Memory, focus: RecallFocus, textMatches: number): number
 /**
  * The `limit` memories most likely to come to mind, in the order they happened.
  * Up to half the places go to memories of what was just brought up (by entity
- * cue or direct keyword/CJK match), so that asking about the cellar recalls the
- * cellar even past a crowd of fresher, weightier memories; the rest go to
- * whatever weighs most.
+ * cue or direct keyword/CJK match), core anchor memories (`importance === 5`)
+ * reserve a small floor so life-defining secrets or oaths are never drowned out
+ * by recent small talk, and the rest go to whatever weighs most.
  */
 export function recall(memories: Memory[], focus: RecallFocus, limit: number): Memory[] {
   if (memories.length <= limit) return memories;
@@ -123,6 +123,18 @@ export function recall(memories: Memory[], focus: RecallFocus, limit: number): M
     ...ranked.filter((entry) => !entry.idCued && entry.textMatches > 0),
   ].slice(0, Math.ceil(limit / 2));
   const chosen = new Set(cued.map((entry) => entry.index));
+
+  // Anchor up to 1/4 of recall slots (1..3) for permanent importance-5 memories.
+  const anchorCap = Math.min(3, Math.max(1, Math.floor(limit / 4)));
+  let anchorsAdded = 0;
+  for (const entry of ranked) {
+    if (chosen.size >= limit || anchorsAdded >= anchorCap) break;
+    if (entry.memory.importance >= 5 && !chosen.has(entry.index)) {
+      chosen.add(entry.index);
+      anchorsAdded++;
+    }
+  }
+
   for (const entry of ranked) {
     if (chosen.size >= limit) break;
     chosen.add(entry.index);
@@ -150,17 +162,22 @@ function nameMatchesText(label: string, haystack: string, haystackWords: Readonl
   return false;
 }
 
-/** Ids of the characters, places, items, quests and lore whose names appear in a piece of text. */
+/** Ids of the characters, places, items, quests, lore, factions and regions whose names appear in a piece of text. */
 export function mentionedIds(world: WorldState, text: string): string[] {
   if (!text) return [];
   const haystack = text.toLowerCase();
   const haystackWords = new Set(haystack.match(/[a-z0-9]+/g) ?? []);
+  const sandbox = world.modules?.sandbox;
+  const domain = world.modules?.domain;
   const named: { id: string; label: string }[] = [
     ...Object.values(world.characters).map((c) => ({ id: c.id, label: c.name })),
     ...Object.values(world.locations).map((l) => ({ id: l.id, label: l.name })),
     ...Object.values(world.items).map((i) => ({ id: i.id, label: i.name })),
     ...Object.values(world.quests).map((q) => ({ id: q.id, label: q.title })),
     ...Object.values(world.lore).map((entry) => ({ id: entry.id, label: entry.title })),
+    ...(sandbox ? Object.values(sandbox.factions).map((f) => ({ id: f.id, label: f.name })) : []),
+    ...(sandbox ? Object.values(sandbox.regions).map((r) => ({ id: r.id, label: r.name })) : []),
+    ...(domain ? Object.values(domain.facilities).map((f) => ({ id: f.id, label: f.name })) : []),
   ];
   return named.filter((thing) => nameMatchesText(thing.label, haystack, haystackWords)).map((thing) => thing.id);
 }
@@ -300,11 +317,50 @@ export function gameMasterView(
     ...(world.scene.summary ? { summary: world.scene.summary } : {}),
   };
 
+  const arc = world.storyArc;
+  const hasStoryArc = Boolean(arc && (arc.chapter || arc.summary || arc.threads.length > 0));
+  const rawChronicle = world.chronicle ?? [];
+  // Keep up to 40 milestones in <world_state>: all major turning points plus the latest entries.
+  const MAX_GM_CHRONICLE = 40;
+  const selectedChronicle =
+    rawChronicle.length <= MAX_GM_CHRONICLE
+      ? rawChronicle
+      : (() => {
+          const recentSet = new Set(rawChronicle.slice(-28).map((e) => e.id));
+          const anchors = rawChronicle
+            .filter((e) => e.kind === 'turning_point' && !recentSet.has(e.id))
+            .slice(-(MAX_GM_CHRONICLE - recentSet.size));
+          const anchorSet = new Set(anchors.map((e) => e.id));
+          return rawChronicle.filter((e) => anchorSet.has(e.id) || recentSet.has(e.id));
+        })();
+  const chronicleView = selectedChronicle.map((entry) => ({
+    id: entry.id,
+    turn: entry.turn,
+    ...(entry.time ? { time: entry.time } : {}),
+    kind: entry.kind,
+    title: entry.title,
+    ...(entry.summary ? { summary: entry.summary } : {}),
+    ...(entry.impact ? { impact: entry.impact } : {}),
+    ...(entry.secret ? { secret: true } : {}),
+    ...(entry.public ? { public: true } : {}),
+  }));
+
   return {
     turn: world.turn,
     ...(world.title ? { title: world.title } : {}),
     ...(world.premise ? { premise: world.premise } : {}),
     ...(world.artStyle ? { artStyle: world.artStyle } : {}),
+    ...(hasStoryArc
+      ? {
+          storyArc: {
+            ...(arc.chapter ? { chapter: arc.chapter } : {}),
+            ...(arc.summary ? { summary: arc.summary } : {}),
+            ...(arc.threads.length > 0 ? { threads: arc.threads } : {}),
+          },
+        }
+      : {}),
+    ...(chronicleView.length > 0 ? { chronicle: chronicleView } : {}),
+    ...(world.storySummary ? { storySummary: world.storySummary } : {}),
     playerId: world.playerId,
     scene,
     locations,
@@ -312,7 +368,6 @@ export function gameMasterView(
     items,
     quests,
     lore: world.lore,
-    ...(world.storySummary ? { storySummary: world.storySummary } : {}),
     modules: states,
   };
 }

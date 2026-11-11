@@ -242,18 +242,6 @@ export function SandboxTab({ board, world, lang }: SandboxTabProps) {
           )}
         </div>
         <div className="sandbox__head-actions">
-          {factions.length > 0 && (
-            <ModuleOpButtons
-              directive={{
-                moduleId: 'sandbox',
-                op: 'simulate',
-                params: { advance: {} },
-                label: t('world.sandbox.ops.advanceRound'),
-              }}
-              instantLabel={t('world.sandbox.ops.advanceRound')}
-              compact
-            />
-          )}
           {hasRegions && (
             <button type="button" className="btn btn--small" aria-haspopup="dialog" onClick={() => setEnlarged(true)}>
               <Icon name="expand" size={15} />
@@ -383,9 +371,9 @@ export function SandboxTab({ board, world, lang }: SandboxTabProps) {
                               label: t('world.sandbox.ops.diplomacyPeaceLabel', { faction: rival.name }),
                               aiNote: t('world.sandbox.ops.diplomacyPeaceLabel', { faction: rival.name }),
                             }}
-                            stageLabel={t('world.sandbox.ops.proposePeace')}
-                            hideInstant
+                            instantLabel={t('world.sandbox.ops.proposePeace')}
                             compact
+                            onAfter={() => setOpenDiplomacyId(null)}
                           />
                           <ModuleOpButtons
                             directive={{
@@ -395,9 +383,9 @@ export function SandboxTab({ board, world, lang }: SandboxTabProps) {
                               label: t('world.sandbox.ops.diplomacyAllianceLabel', { faction: rival.name }),
                               aiNote: t('world.sandbox.ops.diplomacyAllianceLabel', { faction: rival.name }),
                             }}
-                            stageLabel={t('world.sandbox.ops.proposeAlliance')}
-                            hideInstant
+                            instantLabel={t('world.sandbox.ops.proposeAlliance')}
                             compact
+                            onAfter={() => setOpenDiplomacyId(null)}
                           />
                           <ModuleOpButtons
                             directive={{
@@ -407,17 +395,18 @@ export function SandboxTab({ board, world, lang }: SandboxTabProps) {
                               label: t('world.sandbox.ops.diplomacyTributeLabel', { faction: rival.name }),
                               aiNote: t('world.sandbox.ops.diplomacyTributeLabel', { faction: rival.name }),
                             }}
-                            stageLabel={t('world.sandbox.ops.demandTribute')}
-                            hideInstant
+                            instantLabel={t('world.sandbox.ops.demandTribute')}
                             compact
+                            onAfter={() => setOpenDiplomacyId(null)}
                           />
                           {currentStance !== 'war' && (
                             <ModuleOpButtons
                               directive={{
                                 moduleId: 'sandbox',
-                                op: 'diplomacy_stance',
-                                params: { target_faction_id: rival.id, stance: 'war' },
+                                op: 'advisor_note',
+                                params: { target_faction_id: rival.id, intent: 'declare_war' },
                                 label: `${t('world.sandbox.ops.declareWar')} · ${rival.name}`,
+                                aiNote: `向【${rival.name}】正式颁布讨伐诏书宣战，请推演朝野与对方势力的反应，并在 record.sandbox.relations 中将双方关系更新为 war。`,
                               }}
                               instantLabel={t('world.sandbox.ops.declareWar')}
                               compact

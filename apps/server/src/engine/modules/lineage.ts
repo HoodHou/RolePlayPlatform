@@ -271,8 +271,39 @@ function upsertHeir(world: WorldState, state: LineageState, entry: z.infer<typeo
   const character = world.characters[entry.character_id];
   if (!character) throw new WorldOpError(`Character "${entry.character_id}" does not exist.`);
   if (character.isPlayer) throw new WorldOpError('The player character cannot be listed as their own heir.');
-  if (entry.tutor_id && !world.characters[entry.tutor_id]) {
-    throw new WorldOpError(`Tutor character "${entry.tutor_id}" does not exist.`);
+  if (entry.tutor_id) {
+    const tutor = world.characters[entry.tutor_id];
+    if (!tutor) {
+      throw new WorldOpError(`Tutor character "${entry.tutor_id}" does not exist.`);
+    }
+    if (tutor.isPlayer) {
+      throw new WorldOpError('The player character cannot be assigned as grand tutor.');
+    }
+    if (entry.tutor_id === entry.character_id) {
+      throw new WorldOpError('An heir cannot be assigned as their own grand tutor.');
+    }
+    const board = world.modules.sandbox;
+    if (board) {
+      const rivalFaction = Object.values(board.factions).find(
+        (faction) => faction.leaderId === entry.tutor_id && !faction.isPlayer,
+      );
+      if (rivalFaction) {
+        throw new WorldOpError(
+          `"${tutor.name}" leads rival faction "${rivalFaction.name}" and cannot be appointed as a royal grand tutor.`,
+        );
+      }
+      const rivalPost = Object.values(board.regions).find(
+        (region) =>
+          region.commanderId === entry.tutor_id &&
+          region.ownerId !== null &&
+          !board.factions[region.ownerId]?.isPlayer,
+      );
+      if (rivalPost) {
+        throw new WorldOpError(
+          `"${tutor.name}" commands "${rivalPost.name}" for another faction and cannot be appointed as a royal grand tutor.`,
+        );
+      }
+    }
   }
 
   const existing = state.heirs[entry.character_id];

@@ -1,7 +1,10 @@
 import type {
   Character,
+  ChronicleEntry,
+  ChronicleKind,
   ImageSubject,
   Item,
+  Locale,
   Location,
   Memory,
   QuestStatus,
@@ -307,8 +310,8 @@ export function upsertCharacter(
 }
 
 // A character keeps this many memories. Past it, the least important of the
-// oldest go first; what mattered stays.
-const MEMORY_LIMIT = 300;
+// oldest go first; core memories (importance 5) stay anchored unless every slot is 5.
+const MEMORY_LIMIT = 500;
 
 /**
  * Gives a character a memory of something they witnessed, did or were told.
@@ -329,6 +332,20 @@ export function addMemory(
     throw new WorldOpError(`There is no character with id "${input.toldBy}" to have told them.`);
   }
 
+  const trimmedText = input.text.trim();
+  const clampedImportance = Math.min(Math.max(Math.round(input.importance ?? 2), 1), 5);
+  const cleanedAbout = unique(input.about ?? []);
+
+  // Deduplicate identical memories recorded twice for the same character in the same turn.
+  const sameTurnDup = character.memories.find(
+    (m) => m.turn === world.turn && m.text === trimmedText && m.toldBy === input.toldBy,
+  );
+  if (sameTurnDup) {
+    sameTurnDup.importance = Math.max(sameTurnDup.importance, clampedImportance);
+    sameTurnDup.about = unique([...sameTurnDup.about, ...cleanedAbout]);
+    return [];
+  }
+
   const last = character.memories.at(-1);
   const sequence = last && last.turn === world.turn ? Number(last.id.split('_')[1] ?? 0) + 1 : 0;
   const memory: Memory = {
@@ -336,17 +353,25 @@ export function addMemory(
     turn: world.turn,
     time: world.scene.time,
     locationId: character.locationId,
-    text: input.text.trim(),
-    about: unique(input.about ?? []),
-    importance: Math.min(Math.max(Math.round(input.importance ?? 2), 1), 5),
+    text: trimmedText,
+    about: cleanedAbout,
+    importance: clampedImportance,
     ...(input.toldBy ? { toldBy: input.toldBy } : {}),
   };
   character.memories.push(memory);
 
   if (character.memories.length > MEMORY_LIMIT) {
-    const oldestHalf = character.memories.slice(0, MEMORY_LIMIT / 2);
-    const faintest = Math.min(...oldestHalf.map((m) => m.importance));
-    character.memories.splice(oldestHalf.findIndex((m) => m.importance === faintest), 1);
+    const oldestHalf = character.memories.slice(0, Math.floor(MEMORY_LIMIT / 2));
+    // Protect permanent anchor memories (importance 5) whenever any lesser memory can be evicted instead.
+    const pool = oldestHalf.some((m) => m.importance < 5)
+      ? oldestHalf
+      : character.memories.some((m) => m.importance < 5)
+        ? character.memories
+        : oldestHalf;
+    const faintest = Math.min(...pool.map((m) => m.importance));
+    const evictId = pool.find((m) => m.importance === faintest)?.id;
+    const idx = evictId ? character.memories.findIndex((m) => m.id === evictId) : 0;
+    if (idx >= 0) character.memories.splice(idx, 1);
   }
   // What a character remembers is theirs; nothing is announced to the player.
   return [];
@@ -522,4 +547,254 @@ export function removeEntity(
 export function setSuggestions(world: WorldState, actions: string[]): WorldEvent[] {
   world.suggestions = actions.map((a) => a.trim()).filter(Boolean);
   return [];
+}
+
+// --- story progression & chronicle --------------------------------------------
+
+const CHRONICLE_LIMIT = 150;
+
+export function updateStoryArc(
+  world: WorldState,
+  patch: { chapter?: string; summary?: string; threads?: string[] },
+): WorldEvent[] {
+  const arc = (world.storyArc ??= { chapter: '', summary: '', threads: [] });
+  const prevChapter = arc.chapter;
+  if (patch.chapter !== undefined) arc.chapter = patch.chapter.trim();
+  if (patch.summary !== undefined) arc.summary = patch.summary.trim();
+  if (patch.threads !== undefined) {
+    arc.threads = unique(patch.threads).slice(0, 8);
+  }
+  if (arc.chapter && arc.chapter !== prevChapter) {
+    return [{ type: 'chapter_changed', chapter: arc.chapter, summary: arc.summary }];
+  }
+  return [];
+}
+
+export function upsertChronicle(
+  world: WorldState,
+  input: {
+    id?: string;
+    kind?: ChronicleKind;
+    title?: string;
+    summary?: string;
+    impact?: string;
+    secret?: boolean;
+    public?: boolean;
+  },
+): WorldEvent[] {
+  const list = (world.chronicle ??= []);
+  const rawId = input.id?.trim();
+  const existing = rawId ? list.find((entry) => entry.id === rawId) : undefined;
+
+  if (!existing) {
+    const title = requireName(input.title, 'Chronicle entry', rawId ?? `chr_t${world.turn}`, 'title');
+    const seq = list.filter((e) => e.turn === world.turn).length;
+    const entryId = rawId || `chr_t${world.turn}_${seq}`;
+    const secret = input.secret ?? false;
+    const isPublic = secret ? false : (input.public ?? false);
+    const kind: ChronicleKind = input.kind ?? 'milestone';
+    const entry: ChronicleEntry = {
+      id: entryId,
+      turn: world.turn,
+      time: world.scene.time,
+      kind,
+      title,
+      summary: input.summary?.trim() ?? '',
+      impact: input.impact?.trim() ?? '',
+      secret,
+      ...(isPublic ? { public: true } : {}),
+    };
+    list.push(entry);
+    trimChronicle(list);
+    return secret ? [] : [{ type: 'chronicle_recorded', id: entryId, title, kind }];
+  }
+
+  const wasSecret = existing.secret;
+  if (input.kind !== undefined) existing.kind = input.kind;
+  if (input.title?.trim()) existing.title = input.title.trim();
+  if (input.summary !== undefined) existing.summary = input.summary.trim();
+  if (input.impact !== undefined) existing.impact = input.impact.trim();
+  if (input.secret !== undefined) existing.secret = input.secret;
+  if (existing.secret) {
+    delete existing.public;
+  } else if (input.public !== undefined) {
+    if (input.public) existing.public = true;
+    else delete existing.public;
+  }
+  return wasSecret && !existing.secret
+    ? [{ type: 'chronicle_recorded', id: existing.id, title: existing.title, kind: existing.kind }]
+    : [];
+}
+
+function trimChronicle(list: ChronicleEntry[]): void {
+  while (list.length > CHRONICLE_LIMIT) {
+    // Keep major turning points whenever any ordinary milestone can be dropped first.
+    const idx = list.findIndex((e) => e.kind !== 'turning_point');
+    list.splice(idx >= 0 ? idx : 0, 1);
+  }
+}
+
+/**
+ * Automatically captures major mechanical turning points (wars, conquered regions,
+ * imperial edicts, succession, completed quests, filled clocks, breakthroughs) into
+ * `world.chronicle` when the game master did not already record a chronicle entry
+ * for the turn, ensuring campaign history is never lost even in fast turns.
+ */
+export function autoCaptureChronicleFromEvents(
+  world: WorldState,
+  events: readonly WorldEvent[],
+  locale: Locale,
+): void {
+  const list = (world.chronicle ??= []);
+  const alreadyThisTurn = list.some((entry) => entry.turn === world.turn);
+  if (alreadyThisTurn) return;
+
+  const zh = locale === 'zh';
+  for (const event of events) {
+    switch (event.type) {
+      case 'sandbox_battle': {
+        const winName = event.winner === 'attacker' ? event.attackerName : event.defenderName;
+        const where = event.regionName ? (zh ? `于${event.regionName}` : ` at ${event.regionName}`) : '';
+        list.push({
+          id: `chr_auto_t${world.turn}_${list.length}`,
+          turn: world.turn,
+          time: world.scene.time,
+          kind: 'battle',
+          title: zh
+            ? `${event.regionName || '边境'}之战：${winName}获胜`
+            : `Battle${where}: ${winName} prevailed`,
+          summary: zh
+            ? `${event.attackerName}与${event.defenderName}${where}交兵，${winName}取胜（${event.reason || '战局已定'}）。`
+            : `${event.attackerName} clashed with ${event.defenderName}${where}; ${winName} won.`,
+          impact: '',
+          secret: false,
+          public: true,
+        });
+        break;
+      }
+      case 'region_taken': {
+        if (!event.toName && !event.fromName) break;
+        list.push({
+          id: `chr_auto_t${world.turn}_${list.length}`,
+          turn: world.turn,
+          time: world.scene.time,
+          kind: 'turning_point',
+          title: zh
+            ? `${event.regionName}易主`
+            : `${event.regionName} changed hands`,
+          summary: zh
+            ? event.fromName && event.toName
+              ? `${event.regionName}由${event.fromName}转归${event.toName}控制。`
+              : event.toName
+                ? `${event.toName}占领了${event.regionName}。`
+                : `${event.fromName}失去了${event.regionName}。`
+            : event.fromName && event.toName
+              ? `${event.regionName} passed from ${event.fromName} to ${event.toName}.`
+              : `${event.regionName} changed control.`,
+          impact: '',
+          secret: false,
+          public: true,
+        });
+        break;
+      }
+      case 'relation_changed': {
+        if (event.stance !== 'war' && event.stance !== 'allied') break;
+        list.push({
+          id: `chr_auto_t${world.turn}_${list.length}`,
+          turn: world.turn,
+          time: world.scene.time,
+          kind: event.stance === 'war' ? 'battle' : 'alliance',
+          title: zh
+            ? event.stance === 'war'
+              ? `${event.aName}与${event.bName}开战`
+              : `${event.aName}与${event.bName}结盟`
+            : event.stance === 'war'
+              ? `War between ${event.aName} and ${event.bName}`
+              : `Alliance of ${event.aName} and ${event.bName}`,
+          summary: '',
+          impact: '',
+          secret: false,
+          public: true,
+        });
+        break;
+      }
+      case 'edict_issued': {
+        list.push({
+          id: `chr_auto_t${world.turn}_${list.length}`,
+          turn: world.turn,
+          time: world.scene.time,
+          kind: 'decree',
+          title: zh ? `颁布诏令：${event.title}` : `Edict issued: ${event.title}`,
+          summary: event.effect || '',
+          impact: '',
+          secret: false,
+          public: true,
+        });
+        break;
+      }
+      case 'heir_designated': {
+        list.push({
+          id: `chr_auto_t${world.turn}_${list.length}`,
+          turn: world.turn,
+          time: world.scene.time,
+          kind: 'decree',
+          title: zh ? `册立储君：${event.characterName}` : `Heir designated: ${event.characterName}`,
+          summary: event.title || '',
+          impact: '',
+          secret: false,
+          public: true,
+        });
+        break;
+      }
+      case 'quest_completed':
+      case 'quest_failed': {
+        const done = event.type === 'quest_completed';
+        list.push({
+          id: `chr_auto_t${world.turn}_${list.length}`,
+          turn: world.turn,
+          time: world.scene.time,
+          kind: done ? 'milestone' : 'consequence',
+          title: zh
+            ? `${done ? '达成目标' : '目标受挫'}：${event.title}`
+            : `${done ? 'Quest completed' : 'Quest failed'}: ${event.title}`,
+          summary: '',
+          impact: '',
+          secret: false,
+          // Personal quest logs stay out of random NPCs' common knowledge unless explicitly recorded as public.
+        });
+        break;
+      }
+      case 'clock_ticked': {
+        if (event.to < event.segments) break;
+        list.push({
+          id: `chr_auto_t${world.turn}_${list.length}`,
+          turn: world.turn,
+          time: world.scene.time,
+          kind: 'consequence',
+          title: zh ? `时局爆发：${event.name}` : `Crisis reached: ${event.name}`,
+          summary: '',
+          impact: '',
+          secret: false,
+        });
+        break;
+      }
+      case 'realm_breakthrough': {
+        if (event.outcome !== 'transcendent' && event.outcome !== 'success') break;
+        list.push({
+          id: `chr_auto_t${world.turn}_${list.length}`,
+          turn: world.turn,
+          time: world.scene.time,
+          kind: 'milestone',
+          title: zh ? `境界突破：晋入${event.toRealm}` : `Breakthrough: reached ${event.toRealm}`,
+          summary: event.reason || '',
+          impact: '',
+          secret: false,
+        });
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  trimChronicle(list);
 }
