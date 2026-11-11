@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { ModelListTarget } from '@roleplay/shared';
+import { geminiImageBaseUrl, type ModelListTarget } from '@roleplay/shared';
 import { AppError } from '../errors';
+import { geminiHeaders } from '../images/gemini';
 import type { ResolvedSettings } from '../store/settingsStore';
 import { endpointUrl, failFromResponse, requestHeaders, send } from './openaiHttp';
 
@@ -10,8 +11,13 @@ interface OpenAIModelList {
   data?: { id: string; created?: number }[];
 }
 
+interface GeminiModelList {
+  models?: { name?: string }[];
+  data?: { id: string; created?: number }[];
+}
+
 // An OpenAI-style /models list mixes every kind of model the account has.
-const IMAGE_MODEL = /image|dall-e|imagen|seedream|banana|imagine/i;
+const IMAGE_MODEL = /image|dall-e|imagen|seedream|banana|imagine|flux|stable-diffusion|sdxl/i;
 const NOT_A_CHAT_MODEL =
   /image|dall-e|imagen|seedream|banana|imagine|embedding|tts|whisper|transcribe|moderation|audio|realtime|live|sora|veo|video|seedance|3d|rerank/i;
 
@@ -50,11 +56,28 @@ async function listAnthropic(connection: ResolvedSettings['connections']['anthro
   }
 }
 
+async function listGeminiStyle(baseUrl: string, apiKey: string | null): Promise<string[]> {
+  const root = geminiImageBaseUrl(baseUrl);
+  if (!root) throw new AppError('not_configured', 'This connection has no base URL yet.');
+  if (!apiKey) throw new AppError('not_configured', 'No API key is set for Gemini illustrations.');
+  const url = `${root}/models?pageSize=100`;
+  const response = await send(url, { headers: geminiHeaders(apiKey), signal: AbortSignal.timeout(20_000) });
+  if (!response.ok) return failFromResponse(response, url, true);
+  const body = (await response.json()) as GeminiModelList;
+  if (Array.isArray(body.models)) {
+    return body.models.map((model) => (model.name ?? '').replace(/^models\//, '')).filter(Boolean);
+  }
+  return (body.data ?? [])
+    .sort((a, b) => (b.created ?? 0) - (a.created ?? 0))
+    .map((model) => model.id.replace(/^models\//, ''));
+}
+
 export async function listModels(target: ModelListTarget, settings: ResolvedSettings): Promise<string[]> {
   if (target === 'anthropic') return listAnthropic(settings.connections.anthropic);
   if (target === 'image') {
-    const { baseUrl, apiKey } = settings.image;
-    return (await listOpenAIStyle(baseUrl, apiKey)).filter((id) => IMAGE_MODEL.test(id));
+    const { provider, baseUrl, apiKey } = settings.image;
+    const all = provider === 'gemini' ? await listGeminiStyle(baseUrl, apiKey) : await listOpenAIStyle(baseUrl, apiKey);
+    return all.filter((id) => IMAGE_MODEL.test(id));
   }
   const { baseUrl, apiKey } = settings.connections[target];
   // Only a custom endpoint may be keyless (a local server).

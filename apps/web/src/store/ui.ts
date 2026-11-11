@@ -22,7 +22,7 @@ export const MODULE_VIEWS = [
 export type ModuleView = (typeof MODULE_VIEWS)[number];
 /** The world's own tabs: always there. */
 export const WORLD_TABS = ['characters', 'inventory', 'quests', 'places', 'lore'] as const;
-export type WorldTab = ModuleView | (typeof WORLD_TABS)[number];
+export type WorldTab = ModuleView | (typeof WORLD_TABS)[number] | `custom:${string}`;
 
 export interface LightboxImage {
   url: string;

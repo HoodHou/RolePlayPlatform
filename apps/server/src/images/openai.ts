@@ -1,7 +1,7 @@
 import type { ImageQuality, ImageSubject } from '@roleplay/shared';
 import { AppError } from '../errors';
 import { endpointUrl, failFromResponse, requestHeaders, send } from '../llm/openaiHttp';
-import type { ImageExtension, Painter, Painting, PaintRequest } from './types';
+import { extensionOf, type Painter, type Painting, type PaintRequest } from './types';
 
 /** The OpenAI Images API (`POST /images/generations`), or any endpoint that mirrors it. */
 
@@ -24,14 +24,6 @@ const TIMEOUT_MS = 180_000;
 
 interface ImagesResponse {
   data?: { b64_json?: string; url?: string }[];
-}
-
-function extensionOf(data: Buffer): ImageExtension {
-  if (data[0] === 0xff && data[1] === 0xd8) return 'jpg';
-  if (data.subarray(0, 4).toString('latin1') === 'RIFF' && data.subarray(8, 12).toString('latin1') === 'WEBP') {
-    return 'webp';
-  }
-  return 'png';
 }
 
 export class OpenAIPainter implements Painter {

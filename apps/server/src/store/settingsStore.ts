@@ -2,10 +2,13 @@ import path from 'node:path';
 import {
   CONNECTION_DEFAULTS,
   CONNECTION_KINDS,
-  DEFAULT_IMAGE_MODEL,
+  DEFAULT_GEMINI_IMAGE_BASE_URL,
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_SUBSCRIPTIONS,
+  geminiImageBaseUrl,
   GENERATION_DEFAULTS,
+  IMAGE_PROVIDER_DEFAULTS,
+  IMAGE_PROVIDERS,
   PROVIDER_EFFORTS,
   PROVIDER_KINDS,
   type ActorSettings,
@@ -13,6 +16,7 @@ import {
   type ConnectionSettings,
   type Effort,
   type GenerationSettings,
+  type ImageProviderKind,
   type ImageSettings,
   type KeySource,
   type ModuleId,
@@ -75,6 +79,28 @@ function isProviderKind(value: unknown): value is ProviderKind {
 function sameEndpoint(a: string, b: string): boolean {
   const normalize = (url: string) => url.trim().replace(/\/+$/, '').toLowerCase();
   return normalize(a) === normalize(b);
+}
+
+function sameGeminiEndpoint(a: string, b: string): boolean {
+  return sameEndpoint(geminiImageBaseUrl(a), geminiImageBaseUrl(b));
+}
+
+function inferImageProvider(
+  stored: StoredSettings['image'],
+  connections: Record<ConnectionKind, ResolvedConnection>,
+  env: NodeJS.ProcessEnv,
+): ImageProviderKind {
+  if (stored?.provider && IMAGE_PROVIDERS.includes(stored.provider)) return stored.provider;
+  if (stored?.baseUrl) {
+    if (sameEndpoint(stored.baseUrl, DEFAULT_OPENAI_BASE_URL)) return 'openai';
+    if (sameGeminiEndpoint(stored.baseUrl, DEFAULT_GEMINI_IMAGE_BASE_URL)) return 'gemini';
+    return 'custom';
+  }
+  if (env.OPENAI_IMAGE_MODEL) return 'openai';
+  if (env.GEMINI_IMAGE_MODEL) return 'gemini';
+  if (connections.openai.apiKeySource !== 'none') return 'openai';
+  if (connections.gemini.apiKeySource !== 'none') return 'gemini';
+  return 'openai';
 }
 
 /** The environment variables that configure each connection. */
@@ -157,10 +183,32 @@ export function resolveSettings(stored: StoredSettings, env: NodeJS.ProcessEnv):
   };
 
   const i = stored.image ?? {};
-  const imageUrl = i.baseUrl || env.OPENAI_BASE_URL || DEFAULT_OPENAI_BASE_URL;
+  const imageProvider = inferImageProvider(i, connections, env);
+  const imageDefaults = IMAGE_PROVIDER_DEFAULTS[imageProvider];
+  const envImageUrl =
+    imageProvider === 'openai'
+      ? env.OPENAI_BASE_URL
+      : imageProvider === 'gemini'
+        ? env.GEMINI_BASE_URL
+        : undefined;
+  const rawImageUrl = (imageProvider === 'custom' ? i.baseUrl : i.baseUrl || undefined) ?? envImageUrl ?? imageDefaults.baseUrl;
+  const imageUrl = imageProvider === 'gemini' ? geminiImageBaseUrl(rawImageUrl) : rawImageUrl;
+  const envImageModel =
+    imageProvider === 'openai'
+      ? env.OPENAI_IMAGE_MODEL
+      : imageProvider === 'gemini'
+        ? env.GEMINI_IMAGE_MODEL
+        : undefined;
+  const imageModel = i.model || envImageModel || imageDefaults.model;
+
   let imageKey: ResolvedKey = NO_KEY;
   if (i.apiKey) {
     imageKey = { apiKey: i.apiKey, apiKeySource: 'settings' };
+  } else if (imageProvider === 'gemini') {
+    const geminiConn = connections.gemini;
+    if (geminiConn.apiKey && geminiConn.baseUrl && sameGeminiEndpoint(imageUrl, geminiConn.baseUrl)) {
+      imageKey = { apiKey: geminiConn.apiKey, apiKeySource: geminiConn.apiKeySource === 'settings' ? 'shared' : 'env' };
+    }
   } else {
     // Painting on the same endpoint as a connection reuses that connection's key.
     const host = (['openai', 'custom'] as const)
@@ -170,15 +218,20 @@ export function resolveSettings(stored: StoredSettings, env: NodeJS.ProcessEnv):
   }
   const image: ResolvedSettings['image'] = {
     enabled: i.enabled ?? false,
+    provider: imageProvider,
     baseUrl: imageUrl,
-    model: i.model || env.OPENAI_IMAGE_MODEL || DEFAULT_IMAGE_MODEL,
+    model: imageModel,
     quality: i.quality ?? 'low',
     ...imageKey,
   };
 
   // Demo mode paints with a free placeholder painter; otherwise painting needs
   // to be switched on and able to authenticate (a self-hosted endpoint may need no key).
-  const canPaint = image.apiKeySource !== 'none' || !sameEndpoint(image.baseUrl, DEFAULT_OPENAI_BASE_URL);
+  const hasEndpointAndModel = Boolean(image.baseUrl.trim() && image.model.trim());
+  const officialNeedsKey =
+    (imageProvider === 'openai' && sameEndpoint(image.baseUrl, DEFAULT_OPENAI_BASE_URL)) ||
+    (imageProvider === 'gemini' && sameGeminiEndpoint(image.baseUrl, DEFAULT_GEMINI_IMAGE_BASE_URL));
+  const canPaint = hasEndpointAndModel && (image.apiKeySource !== 'none' || !officialNeedsKey);
   const illustrationsActive = provider === 'mock' || (image.enabled && canPaint);
 
   return {

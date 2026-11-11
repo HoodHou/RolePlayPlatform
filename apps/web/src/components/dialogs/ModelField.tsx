@@ -24,6 +24,8 @@ interface ModelFieldProps {
   value: string;
   placeholder: string;
   hint: string;
+  /** Suggested model IDs offered as one-click chips. */
+  presets?: readonly string[];
   /** Highlight the hint (e.g. a required field left empty). */
   warning?: boolean;
   fetch: ModelFetch;
@@ -41,6 +43,7 @@ export function ModelField({
   value,
   placeholder,
   hint,
+  presets,
   warning,
   fetch,
   needsSave,
@@ -84,6 +87,25 @@ export function ModelField({
               : t('settings.fetchModels')}
         </button>
       </div>
+
+      {presets && presets.length > 0 && (
+        <div className="preset-row" role="group" aria-labelledby={`${id}-presets`}>
+          <span id={`${id}-presets`} className="field__hint">
+            {t('settings.quickFill')}
+          </span>
+          {presets.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              className="chip-button"
+              aria-pressed={value.trim() === preset}
+              onClick={() => onChange(preset)}
+            >
+              {preset}
+            </button>
+          ))}
+        </div>
+      )}
 
       {models.length > 0 && (
         <>

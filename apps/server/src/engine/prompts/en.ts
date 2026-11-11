@@ -133,4 +133,17 @@ export const en: PromptPack = {
   actorSystem,
   actorReminder:
     '(Note from the game engine: nothing you wrote reached the other person. Call respond with what your character says.)',
+  summarySystem:
+    'You maintain a concise, factual "Story So Far" chronicle for a long-running tabletop role-play campaign. Output plain text only (150-350 words). Preserve key plot causality, promises, unresolved mysteries, major choices, alliances, betrayals, and irreversible consequences. Do not invent anything.',
+  summarize: (existingSummary, droppedTranscript) =>
+    [
+      existingSummary ? `<previous_summary>\n${existingSummary}\n</previous_summary>\n` : '',
+      '<newly_archived_turns>',
+      droppedTranscript,
+      '</newly_archived_turns>',
+      '',
+      'Write the updated cumulative Story So Far summary in English, integrating the newly archived turns into any previous summary.',
+    ]
+      .filter(Boolean)
+      .join('\n'),
 };

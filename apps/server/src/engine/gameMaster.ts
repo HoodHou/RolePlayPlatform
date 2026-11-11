@@ -16,7 +16,14 @@ import { AppError, toAppError } from '../errors';
 import type { PaintRequest } from '../images/types';
 import { NO_USAGE, type ConversationInit, type LLMProvider, type ToolCall, type ToolResult } from '../llm/types';
 import { buildActorInit, playCharacter } from './actor';
-import { buildRefereeInit, buildTurnInit, DEFAULT_TUNING, type Tuning } from './context';
+import {
+  buildRefereeInit,
+  buildSummaryInit,
+  buildTurnInit,
+  DEFAULT_TUNING,
+  findDroppedTranscript,
+  type Tuning,
+} from './context';
 import { isPresent } from './memory';
 import { getPrompts } from './prompts';
 import { StreamingStringField } from './streamingField';
@@ -68,6 +75,12 @@ export interface TurnDeps {
    * illustrations are off: the game master is then not offered the tool.
    */
   illustrate?: (request: PaintRequest) => Promise<string>;
+  /**
+   * When provided, `runTurn` returns as soon as narration and world updates
+   * finish instead of waiting on slow image APIs, invoking this callback for
+   * any picture that finishes after the turn's stream has closed.
+   */
+  onBackgroundPicture?: (settled: ImageMessage) => Promise<void> | void;
 }
 
 export interface TurnOutcome {
@@ -153,11 +166,12 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
     push({ ...stamp(), id, kind: 'narration', text: text.trim() });
   };
 
-  // --- Pictures, painted in the background and gathered before the turn ends -
+  // --- Pictures, painted in the background -----------------------------------
   const pictures: Promise<void>[] = [];
   const paintAbort = new AbortController();
   const stopPainting = () => paintAbort.abort();
   deps.signal.addEventListener('abort', stopPainting, { once: true });
+  let turnReturned = false;
 
   const paint = async (illustrate: NonNullable<TurnDeps['illustrate']>, message: ImageMessage, prompt: string) => {
     try {
@@ -168,13 +182,20 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
         signal: paintAbort.signal,
       });
       message.status = 'ready';
-      if (attachPicture(session.world, message.subject, message.targetId, message.url)) {
-        deps.emit({ type: 'world', world: session.world });
-      }
+      delete message.error;
     } catch (err) {
       // A picture that fails costs the turn nothing but the picture.
       message.status = 'failed';
       message.error = toAppError(err).toApiError();
+    }
+
+    if (turnReturned && deps.onBackgroundPicture) {
+      await deps.onBackgroundPicture(structuredClone(message));
+      return;
+    }
+
+    if (message.status === 'ready' && message.url && attachPicture(session.world, message.subject, message.targetId, message.url)) {
+      deps.emit({ type: 'world', world: session.world });
     }
     // Same id as the placeholder, so the client swaps it in place.
     deps.emit({ type: 'message', message });
@@ -200,6 +221,7 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
           status: 'pending',
           url: null,
           caption: picture.caption,
+          prompt: picture.prompt,
           subject: picture.subject,
           targetId: picture.targetId,
         };
@@ -413,8 +435,57 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
     // knows what its character did, not what the world makes of it.
     const changes = reply.changes?.trim();
     if (!changes) return;
+    await archiveDroppedTurns();
     const exchange = { name: character.name, said, reply: line.text, changes };
     await runGameMaster(buildRefereeInit(session, character.id, exchange, turn, contextOptions), true);
+  };
+
+  /**
+   * Folds turns that have slid out of `buildHistory` into `world.storySummary`
+   * so long campaigns never lose early plot causality. Never throws: if the
+   * model summary call fails, a compact deterministic digest is kept instead.
+   */
+  const archiveDroppedTurns = async (): Promise<void> => {
+    const nameOf = (id: string) => session.world.characters[id]?.name ?? id;
+    const dropped = findDroppedTranscript(
+      session.messages,
+      prompts.openingMarker,
+      nameOf,
+      tuning.historyTurns,
+      session.world.summarizedUpToTurn ?? 0,
+    );
+    if (!dropped) return;
+
+    const appendDigest = () => {
+      const combined = session.world.storySummary
+        ? `${session.world.storySummary}\n${dropped.fallbackDigest}`
+        : dropped.fallbackDigest;
+      return combined.length > 2400 ? combined.slice(combined.length - 2400) : combined;
+    };
+
+    if (deps.provider.kind === 'mock') {
+      session.world.storySummary = appendDigest();
+      session.world.summarizedUpToTurn = dropped.upToTurn;
+      return;
+    }
+
+    try {
+      const summaryConv = deps.provider.startConversation(buildSummaryInit(session, dropped.transcript));
+      const result = await summaryConv.step({
+        signal: deps.signal,
+        onTextDelta: () => {},
+        onToolInput: () => {},
+        onStepReset: () => {},
+      });
+      usage.inputTokens += result.usage.inputTokens;
+      usage.outputTokens += result.usage.outputTokens;
+      usage.cachedInputTokens += result.usage.cachedInputTokens;
+      const condensed = result.text.trim();
+      session.world.storySummary = condensed || appendDigest();
+    } catch {
+      session.world.storySummary = appendDigest();
+    }
+    session.world.summarizedUpToTurn = dropped.upToTurn;
   };
 
   try {
@@ -422,6 +493,7 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
       await runConversation(request);
     } else {
       session.world.suggestions = [];
+      await archiveDroppedTurns();
       const init = buildTurnInit(session, request, turn, contextOptions);
       session.world.turn = turn;
       if (request.kind === 'action') push({ ...stamp(), kind: 'player', text: request.text.trim() });
@@ -433,7 +505,11 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
     if (!told) throw new AppError('empty_response', 'The model told no story this turn.');
     // The game master has had a whole turn with every subscribed module on offer: keep the ones it asked for.
     if (choosing) settleModules(session, playing, chosen);
-    await Promise.all(pictures);
+    if (deps.onBackgroundPicture) {
+      turnReturned = true;
+    } else {
+      await Promise.all(pictures);
+    }
     return { usage, error: null, committed: true };
   } catch (err) {
     const error = toAppError(err);
@@ -441,7 +517,11 @@ export async function runTurn(session: Session, request: TurnRequest, deps: Turn
     if (told) {
       // The turn stands as far as it got; so does a choice of modules made in it.
       if (choosing && chosen !== undefined) settleModules(session, playing, chosen);
-      await Promise.all(pictures);
+      if (deps.onBackgroundPicture) {
+        turnReturned = true;
+      } else {
+        await Promise.all(pictures);
+      }
       return { usage, error, committed: true };
     }
 

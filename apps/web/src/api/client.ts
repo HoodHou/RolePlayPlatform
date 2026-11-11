@@ -6,7 +6,9 @@ import type {
   ModuleLibraryResponse,
   PluginManifest,
   PublicSettings,
+  RetryImageResponse,
   Session,
+  SessionBackup,
   SessionSummary,
   UpdateSessionRequest,
   UpdateSettingsRequest,
@@ -61,7 +63,21 @@ export const api = {
   listSessions: () => request<SessionSummary[]>('/api/sessions'),
   createSession: (create: CreateSessionRequest) =>
     request<Session>('/api/sessions', { method: 'POST', body: create }),
+  importSession: (backup: unknown) =>
+    request<Session>('/api/sessions/import', { method: 'POST', body: backup }),
   getSession: (id: string) => request<Session>(sessionPath(id)),
+  exportSession: (id: string) => request<SessionBackup>(`${sessionPath(id)}/export`),
+  rollbackSession: (id: string, toTurn: number) =>
+    request<Session>(`${sessionPath(id)}/rollback`, { method: 'POST', body: { toTurn } }),
+  forkSession: (id: string, upToTurn?: number) =>
+    request<Session>(`${sessionPath(id)}/fork`, {
+      method: 'POST',
+      body: upToTurn !== undefined ? { upToTurn } : {},
+    }),
+  retryImage: (id: string, messageId: string) =>
+    request<RetryImageResponse>(`${sessionPath(id)}/images/${encodeURIComponent(messageId)}/retry`, {
+      method: 'POST',
+    }),
   /** Refused with `turn_in_progress` while a turn is being generated. */
   updateSession: (id: string, update: UpdateSessionRequest) =>
     request<Session>(sessionPath(id), { method: 'PATCH', body: update }),

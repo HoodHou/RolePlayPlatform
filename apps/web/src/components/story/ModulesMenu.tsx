@@ -2,10 +2,19 @@ import { MODULE_IDS, type ModuleId, type Session } from '@roleplay/shared';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toUiError, type UiError } from '../../api/errors';
+import { useLocale } from '../../i18n';
 import { describeError } from '../../lib/describe';
-import { hasModuleState, modulesOf, playedModules, withModule } from '../../lib/modules';
+import {
+  hasModuleState,
+  moduleDisplayDescription,
+  moduleDisplayName,
+  moduleKeptWhileOffNote,
+  modulesOf,
+  playedModules,
+  withModule,
+} from '../../lib/modules';
 import { useGame } from '../../store/game';
-import { useSubscriptions } from '../../store/library';
+import { useLibrary, useSubscriptions } from '../../store/library';
 import { useUi } from '../../store/ui';
 import { Icon } from '../Icon';
 import { ModuleGlyph } from '../ModuleGlyph';
@@ -20,9 +29,11 @@ import { ModuleGlyph } from '../ModuleGlyph';
  */
 export function ModulesMenu({ session }: { session: Session }) {
   const { t } = useTranslation();
+  const locale = useLocale();
   const running = useGame((s) => s.turn !== null);
   const setModules = useGame((s) => s.setModules);
   const openLibrary = useUi((s) => s.openLibrary);
+  const entries = useLibrary((s) => s.entries);
   const subscribed = useSubscriptions();
   const id = useId();
   const [open, setOpen] = useState(false);
@@ -40,7 +51,10 @@ export function ModulesMenu({ session }: { session: Session }) {
   let summary: string;
   if (session.modulesAuto) summary = t('modules.summaryAuto');
   else if (played.length === 0) summary = t('modules.summaryNone');
-  else summary = t('modules.summary', { list: played.map((module) => t(`modules.names.${module}`)).join(' · ') });
+  else
+    summary = t('modules.summary', {
+      list: played.map((module) => moduleDisplayName(module, entries, locale, t)).join(' · '),
+    });
   if (outOfPlay.length > 0) summary = t('modules.summaryOutOfPlay', { summary, count: outOfPlay.length });
 
   // A click anywhere else or Esc closes the panel.
@@ -121,6 +135,7 @@ export function ModulesMenu({ session }: { session: Session }) {
                 const on = modules.includes(module);
                 // A module switched off keeps what it recorded; say so, so turning it off doesn't feel like losing it.
                 const kept = !on && hasModuleState(session.world, module);
+                const libEntry = entries?.find((e) => e.id === module);
                 return (
                   <li key={module} className="modules__item">
                     <label className="switch">
@@ -134,12 +149,12 @@ export function ModulesMenu({ session }: { session: Session }) {
                         onChange={(event) => void toggle(module, event.target.checked)}
                       />
                       <span className="switch__track" aria-hidden="true" />
-                      <ModuleGlyph id={module} size="small" />
-                      <span className="modules__name">{t(`modules.names.${module}`)}</span>
+                      <ModuleGlyph id={module} category={libEntry?.category} glyph={libEntry?.plugin?.glyph} size="small" />
+                      <span className="modules__name">{moduleDisplayName(module, entries, locale, t)}</span>
                     </label>
                     <div id={`${id}-${module}`} className="modules__desc">
-                      <p>{t(`modules.descriptions.${module}`)}</p>
-                      {kept && <p className="modules__kept">{t(`modules.keptWhileOff.${module}`)}</p>}
+                      <p>{moduleDisplayDescription(module, entries, locale, t)}</p>
+                      {kept && <p className="modules__kept">{moduleKeptWhileOffNote(module, t)}</p>}
                     </div>
                   </li>
                 );
@@ -160,20 +175,23 @@ export function ModulesMenu({ session }: { session: Session }) {
                 {t('modules.outOfPlay')}
               </p>
               <ul className="modules__list">
-                {outOfPlay.map((module) => (
-                  <li key={module} className="modules__item modules__item--away">
-                    <p className="modules__away-name">
-                      <ModuleGlyph id={module} size="small" />
-                      <span className="modules__name">{t(`modules.names.${module}`)}</span>
-                    </p>
-                    <div className="modules__desc">
-                      <p>{t('modules.outOfPlayNote')}</p>
-                      <button type="button" className="link-btn" onClick={() => toLibrary(module)}>
-                        {t('modules.openInLibrary')}
-                      </button>
-                    </div>
-                  </li>
-                ))}
+                {outOfPlay.map((module) => {
+                  const libEntry = entries?.find((e) => e.id === module);
+                  return (
+                    <li key={module} className="modules__item modules__item--away">
+                      <p className="modules__away-name">
+                        <ModuleGlyph id={module} category={libEntry?.category} glyph={libEntry?.plugin?.glyph} size="small" />
+                        <span className="modules__name">{moduleDisplayName(module, entries, locale, t)}</span>
+                      </p>
+                      <div className="modules__desc">
+                        <p>{t('modules.outOfPlayNote')}</p>
+                        <button type="button" className="link-btn" onClick={() => toLibrary(module)}>
+                          {t('modules.openInLibrary')}
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           )}

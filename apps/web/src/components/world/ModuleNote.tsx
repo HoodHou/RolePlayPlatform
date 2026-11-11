@@ -1,6 +1,8 @@
 import type { ModuleId } from '@roleplay/shared';
 import { useTranslation } from 'react-i18next';
-import type { StoryRelation } from '../../lib/modules';
+import { useLocale } from '../../i18n';
+import { moduleDisplayName, type StoryRelation } from '../../lib/modules';
+import { useLibrary } from '../../store/library';
 import { useUi } from '../../store/ui';
 
 /**
@@ -10,10 +12,12 @@ import { useUi } from '../../store/ui';
  */
 export function ModuleNote({ id, relation }: { id: ModuleId; relation: StoryRelation }) {
   const { t } = useTranslation();
+  const locale = useLocale();
+  const entries = useLibrary((s) => s.entries);
   const openLibrary = useUi((s) => s.openLibrary);
   if (relation === 'on') return null;
 
-  const name = t(`modules.names.${id}`);
+  const name = moduleDisplayName(id, entries, locale, t);
   const subscribed = relation === 'off';
   return (
     <div className="module-note">

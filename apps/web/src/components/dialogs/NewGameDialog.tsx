@@ -5,10 +5,10 @@ import { toUiError, type UiError } from '../../api/errors';
 import { PRESET_IDS, PRESET_PREMISES, type PresetId } from '../../data/presets';
 import { languageTag, useLocale } from '../../i18n';
 import { describeError } from '../../lib/describe';
-import { withModule } from '../../lib/modules';
+import { moduleDisplayDescription, moduleDisplayName, withModule } from '../../lib/modules';
 import { formatList } from '../../lib/text';
 import { useGame } from '../../store/game';
-import { useSubscriptions } from '../../store/library';
+import { useLibrary, useSubscriptions } from '../../store/library';
 import { useSettings } from '../../store/settings';
 import { useUi } from '../../store/ui';
 import { Icon } from '../Icon';
@@ -37,8 +37,10 @@ function ModulesField({
   onPick: (picked: ModuleId[]) => void;
 }) {
   const { t } = useTranslation();
-  const uiTag = languageTag(useLocale());
+  const locale = useLocale();
+  const uiTag = languageTag(locale);
   const settingsStatus = useSettings((s) => s.status);
+  const entries = useLibrary((s) => s.entries);
   const openLibrary = useUi((s) => s.openLibrary);
   const id = useId();
 
@@ -76,7 +78,7 @@ function ModulesField({
 
   const ticked = picked.filter((module) => subscribed.includes(module));
   const names = formatList(
-    subscribed.map((module) => t(`modules.names.${module}`)),
+    subscribed.map((module) => moduleDisplayName(module, entries, locale, t)),
     uiTag,
   );
 
@@ -102,26 +104,29 @@ function ModulesField({
       ) : (
         <>
           <ul className="module-options">
-            {subscribed.map((module) => (
-              <li key={module}>
-                <label className="module-option">
-                  <input
-                    type="checkbox"
-                    className="module-option__input"
-                    checked={ticked.includes(module)}
-                    aria-describedby={`${id}-${module}`}
-                    onChange={(event) => onPick(withModule(ticked, module, event.target.checked))}
-                  />
-                  <ModuleGlyph id={module} size="small" />
-                  <span className="module-option__body">
-                    <span className="module-option__name">{t(`modules.names.${module}`)}</span>
-                    <span id={`${id}-${module}`} className="module-option__desc">
-                      {t(`modules.descriptions.${module}`)}
+            {subscribed.map((module) => {
+              const libEntry = entries?.find((e) => e.id === module);
+              return (
+                <li key={module}>
+                  <label className="module-option">
+                    <input
+                      type="checkbox"
+                      className="module-option__input"
+                      checked={ticked.includes(module)}
+                      aria-describedby={`${id}-${module}`}
+                      onChange={(event) => onPick(withModule(ticked, module, event.target.checked))}
+                    />
+                    <ModuleGlyph id={module} category={libEntry?.category} glyph={libEntry?.plugin?.glyph} size="small" />
+                    <span className="module-option__body">
+                      <span className="module-option__name">{moduleDisplayName(module, entries, locale, t)}</span>
+                      <span id={`${id}-${module}`} className="module-option__desc">
+                        {moduleDisplayDescription(module, entries, locale, t)}
+                      </span>
                     </span>
-                  </span>
-                </label>
-              </li>
-            ))}
+                  </label>
+                </li>
+              );
+            })}
           </ul>
           <p className={ticked.length === 0 ? 'field__hint field__hint--warning' : 'field__hint'} aria-live="polite">
             {ticked.length === 0 ? t('newGame.modulesNone') : t('newGame.modulesManualHint')}

@@ -36,6 +36,9 @@ export const PROVIDER_EFFORTS: Record<ConnectionKind, readonly Effort[]> = {
   custom: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'],
 };
 
+export const IMAGE_PROVIDERS = ['openai', 'gemini', 'custom'] as const;
+export type ImageProviderKind = (typeof IMAGE_PROVIDERS)[number];
+
 export const IMAGE_QUALITIES = ['low', 'medium', 'high', 'auto'] as const;
 export type ImageQuality = (typeof IMAGE_QUALITIES)[number];
 
@@ -45,7 +48,27 @@ export const DEFAULT_OPENAI_MODEL = 'gpt-6.1-sol';
 /** Gemini through Google's OpenAI-compatible endpoint. */
 export const DEFAULT_GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+/** Native Gemini API endpoint for multimodal image generation (`:generateContent`). */
+export const DEFAULT_GEMINI_IMAGE_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
+export const DEFAULT_GEMINI_IMAGE_MODEL = 'gemini-3.1-flash-image';
 export const DEFAULT_IMAGE_MODEL = 'gpt-image-2.5-flare';
+
+export const IMAGE_PROVIDER_DEFAULTS: Record<ImageProviderKind, { baseUrl: string; model: string }> = {
+  openai: { baseUrl: DEFAULT_OPENAI_BASE_URL, model: DEFAULT_IMAGE_MODEL },
+  gemini: { baseUrl: DEFAULT_GEMINI_IMAGE_BASE_URL, model: DEFAULT_GEMINI_IMAGE_MODEL },
+  custom: { baseUrl: '', model: DEFAULT_IMAGE_MODEL },
+};
+
+export const IMAGE_MODEL_PRESETS: Record<ImageProviderKind, readonly string[]> = {
+  openai: [DEFAULT_IMAGE_MODEL, 'gpt-image-1.5', 'gpt-image-1'],
+  gemini: [DEFAULT_GEMINI_IMAGE_MODEL, 'gemini-3-pro-image', 'gemini-3.1-flash-lite-image', 'gemini-2.5-flash-image'],
+  custom: [DEFAULT_IMAGE_MODEL, DEFAULT_GEMINI_IMAGE_MODEL, 'gemini-3-pro-image'],
+};
+
+/** Normalizes a Gemini base URL to the `v1beta` root, stripping any trailing `/openai` path. */
+export function geminiImageBaseUrl(url: string): string {
+  return url.trim().replace(/\/+$/, '').replace(/\/openai$/i, '');
+}
 
 /** The endpoint and model a connection uses when nothing else is set. `custom` has none: it is whatever the user points it at. */
 export const CONNECTION_DEFAULTS: Record<ConnectionKind, { baseUrl: string; model: string }> = {
@@ -124,10 +147,11 @@ export const GENERATION_LIMITS = {
  * Illustrations. Painting is a separate service from the game master: Claude
  * can run the story while an image model draws it. When enabled, the game
  * master can have pictures painted; when off, it never hears about pictures.
- * Speaks the OpenAI Images API.
+ * Supports OpenAI Images API, Google Gemini native image models, and custom endpoints.
  */
 export interface ImageSettings {
   enabled: boolean;
+  provider: ImageProviderKind;
   baseUrl: string;
   model: string;
   quality: ImageQuality;
@@ -135,7 +159,7 @@ export interface ImageSettings {
 
 /**
  * Where the key in use comes from. The key itself never leaves the server.
- * `shared` means illustrations reuse the key of the OpenAI or custom
+ * `shared` means illustrations reuse the key of the OpenAI, Gemini or custom
  * connection, because both point at the same endpoint.
  */
 export type KeySource = 'settings' | 'env' | 'shared' | 'none';
@@ -185,11 +209,12 @@ export const OFFICIAL_SHORTCUTS = {
   openai: {
     gameMaster: { provider: 'openai', model: '', effort: null },
     connections: { openai: CONNECTION_DEFAULTS.openai },
-    image: { baseUrl: DEFAULT_OPENAI_BASE_URL, model: DEFAULT_IMAGE_MODEL },
+    image: { provider: 'openai', baseUrl: DEFAULT_OPENAI_BASE_URL, model: DEFAULT_IMAGE_MODEL },
   },
   gemini: {
     gameMaster: { provider: 'gemini', model: '', effort: null },
     connections: { gemini: CONNECTION_DEFAULTS.gemini },
+    image: { provider: 'gemini', baseUrl: DEFAULT_GEMINI_IMAGE_BASE_URL, model: DEFAULT_GEMINI_IMAGE_MODEL },
   },
 } as const satisfies Record<string, UpdateSettingsRequest>;
 

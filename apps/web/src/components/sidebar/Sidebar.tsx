@@ -1,4 +1,9 @@
+import type { Session, SessionBackup } from '@roleplay/shared';
+import { useRef, useState, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toUiError } from '../../api/errors';
+import { describeError } from '../../lib/describe';
+import { useGame } from '../../store/game';
 import { useSubscriptions } from '../../store/library';
 import { useUi } from '../../store/ui';
 import { Icon } from '../Icon';
@@ -11,11 +16,66 @@ interface SidebarProps {
   onClose?: () => void;
 }
 
+function coerceSessionBackup(value: unknown): SessionBackup | null {
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
+  if (obj.session && typeof obj.session === 'object') {
+    const session = obj.session as Session;
+    if (session.world && Array.isArray(session.messages)) {
+      return {
+        version: 1,
+        exportedAt: typeof obj.exportedAt === 'string' ? obj.exportedAt : new Date().toISOString(),
+        session,
+        images: obj.images && typeof obj.images === 'object' ? (obj.images as SessionBackup['images']) : {},
+      };
+    }
+  }
+  if (obj.world && typeof obj.world === 'object' && Array.isArray(obj.messages)) {
+    return {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      session: obj as unknown as Session,
+      images: {},
+    };
+  }
+  return null;
+}
+
 export function Sidebar({ onClose }: SidebarProps) {
   const { t } = useTranslation();
   const openDialog = useUi((s) => s.openDialog);
   const openLibrary = useUi((s) => s.openLibrary);
+  const importSave = useGame((s) => s.importSave);
   const subscriptions = useSubscriptions();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  const onFileSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setImporting(true);
+    setImportError(null);
+    try {
+      const raw = await file.text();
+      const parsed = coerceSessionBackup(JSON.parse(raw));
+      if (!parsed) {
+        setImportError(t('sidebar.importInvalid'));
+        return;
+      }
+      await importSave(parsed);
+      onClose?.();
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        setImportError(t('sidebar.importInvalid'));
+      } else {
+        setImportError(describeError(t, toUiError(err)));
+      }
+    } finally {
+      setImporting(false);
+    }
+  };
 
   return (
     <div className="sidebar">
@@ -35,7 +95,39 @@ export function Sidebar({ onClose }: SidebarProps) {
       </button>
 
       <nav className="sidebar__sessions" aria-label={t('sidebar.label')}>
-        <h2 className="eyebrow sidebar__heading">{t('sidebar.savedGames')}</h2>
+        <div className="sidebar__sessions-head">
+          <h2 className="eyebrow sidebar__heading">{t('sidebar.savedGames')}</h2>
+          <button
+            type="button"
+            className="sidebar__import-btn"
+            disabled={importing}
+            title={t('sidebar.importSaveHint')}
+            onClick={() => fileRef.current?.click()}
+          >
+            <Icon name="upload" size={13} />
+            <span>{t('sidebar.importSave')}</span>
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,application/json"
+            hidden
+            onChange={(e) => void onFileSelected(e)}
+          />
+        </div>
+        {importError && (
+          <p className="sidebar__import-error" role="alert">
+            <span>{importError}</span>
+            <button
+              type="button"
+              className="icon-btn sidebar__import-dismiss"
+              aria-label={t('common.close')}
+              onClick={() => setImportError(null)}
+            >
+              <Icon name="close" size={13} />
+            </button>
+          </p>
+        )}
         <SessionList onOpened={onClose} />
       </nav>
 

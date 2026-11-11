@@ -104,6 +104,7 @@ interface ModuleDetailProps {
   largestCost: number;
   session: Session | null;
   headingRef?: Ref<HTMLHeadingElement>;
+  onRemoved?: () => void;
 }
 
 /**
@@ -111,13 +112,16 @@ interface ModuleDetailProps {
  * it gives the game master, what the player sees, what it costs, and the
  * action to subscribe or unsubscribe, worded with its exact consequences.
  */
-export function ModuleDetail({ entry, subscribed, largestCost, session, headingRef }: ModuleDetailProps) {
+export function ModuleDetail({ entry, subscribed, largestCost, session, headingRef, onRemoved }: ModuleDetailProps) {
   const { t } = useTranslation();
   const locale = useLocale();
   const uiTag = languageTag(locale);
   const setSubscribed = useLibrary((s) => s.setSubscribed);
+  const removePlugin = useLibrary((s) => s.removePlugin);
   const id = useId();
   const [busy, setBusy] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<UiError | null>(null);
   const module = entry.id;
   const plugin = entry.plugin;
@@ -127,7 +131,21 @@ export function ModuleDetail({ entry, subscribed, largestCost, session, headingR
   // Another module is another action.
   useEffect(() => {
     setError(null);
+    setConfirmRemove(false);
   }, [module]);
+
+  const onRemove = async () => {
+    setRemoving(true);
+    setError(null);
+    try {
+      if (isSubscribed) await setSubscribed(module, false);
+      await removePlugin(module);
+      onRemoved?.();
+    } catch (err) {
+      setError(toUiError(err));
+      setRemoving(false);
+    }
+  };
 
   const toggle = async () => {
     setBusy(true);
@@ -155,6 +173,7 @@ export function ModuleDetail({ entry, subscribed, largestCost, session, headingR
           </h3>
           <p className="module-detail__tags">
             <span className="tag">{t(`modules.categories.${entry.category}`)}</span>
+            {plugin && <span className="tag">{t('library.plugin.badge')}</span>}
             {isSubscribed ? (
               <span className="tag tag--accent">
                 <Icon name="check" size={12} />
@@ -250,7 +269,7 @@ export function ModuleDetail({ entry, subscribed, largestCost, session, headingR
         </dl>
       </section>
 
-      {!plugin && (
+      {!plugin ? (
         <section className="module-detail__section" aria-labelledby={`${id}-sees`}>
           <h4 id={`${id}-sees`} className="eyebrow">
             {t('library.sections.sees')}
@@ -264,6 +283,20 @@ export function ModuleDetail({ entry, subscribed, largestCost, session, headingR
           )}
           <p className="module-detail__text">{t(`library.about.${module}.sees`)}</p>
         </section>
+      ) : (
+        entry.hasPanel && (
+          <section className="module-detail__section" aria-labelledby={`${id}-sees`}>
+            <h4 id={`${id}-sees`} className="eyebrow">
+              {t('library.sections.sees')}
+            </h4>
+            <p className="module-detail__tags">
+              <span className="tag">
+                {t('library.sees.panel')} · {plugin.name[locale]}
+              </span>
+            </p>
+            <p className="module-detail__text">{t('library.plugin.panelNote')}</p>
+          </section>
+        )
       )}
 
       <section className="module-detail__section" aria-labelledby={`${id}-cost`}>
@@ -287,6 +320,46 @@ export function ModuleDetail({ entry, subscribed, largestCost, session, headingR
         </ul>
         <p className="module-detail__note">{t('library.cost.estimate')}</p>
       </section>
+
+      {plugin && (
+        <section className="module-detail__section module-detail__danger" aria-labelledby={`${id}-manage`}>
+          <h4 id={`${id}-manage`} className="eyebrow">
+            {t('library.plugin.manageHeading')}
+          </h4>
+          <p className="module-detail__note">{t('library.plugin.uninstallHint')}</p>
+          {confirmRemove ? (
+            <div className="module-detail__confirm">
+              <button
+                type="button"
+                className="btn btn--danger btn--small"
+                disabled={removing}
+                onClick={() => void onRemove()}
+              >
+                <Icon name="trash" size={14} />
+                {removing ? t('library.plugin.uninstalling') : t('library.plugin.uninstallConfirm')}
+              </button>
+              <button
+                type="button"
+                className="btn btn--ghost btn--small"
+                disabled={removing}
+                onClick={() => setConfirmRemove(false)}
+              >
+                {t('common.cancel')}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="btn btn--ghost btn--small module-detail__uninstall"
+              disabled={busy || removing}
+              onClick={() => setConfirmRemove(true)}
+            >
+              <Icon name="trash" size={14} />
+              {t('library.plugin.uninstall')}
+            </button>
+          )}
+        </section>
+      )}
     </article>
   );
 }

@@ -131,6 +131,10 @@ export interface WorldState {
   modules: ModuleStates;
   /** Next moves the game master proposes; replaced every turn. */
   suggestions: string[];
+  /** Rolling recap of earlier chapters once older turns slide out of the transcript window. */
+  storySummary: string;
+  /** Highest turn number already folded into `storySummary`. */
+  summarizedUpToTurn: number;
   /** Number of turns played. 0 means the opening scene has not been generated. */
   turn: number;
 }
@@ -149,6 +153,8 @@ export function createEmptyWorld(): WorldState {
     lore: {},
     modules: {},
     suggestions: [],
+    storySummary: '',
+    summarizedUpToTurn: 0,
     turn: 0,
   };
 }

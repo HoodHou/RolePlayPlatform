@@ -391,3 +391,85 @@ test('history replays turns as player/narration pairs and leaves events out', as
   assert.equal(history[0]?.text, '(The story begins.)');
   assert.equal(history[2]?.text, 'Look around');
 });
+
+test('onBackgroundPicture lets runTurn finish immediately while painting settles asynchronously', async () => {
+  const session = newSession();
+  const { deps } = harness();
+  let finishPaint!: (url: string) => void;
+  const paintPromise = new Promise<string>((resolve) => {
+    finishPaint = resolve;
+  });
+  const settledPictures: string[] = [];
+
+  const outcome = await runTurn(
+    session,
+    { kind: 'start' },
+    {
+      ...deps,
+      illustrate: () => paintPromise,
+      onBackgroundPicture: (settled) => {
+        settledPictures.push(`${settled.id}:${settled.status}:${settled.url}`);
+      },
+    },
+  );
+
+  // Turn finished immediately before paintPromise resolved!
+  assert.equal(outcome.error, null);
+  assert.equal(outcome.committed, true);
+  const pendingImg = session.messages.find((m) => m.kind === 'image');
+  assert.ok(pendingImg && pendingImg.kind === 'image');
+  assert.equal(pendingImg.status, 'pending');
+  assert.ok(pendingImg.prompt && pendingImg.prompt.length > 0, 'prompt is persisted on ImageMessage for single-image retry');
+  assert.equal(settledPictures.length, 0);
+
+  finishPaint('/api/images/test-session/async-1.png');
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(settledPictures.length, 1);
+  assert.ok(settledPictures[0]?.endsWith(':ready:/api/images/test-session/async-1.png'));
+});
+
+test('rolling story summary folds turns dropped outside historyTurns into world.storySummary', async () => {
+  const session = newSession('zh');
+  let summaryCalls = 0;
+  const seenWorldStates: string[] = [];
+  const seenSystems: string[] = [];
+
+  const baseMock = new MockProvider({ delayMs: 0 });
+  const trackingProvider: LLMProvider = {
+    kind: 'gemini',
+    startConversation(init) {
+      if (init.meta.kind === 'summary') {
+        summaryCalls++;
+        return {
+          async step(h) {
+            const text = `前情提要#${summaryCalls}：旅人曾走入旧酒馆并遇见陌生人。`;
+            h.onTextDelta(text);
+            return { text, toolCalls: [], stop: 'end', usage: { inputTokens: 12, outputTokens: 8, cachedInputTokens: 0 } };
+          },
+          submitToolResults: () => {},
+          addUserMessage: () => {},
+        };
+      }
+      seenSystems.push(init.system);
+      seenWorldStates.push(init.prompt);
+      return baseMock.startConversation(init);
+    },
+  };
+
+  const run = (req: Parameters<typeof runTurn>[1]) =>
+    runTurn(session, req, { ...harness(trackingProvider).deps, tuning: { historyTurns: 2, memoriesRecalled: 8 } });
+
+  await run({ kind: 'start' }); // Turn 1
+  await run({ kind: 'action', text: '环顾四周' }); // Turn 2
+  await run({ kind: 'action', text: '走近柜台' }); // Turn 3
+  assert.equal(summaryCalls, 0, 'turns 1..2 still fit inside historyTurns=2 on turn 3');
+
+  // Turn 4: completed turns are 1, 2, 3 -> window of 2 keeps turns 2 & 3, so turn 1 drops out and triggers summary!
+  await run({ kind: 'action', text: '询问传闻' });
+  assert.equal(summaryCalls, 1);
+  assert.equal(session.world.summarizedUpToTurn, 1);
+  assert.match(session.world.storySummary, /前情提要#1/);
+  assert.ok(seenWorldStates.at(-1)?.includes('前情提要#1'), 'storySummary is injected into <world_state>');
+  // System prompt stays byte-identical before and after storySummary is populated!
+  assert.equal(seenSystems[1], seenSystems[3]);
+});

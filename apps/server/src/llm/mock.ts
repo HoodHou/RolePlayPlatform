@@ -843,6 +843,8 @@ class MockConversation implements Conversation {
         return first ? rule(script) : {};
       case 'action':
         return this.act(script, first);
+      case 'summary':
+        return {};
     }
   }
 

@@ -9,6 +9,7 @@ import { Icon } from '../Icon';
 import { Modal } from '../Modal';
 import { LibraryList, NO_FILTER, type LibraryFilter } from './LibraryList';
 import { ModuleDetail } from './ModuleDetail';
+import { PluginInstallPane } from './PluginInstallPane';
 
 /** Below this width the list and the detail take turns instead of sitting side by side. */
 const SINGLE_PANE_QUERY = '(max-width: 760px)';
@@ -35,6 +36,7 @@ export function ModuleLibrary() {
   const [selected, setSelected] = useState<ModuleId>(requested ?? MODULE_IDS[0]);
   // In single-pane mode: which pane is showing. Opened on one module, it opens on its detail.
   const [showDetail, setShowDetail] = useState(requested !== null);
+  const [installing, setInstalling] = useState(false);
   const [filter, setFilter] = useState<LibraryFilter>(NO_FILTER);
 
   // The list is fetched each time the library opens: costs and tools come from the server.
@@ -77,14 +79,20 @@ export function ModuleLibrary() {
   const largestCost = Math.max(0, ...(entries ?? []).flatMap((candidate) => [candidate.promptTokens?.en ?? 0, candidate.promptTokens?.zh ?? 0]));
 
   const choose = (id: ModuleId) => {
+    setInstalling(false);
     setSelected(id);
+    if (single) setShowDetail(true);
+  };
+
+  const openInstall = () => {
+    setInstalling(true);
     if (single) setShowDetail(true);
   };
 
   // Moving to a module's detail moves focus to its name, so a screen reader starts reading there.
   useEffect(() => {
-    if (single && showDetail) headingRef.current?.focus();
-  }, [single, showDetail, selected]);
+    if (single && showDetail && !installing) headingRef.current?.focus();
+  }, [single, showDetail, selected, installing]);
 
   const listPane = entries && (
     <LibraryList
@@ -93,27 +101,54 @@ export function ModuleLibrary() {
       subscribed={subscribed}
       filter={filter}
       onFilter={setFilter}
-      selected={single ? null : current}
+      selected={single || installing ? null : current}
       onSelect={choose}
       session={session}
     />
   );
-  const detailPane = entry && (
+  const detailPane = (installing || entry) && (
     <div className="library__detail">
       {single && (
-        <button type="button" className="btn btn--ghost btn--small library__back" onClick={() => setShowDetail(false)}>
+        <button
+          type="button"
+          className="btn btn--ghost btn--small library__back"
+          onClick={() => {
+            setInstalling(false);
+            setShowDetail(false);
+          }}
+        >
           <Icon name="back" size={16} />
           {t('library.back')}
         </button>
       )}
-      <ModuleDetail
-        key={entry.id}
-        entry={entry}
-        subscribed={subscribed}
-        largestCost={largestCost}
-        session={session}
-        headingRef={headingRef}
-      />
+      {installing ? (
+        <PluginInstallPane
+          onCancel={() => {
+            setInstalling(false);
+            if (single) setShowDetail(false);
+          }}
+          onInstalled={(newId) => {
+            setInstalling(false);
+            setSelected(newId);
+            if (single) setShowDetail(true);
+          }}
+        />
+      ) : (
+        entry && (
+          <ModuleDetail
+            key={entry.id}
+            entry={entry}
+            subscribed={subscribed}
+            largestCost={largestCost}
+            session={session}
+            headingRef={headingRef}
+            onRemoved={() => {
+              setSelected(MODULE_IDS[0]);
+              if (single) setShowDetail(false);
+            }}
+          />
+        )
+      )}
     </div>
   );
 
@@ -163,9 +198,19 @@ export function ModuleLibrary() {
               </p>
             )}
           </div>
-          <button type="button" className="icon-btn" aria-label={t('common.close')} onClick={close}>
-            <Icon name="close" />
-          </button>
+          <div className="library__head-actions">
+            <button
+              type="button"
+              className={installing ? 'btn btn--small is-active' : 'btn btn--ghost btn--small'}
+              onClick={openInstall}
+            >
+              <Icon name="upload" size={15} />
+              {t('library.plugin.openInstall')}
+            </button>
+            <button type="button" className="icon-btn" aria-label={t('common.close')} onClick={close}>
+              <Icon name="close" />
+            </button>
+          </div>
         </header>
         {body}
       </div>

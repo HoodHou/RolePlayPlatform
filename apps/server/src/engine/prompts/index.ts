@@ -45,6 +45,11 @@ export interface PromptPack {
   actorSystem: string;
   /** Sent when the actor answered without using its tool or said nothing. */
   actorReminder: string;
+
+  /** Standing instructions for condensing older story turns that have slid out of the transcript window. */
+  summarySystem: string;
+  /** Builds the prompt asking to fold newly dropped turns into the rolling story summary. */
+  summarize(existingSummary: string, droppedTranscript: string): string;
 }
 
 const PACKS: Record<Locale, PromptPack> = { en, zh };

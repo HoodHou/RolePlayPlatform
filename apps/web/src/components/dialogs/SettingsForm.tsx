@@ -20,6 +20,7 @@ import {
   formToUpdate,
   modelListNeedsSave,
   rolesUsing,
+  switchImageProvider,
   withValidEfforts,
   type ActorForm,
   type ConnectionForm,
@@ -106,7 +107,16 @@ export function SettingsForm({ settings, header, onClose }: SettingsFormProps) {
       ...current,
       connections: { ...current.connections, [kind]: { ...current.connections[kind], ...patch } },
     }));
-  const patchImage = (patch: Partial<ImageForm>) => setForm((current) => ({ ...current, image: { ...current.image, ...patch } }));
+  const patchImage = (patch: Partial<ImageForm>) => {
+    if (patch.provider) {
+      setModels((current) => ({ ...current, image: { status: 'idle' } }));
+    }
+    setForm((current) => {
+      const base = patch.provider ? switchImageProvider(current.image, patch.provider) : current.image;
+      const { provider: _, ...rest } = patch;
+      return { ...current, image: { ...base, ...rest } };
+    });
+  };
 
   const persist = async (): Promise<PublicSettings | null> => {
     setBusy(true);
@@ -203,7 +213,7 @@ export function SettingsForm({ settings, header, onClose }: SettingsFormProps) {
           <ConnectionsPanel form={form} saved={settings} onChange={patchConnection} modelList={modelList} fieldId={fieldId} />
         )}
         {tab === 'illustrations' && (
-          <IllustrationSection id={`${id}-image`} value={form.image} saved={settings} onChange={patchImage} models={modelList('image')} />
+          <IllustrationSection id={`${id}-image`} form={form} saved={settings} onChange={patchImage} models={modelList('image')} />
         )}
         {tab === 'advanced' && (
           <AdvancedPanel

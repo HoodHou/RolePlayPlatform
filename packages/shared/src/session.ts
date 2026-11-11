@@ -1,4 +1,4 @@
-import type { ApiError } from './api';
+import type { ApiError, TokenUsage } from './api';
 import type { WorldEvent } from './events';
 import type { ModuleId } from './modules';
 import type { Locale, WorldState } from './world';
@@ -57,6 +57,8 @@ export interface ImageMessage extends MessageBase {
   /** Path on this server once ready, e.g. `/api/images/<session>/<file>`. */
   url: string | null;
   caption: string;
+  /** Original visual description from the game master, preserved so a picture can be retried or repainted. */
+  prompt?: string;
   subject: ImageSubject;
   /** The character, location or item pictured; null for a scene. */
   targetId: string | null;
@@ -65,6 +67,19 @@ export interface ImageMessage extends MessageBase {
 }
 
 export type Message = PlayerMessage | NarrationMessage | DialogueMessage | EventMessage | ImageMessage;
+
+/** Engine checkpoint at the end of a turn, used for undo, reroll and branching. */
+export interface TurnSnapshot {
+  turn: number;
+  world: WorldState;
+  modules: ModuleId[];
+  modulesAuto: boolean;
+}
+
+/** Cumulative and most-recent token counters for a session. */
+export interface SessionUsage extends TokenUsage {
+  lastTurn?: TokenUsage;
+}
 
 /** What the player asked for when starting a game. Any field may be empty. */
 export interface NewGameSeed {
@@ -94,6 +109,10 @@ export interface Session {
   modulesAuto: boolean;
   world: WorldState;
   messages: Message[];
+  /** Engine checkpoints keyed by turn, oldest first, capped to keep saves compact. */
+  snapshots?: TurnSnapshot[];
+  /** Token usage accumulated across this session. */
+  usage?: SessionUsage;
 }
 
 export interface SessionSummary {

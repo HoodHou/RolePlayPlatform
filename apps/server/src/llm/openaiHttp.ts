@@ -37,7 +37,7 @@ export async function failFromResponse(response: Response, url: string, hasKey: 
   }
   const message = `${response.status} from ${url}: ${text.slice(0, 500) || response.statusText}`;
 
-  if (response.status === 401 || response.status === 403) {
+  if (response.status === 401 || response.status === 403 || /API_KEY_INVALID/i.test(text)) {
     throw new AppError(hasKey ? 'auth_failed' : 'not_configured', message);
   }
   if (response.status === 429) throw new AppError('rate_limited', message);

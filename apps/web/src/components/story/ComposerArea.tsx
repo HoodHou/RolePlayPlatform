@@ -1,18 +1,28 @@
 import type { Session } from '@roleplay/shared';
 import { useLayoutEffect, useRef, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { languageTag } from '../../i18n';
+import { languageTag, useLocale } from '../../i18n';
 import { COMPOSER_INPUT_ID } from '../../lib/composer';
+import { formatNumber } from '../../lib/text';
 import { canTalkTo } from '../../lib/world';
 import { useGame } from '../../store/game';
 import { CharacterAvatar } from '../CharacterAvatar';
 import { Icon } from '../Icon';
 import { ModulesMenu } from './ModulesMenu';
 
+function compactTokens(n: number, uiTag: string): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 10_000) return `${Math.round(n / 1000)}k`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return formatNumber(n, uiTag);
+}
+
 /** Suggested actions, who the player is speaking to, and the input box. */
 export function ComposerArea({ session }: { session: Session }) {
   const { t } = useTranslation();
+  const uiTag = languageTag(useLocale());
   const running = useGame((s) => s.turn !== null);
+  const historyBusy = useGame((s) => s.historyBusy);
   const draft = useGame((s) => s.drafts[session.id] ?? '');
   const talkingTo = useGame((s) => s.talkingTo);
   const setDraft = useGame((s) => s.setDraft);
@@ -20,13 +30,24 @@ export function ComposerArea({ session }: { session: Session }) {
   const sendTalk = useGame((s) => s.sendTalk);
   const stopTalking = useGame((s) => s.stopTalking);
   const stop = useGame((s) => s.stop);
+  const undoTurn = useGame((s) => s.undoTurn);
+  const rerollTurn = useGame((s) => s.rerollTurn);
+  const forkSession = useGame((s) => s.forkSession);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
 
   const storyLang = languageTag(session.language);
   const notStarted = session.world.turn === 0 && session.messages.length === 0;
   const suggestions = running || notStarted ? [] : session.world.suggestions.filter((s) => s.trim() !== '');
-  const canSend = !running && !notStarted && draft.trim() !== '';
+  const canSend = !running && !historyBusy && !notStarted && draft.trim() !== '';
+  const hasPrevSnapshot = Boolean(session.snapshots?.some((s) => s.turn === session.world.turn - 1));
+  const canUndoOrReroll = !running && !historyBusy && session.world.turn >= 1 && hasPrevSnapshot;
+  const canBranch = !running && !historyBusy && session.world.turn >= 1;
+
+  const usage = session.usage;
+  const totalTokens = (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0);
+  const cachePct =
+    usage && usage.inputTokens > 0 ? Math.round((usage.cachedInputTokens / usage.inputTokens) * 100) : 0;
   // The store clears `talkingTo` when they leave; checking here as well keeps a stale id from ever being sent.
   const partner = talkingTo && canTalkTo(session.world, talkingTo) ? session.world.characters[talkingTo] : undefined;
 
@@ -142,10 +163,64 @@ export function ComposerArea({ session }: { session: Session }) {
           )}
         </form>
         <div className="composer__meta">
-          <ModulesMenu session={session} />
-          <p id="composer-hint" className="composer__hint">
-            {t('story.composerHint')}
-          </p>
+          <div className="composer__meta-left">
+            <ModulesMenu session={session} />
+            {session.world.turn >= 1 && (
+              <div className="composer__turn-actions" role="group" aria-label={t('story.turnActionsLabel')}>
+                <button
+                  type="button"
+                  className="composer__action-btn"
+                  disabled={!canUndoOrReroll}
+                  title={t('story.undoHint')}
+                  onClick={() => void undoTurn()}
+                >
+                  <Icon name="undo" size={14} />
+                  <span>{t('story.undo')}</span>
+                </button>
+                <button
+                  type="button"
+                  className="composer__action-btn"
+                  disabled={!canUndoOrReroll}
+                  title={t('story.rerollHint')}
+                  onClick={() => void rerollTurn()}
+                >
+                  <Icon name="retry" size={14} />
+                  <span>{t('story.reroll')}</span>
+                </button>
+                <button
+                  type="button"
+                  className="composer__action-btn"
+                  disabled={!canBranch}
+                  title={t('story.branchHint')}
+                  onClick={() => void forkSession()}
+                >
+                  <Icon name="branch" size={14} />
+                  <span>{t('story.branchShort')}</span>
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="composer__meta-right">
+            {usage && totalTokens > 0 && (
+              <span
+                className="composer__usage"
+                title={t('story.usageTooltip', {
+                  input: formatNumber(usage.inputTokens, uiTag),
+                  output: formatNumber(usage.outputTokens, uiTag),
+                  cached: formatNumber(usage.cachedInputTokens, uiTag),
+                  lastInput: formatNumber(usage.lastTurn?.inputTokens ?? 0, uiTag),
+                  lastOutput: formatNumber(usage.lastTurn?.outputTokens ?? 0, uiTag),
+                })}
+              >
+                {cachePct > 0
+                  ? t('story.usageWithCache', { tokens: compactTokens(totalTokens, uiTag), cache: cachePct })
+                  : t('story.usageTokens', { tokens: compactTokens(totalTokens, uiTag) })}
+              </span>
+            )}
+            <p id="composer-hint" className="composer__hint">
+              {t('story.composerHint')}
+            </p>
+          </div>
         </div>
       </div>
     </div>

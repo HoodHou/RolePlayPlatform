@@ -16,6 +16,14 @@ export interface PaintRequest {
 
 export type ImageExtension = 'png' | 'jpg' | 'webp' | 'svg';
 
+export function extensionOf(data: Buffer): ImageExtension {
+  if (data[0] === 0xff && data[1] === 0xd8) return 'jpg';
+  if (data.subarray(0, 4).toString('latin1') === 'RIFF' && data.subarray(8, 12).toString('latin1') === 'WEBP') {
+    return 'webp';
+  }
+  return 'png';
+}
+
 export interface Painting {
   data: Buffer;
   extension: ImageExtension;

@@ -119,11 +119,17 @@ class AnthropicConversation implements Conversation {
       ...(this.officialEndpoint ? { eager_input_streaming: true } : {}),
     }));
 
-    // The history only grows from turn to turn, so a cache breakpoint on its last
-    // entry lets the next turn reuse everything before this turn's prompt.
+    // Anthropic allows up to 4 cache_control blocks (1 on system, up to 2 here,
+    // 1 top-level). Placing a stable quantized anchor every 3 turns (6 messages)
+    // alongside `lastHistory` keeps a warm prefix across turns, rerolls, and gateways.
+    const HISTORY_CACHE_STRIDE = 6;
     const lastHistory = init.history.length - 1;
+    const stableHistory =
+      init.history.length > HISTORY_CACHE_STRIDE
+        ? Math.floor(lastHistory / HISTORY_CACHE_STRIDE) * HISTORY_CACHE_STRIDE - 1
+        : -1;
     this.messages = init.history.map((turn, index): MessageParam =>
-      index === lastHistory
+      index === lastHistory || index === stableHistory
         ? {
             role: turn.role,
             content: [{ type: 'text', text: turn.text, cache_control: { type: 'ephemeral' } }],

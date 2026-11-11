@@ -9,6 +9,10 @@ cd /d "%~dp0"
 
 where node >nul 2>nul
 if errorlevel 1 (
+  if exist "%ProgramFiles%\nodejs\node.exe" set "PATH=%ProgramFiles%\nodejs;%PATH%"
+)
+where node >nul 2>nul
+if errorlevel 1 (
   echo Node.js was not found. Install Node.js 20.12 or newer from https://nodejs.org and run this again.
   echo.
   pause

@@ -1,10 +1,13 @@
-import type {
-  CreateSessionRequest,
-  ModuleId,
-  PlayerMessage,
-  Session,
-  SessionSummary,
-  TurnRequest,
+import {
+  ERROR_CODES,
+  type CreateSessionRequest,
+  type ErrorCode,
+  type ModuleId,
+  type PlayerMessage,
+  type Session,
+  type SessionBackup,
+  type SessionSummary,
+  type TurnRequest,
 } from '@roleplay/shared';
 import { create } from 'zustand';
 import { api } from '../api/client';
@@ -13,6 +16,7 @@ import { streamTurn } from '../api/turns';
 import { storage } from '../lib/storage';
 import { canTalkTo } from '../lib/world';
 import { applyTurnEvent, isLocalMessage, LOCAL_ID_PREFIX } from './applyTurnEvent';
+import { useLibrary } from './library';
 
 const SESSION_KEY = 'rp.session';
 
@@ -51,11 +55,17 @@ interface GameState {
    * Survives across turns; cleared when they leave the scene or the session changes.
    */
   talkingTo: string | null;
+  /** True while undo, reroll, branch or import is in flight. */
+  historyBusy: boolean;
+  /** Image message ids currently being repainted on user request. */
+  retryingImages: Record<string, boolean>;
 
   init: () => Promise<void>;
   refreshSessions: () => Promise<void>;
   openSession: (id: string, options?: { restoring?: boolean }) => Promise<void>;
   createGame: (request: CreateSessionRequest) => Promise<void>;
+  importSave: (backup: unknown) => Promise<Session>;
+  exportSave: () => Promise<SessionBackup | null>;
   deleteSession: (id: string) => Promise<void>;
   /** Changes the modules of the open story, from its next turn. Throws when the server refuses. */
   setModules: (modules: ModuleId[]) => Promise<void>;
@@ -69,6 +79,16 @@ interface GameState {
   stop: () => void;
   dismissFailure: () => void;
   setDraft: (text: string) => void;
+  /** Rolls the open session back by one turn, restoring the player's action to the composer if empty. */
+  undoTurn: () => Promise<void>;
+  /** Rolls the open session back by one turn and immediately replays the last turn request. */
+  rerollTurn: () => Promise<void>;
+  /** Clones the open session (optionally up to `upToTurn`) into a new parallel save and opens it. */
+  forkSession: (upToTurn?: number) => Promise<void>;
+  /** Repaints a failed or existing illustration in place. */
+  retryImage: (messageId: string) => Promise<void>;
+  /** Quietly refreshes the open session while background illustrations are still painting. */
+  pollCurrentSession: () => Promise<void>;
 }
 
 let initialized = false;
@@ -189,12 +209,22 @@ export const useGame = create<GameState>()((set, get) => {
           return;
         }
         if (event.type === 'done') {
-          // The modules as the turn left them: after an opening the game master chose for, only the ones it took up.
+          // The modules and usage as the turn left them: after an opening the game master chose for, only the ones it took up.
           const current = get().current;
-          if (current && Array.isArray(event.modules)) {
+          if (current) {
+            const modules = Array.isArray(event.modules) ? event.modules : current.modules;
             // The server settles the choice at the end of a story turn, never a conversation.
             const modulesAuto = request.kind === 'talk' ? current.modulesAuto : false;
-            set({ current: { ...current, modules: event.modules, modulesAuto } });
+            const prevUsage = current.usage ?? { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 };
+            const usage = event.usage
+              ? {
+                  inputTokens: prevUsage.inputTokens + event.usage.inputTokens,
+                  outputTokens: prevUsage.outputTokens + event.usage.outputTokens,
+                  cachedInputTokens: prevUsage.cachedInputTokens + event.usage.cachedInputTokens,
+                  lastTurn: event.usage,
+                }
+              : current.usage;
+            set({ current: { ...current, modules, modulesAuto, usage } });
           }
           return;
         }
@@ -233,8 +263,8 @@ export const useGame = create<GameState>()((set, get) => {
     }
 
     set({ turn: null });
-    // The server normally echoes the action as a `message`; if it did not, fetch its copy.
-    if (state.current?.messages.some(isLocalMessage)) void reload(turn.sessionId);
+    // Fetch the server's saved copy so `snapshots` and `usage` stay immediately in sync.
+    void reload(turn.sessionId);
     void get().refreshSessions();
   }
 
@@ -248,10 +278,13 @@ export const useGame = create<GameState>()((set, get) => {
     failure: null,
     drafts: {},
     talkingTo: null,
+    historyBusy: false,
+    retryingImages: {},
 
     init: async () => {
       if (initialized) return;
       initialized = true;
+      void useLibrary.getState().load();
       void get().refreshSessions();
       const saved = storage.get(SESSION_KEY);
       if (saved) await get().openSession(saved, { restoring: true });
@@ -385,6 +418,184 @@ export const useGame = create<GameState>()((set, get) => {
       const id = get().current?.id;
       if (!id) return;
       set((s) => ({ drafts: { ...s.drafts, [id]: text } }));
+    },
+
+    importSave: async (backup) => {
+      set({ historyBusy: true });
+      try {
+        const imported = await api.importSession(backup);
+        abandonTurn();
+        set((s) => ({
+          current: imported,
+          opening: null,
+          openError: null,
+          failure: null,
+          talkingTo: null,
+          sessions: [toSummary(imported), ...s.sessions.filter((x) => x.id !== imported.id)].sort(byRecent),
+        }));
+        storage.set(SESSION_KEY, imported.id);
+        return imported;
+      } finally {
+        set({ historyBusy: false });
+      }
+    },
+
+    exportSave: async () => {
+      const current = get().current;
+      if (!current) return null;
+      return api.exportSession(current.id);
+    },
+
+    undoTurn: async () => {
+      const { current, turn, historyBusy, drafts } = get();
+      if (!current || turn || historyBusy || current.world.turn < 1) return;
+      const lastTurn = current.world.turn;
+      const lastPlayer = [...current.messages]
+        .reverse()
+        .find((m): m is PlayerMessage => m.kind === 'player' && m.turn === lastTurn);
+      set({ historyBusy: true, failure: null });
+      try {
+        const updated = await api.rollbackSession(current.id, lastTurn - 1);
+        const state = get();
+        if (state.current?.id !== current.id) return;
+        const nextDrafts = { ...drafts };
+        if (lastPlayer && (nextDrafts[current.id] ?? '').trim() === '') {
+          nextDrafts[current.id] = lastPlayer.text;
+        }
+        set({
+          current: updated,
+          drafts: nextDrafts,
+          talkingTo:
+            lastPlayer?.to && canTalkTo(updated.world, lastPlayer.to)
+              ? lastPlayer.to
+              : stillTalkingTo(state.talkingTo, updated),
+          sessions: [toSummary(updated), ...state.sessions.filter((x) => x.id !== updated.id)].sort(byRecent),
+        });
+      } finally {
+        set({ historyBusy: false });
+      }
+    },
+
+    rerollTurn: async () => {
+      const { current, turn, historyBusy } = get();
+      if (!current || turn || historyBusy || current.world.turn < 1) return;
+      const lastTurn = current.world.turn;
+      const lastPlayer = [...current.messages]
+        .reverse()
+        .find((m): m is PlayerMessage => m.kind === 'player' && m.turn === lastTurn);
+      const replay: TurnRequest | null = lastPlayer
+        ? lastPlayer.to
+          ? { kind: 'talk', characterId: lastPlayer.to, text: lastPlayer.text }
+          : { kind: 'action', text: lastPlayer.text }
+        : lastTurn === 1
+          ? { kind: 'start' }
+          : null;
+      if (!replay) return;
+
+      set({ historyBusy: true, failure: null });
+      let rolledBack = false;
+      try {
+        const updated = await api.rollbackSession(current.id, lastTurn - 1);
+        const state = get();
+        if (state.current?.id !== current.id) return;
+        set({
+          current: updated,
+          talkingTo: stillTalkingTo(state.talkingTo, updated),
+          sessions: [toSummary(updated), ...state.sessions.filter((x) => x.id !== updated.id)].sort(byRecent),
+        });
+        rolledBack = true;
+      } finally {
+        set({ historyBusy: false });
+      }
+      if (rolledBack) {
+        await runTurn(replay);
+      }
+    },
+
+    forkSession: async (upToTurn) => {
+      const { current, historyBusy } = get();
+      if (!current || historyBusy) return;
+      set({ historyBusy: true });
+      try {
+        const forked = await api.forkSession(current.id, upToTurn);
+        abandonTurn();
+        set((s) => ({
+          current: forked,
+          opening: null,
+          openError: null,
+          failure: null,
+          talkingTo: null,
+          sessions: [toSummary(forked), ...s.sessions.filter((x) => x.id !== forked.id)].sort(byRecent),
+        }));
+        storage.set(SESSION_KEY, forked.id);
+      } finally {
+        set({ historyBusy: false });
+      }
+    },
+
+    retryImage: async (messageId) => {
+      const { current, retryingImages } = get();
+      if (!current || retryingImages[messageId]) return;
+      const sessionId = current.id;
+      set((s) => ({
+        retryingImages: { ...s.retryingImages, [messageId]: true },
+        current:
+          s.current?.id === sessionId
+            ? {
+                ...s.current,
+                messages: s.current.messages.map((m) =>
+                  m.id === messageId && m.kind === 'image' ? { ...m, status: 'pending', error: undefined } : m,
+                ),
+              }
+            : s.current,
+      }));
+      try {
+        const { message, world } = await api.retryImage(sessionId, messageId);
+        set((s) => {
+          if (s.current?.id !== sessionId) return {};
+          return {
+            current: {
+              ...s.current,
+              world: s.turn ? s.current.world : world,
+              messages: s.current.messages.map((m) => (m.id === messageId ? message : m)),
+            },
+          };
+        });
+      } catch (err) {
+        const uiErr = toUiError(err);
+        const apiCode: ErrorCode = (ERROR_CODES as readonly string[]).includes(uiErr.code)
+          ? (uiErr.code as ErrorCode)
+          : 'provider_error';
+        set((s) => {
+          if (s.current?.id !== sessionId) return {};
+          return {
+            current: {
+              ...s.current,
+              messages: s.current.messages.map((m) =>
+                m.id === messageId && m.kind === 'image'
+                  ? {
+                      ...m,
+                      status: 'failed' as const,
+                      error: { code: apiCode, message: uiErr.message },
+                    }
+                  : m,
+              ),
+            },
+          };
+        });
+      } finally {
+        set((s) => {
+          const next = { ...s.retryingImages };
+          delete next[messageId];
+          return { retryingImages: next };
+        });
+      }
+    },
+
+    pollCurrentSession: async () => {
+      const { current, turn } = get();
+      if (!current || turn) return;
+      await reload(current.id);
     },
   };
 });

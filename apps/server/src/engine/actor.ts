@@ -129,6 +129,7 @@ export function characterView(
     cues: new Set(mentionedIds(world, said)),
     around: new Set(around.filter((id): id is string => Boolean(id))),
     turn: world.turn,
+    query: said,
   };
   const nameOf = (id: string) => world.characters[id]?.name ?? id;
 

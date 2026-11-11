@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { test } from 'node:test';
 import { createEmptyWorld } from '@roleplay/shared';
 import { AppError } from '../errors';
+import { GeminiPainter } from '../images/gemini';
 import { MockPainter } from '../images/mock';
 import { OpenAIPainter } from '../images/openai';
 import { AnthropicProvider } from './anthropic';
@@ -569,6 +570,84 @@ test('images: models outside the GPT image family get the one size everything ac
   }
 });
 
+test('gemini images: calls generateContent with aspect ratio, resolution, and safety handling', async () => {
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9, 8, 7]);
+  const api = await fakeApi([
+    {
+      body: JSON.stringify({
+        candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: png.toString('base64') } }] } }],
+      }),
+    },
+    {
+      body: JSON.stringify({
+        candidates: [{ finishReason: 'IMAGE_SAFETY', finishMessage: 'Blocked by safety settings.' }],
+      }),
+    },
+    {
+      status: 400,
+      body: JSON.stringify({ error: { code: 400, message: 'API key not valid.', details: [{ reason: 'API_KEY_INVALID' }] } }),
+    },
+  ]);
+  try {
+    const painter = new GeminiPainter({
+      apiKey: 'g-key',
+      baseUrl: `${api.url}/v1beta/openai/`,
+      model: 'models/gemini-3.1-flash-image',
+      quality: 'medium',
+    });
+    const signal = new AbortController().signal;
+
+    const painting = await painter.paint({ prompt: 'Rain over a mountain gate', subject: 'scene', signal });
+    assert.deepEqual(painting, { data: png, extension: 'png' });
+
+    const request = api.requests[0]!;
+    assert.equal(request.url, '/v1beta/models/gemini-3.1-flash-image:generateContent');
+    assert.equal(request.headers['x-goog-api-key'], 'g-key');
+    assert.equal(request.headers.authorization, undefined);
+    assert.deepEqual(request.body, {
+      contents: [{ parts: [{ text: 'Rain over a mountain gate' }] }],
+      generationConfig: {
+        responseModalities: ['IMAGE'],
+        imageConfig: { aspectRatio: '3:2', imageSize: '2K' },
+      },
+    });
+
+    await assert.rejects(
+      painter.paint({ prompt: 'Forbidden', subject: 'character', signal }),
+      (err: unknown) => err instanceof AppError && err.code === 'refused',
+    );
+    assert.deepEqual(api.requests[1]!.body.generationConfig.imageConfig, { aspectRatio: '2:3', imageSize: '2K' });
+
+    await assert.rejects(
+      painter.paint({ prompt: 'A coin', subject: 'item', signal }),
+      (err: unknown) => err instanceof AppError && err.code === 'auth_failed',
+    );
+  } finally {
+    api.close();
+  }
+});
+
+test('gemini images: omits explicit imageSize on Gemini 2.5 image models', async () => {
+  const api = await fakeApi([
+    { body: JSON.stringify({ candidates: [{ content: { parts: [{ inlineData: { data: 'AAAA' } }] } }] }) },
+  ]);
+  try {
+    const painter = new GeminiPainter({
+      apiKey: 'g-key',
+      baseUrl: `${api.url}/v1beta`,
+      model: 'gemini-2.5-flash-image',
+      quality: 'high',
+    });
+    await painter.paint({ prompt: 'A brass compass', subject: 'item', signal: new AbortController().signal });
+    assert.deepEqual(api.requests[0]!.body.generationConfig, {
+      responseModalities: ['IMAGE'],
+      imageConfig: { aspectRatio: '1:1' },
+    });
+  } finally {
+    api.close();
+  }
+});
+
 test('the placeholder painter draws a valid picture of the right shape, for free', async () => {
   const painting = await new MockPainter({ delayMs: 0 }).paint({
     prompt: 'A portrait',
@@ -577,4 +656,56 @@ test('the placeholder painter draws a valid picture of the right shape, for free
   });
   assert.equal(painting.extension, 'svg');
   assert.match(painting.data.toString('utf8'), /^<svg [^>]*viewBox="0 0 1024 1536"/);
+});
+
+test('anthropic: keeps a stable quantized history cache breakpoint alongside the moving tail within 4 blocks', async () => {
+  const okReply = () => ({
+    body: anthropicMessage([{ start: { type: 'text', text: '' }, deltas: [{ type: 'text_delta', text: 'Ok.' }] }], 'end_turn'),
+  });
+  const api = await fakeApi([okReply(), okReply()]);
+  try {
+    const provider = new AnthropicProvider({
+      apiKey: 'test-key',
+      hasKey: true,
+      baseUrl: api.url,
+      model: 'claude-opus-5-5',
+      effort: null,
+      maxOutputTokens: null,
+    });
+
+    const eightHistory: ConversationInit['history'] = Array.from({ length: 8 }, (_, i) => ({
+      role: i % 2 === 0 ? ('user' as const) : ('assistant' as const),
+      text: `msg-${i}`,
+    }));
+    await provider.startConversation({ ...init, history: eightHistory }).step(handlers());
+
+    const tenHistory: ConversationInit['history'] = Array.from({ length: 10 }, (_, i) => ({
+      role: i % 2 === 0 ? ('user' as const) : ('assistant' as const),
+      text: `msg-${i}`,
+    }));
+    await provider.startConversation({ ...init, history: tenHistory }).step(handlers());
+
+    const countCacheBlocks = (body: any): { total: number; msgIndices: number[] } => {
+      let total = 0;
+      const msgIndices: number[] = [];
+      for (const s of body.system ?? []) if (s.cache_control) total++;
+      for (const t of body.tools ?? []) if (t.cache_control) total++;
+      (body.messages ?? []).forEach((m: any, idx: number) => {
+        if (Array.isArray(m.content) && m.content.some((b: any) => b.cache_control)) {
+          total++;
+          msgIndices.push(idx);
+        }
+      });
+      return { total, msgIndices };
+    };
+
+    const first = countCacheBlocks(api.requests[0]!.body);
+    const second = countCacheBlocks(api.requests[1]!.body);
+    assert.ok(first.total <= 4, `expected <= 4 cache breakpoints, got ${first.total}`);
+    assert.ok(second.total <= 4, `expected <= 4 cache breakpoints, got ${second.total}`);
+    assert.deepEqual(first.msgIndices, [5, 7]);
+    assert.deepEqual(second.msgIndices, [5, 9]);
+  } finally {
+    api.close();
+  }
 });

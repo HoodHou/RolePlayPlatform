@@ -9,6 +9,7 @@ import { DemoBanner } from './DemoBanner';
 import { EmptyState } from './EmptyState';
 import { MessageLog } from './MessageLog';
 import { SceneHeader } from './SceneHeader';
+import { StoryActionsMenu } from './StoryActionsMenu';
 
 /** The center column: scene header, story log and composer. */
 export function StoryView({ narrow }: { narrow: boolean }) {
@@ -65,12 +66,15 @@ export function StoryView({ narrow }: { narrow: boolean }) {
     <div className="story">
       {(session || narrow) && (
         <header className="story__bar">
-          {narrow && (
+          {narrow ? (
             <button type="button" className="icon-btn" aria-label={t('header.openSessions')} onClick={() => openDrawer('sessions')}>
               <Icon name="menu" size={20} />
             </button>
+          ) : (
+            session && <span className="story__bar-spacer" aria-hidden="true" />
           )}
           {session ? <SceneHeader session={session} /> : <span className="story__bar-title">{appName}</span>}
+          {session && <StoryActionsMenu session={session} />}
           {narrow && (
             <button type="button" className="icon-btn" aria-label={t('header.openWorld')} onClick={() => openDrawer('world')}>
               <Icon name="compass" size={20} />

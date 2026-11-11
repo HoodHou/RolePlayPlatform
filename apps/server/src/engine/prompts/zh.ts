@@ -132,4 +132,17 @@ export const zh: PromptPack = {
     ].join('\n'),
   actorSystem,
   actorReminder: '（游戏引擎提示：你写的内容没有传达给对方。请调用 respond，写下你这个人物说的话。）',
+  summarySystem:
+    '你负责为一场长篇互动角色扮演战役维护简明、准确的“前情提要”纪要。只输出纯文本（200～500字）。保留关键因果链条、承诺与约定、未解伏笔、重大抉择、恩怨结盟与不可逆的后果，切勿凭空编造。',
+  summarize: (existingSummary, droppedTranscript) =>
+    [
+      existingSummary ? `<previous_summary>\n${existingSummary}\n</previous_summary>\n` : '',
+      '<newly_archived_turns>',
+      droppedTranscript,
+      '</newly_archived_turns>',
+      '',
+      '请用简体中文写出更新后的完整“前情提要”，将新归档的早期回合内容合并进原有提要中。',
+    ]
+      .filter(Boolean)
+      .join('\n'),
 };

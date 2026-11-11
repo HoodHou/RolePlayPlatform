@@ -29,21 +29,13 @@ export const DEFAULT_TUNING: Tuning = {
 
 export type ContextOptions = PromptOptions & Tuning;
 
-/**
- * Past turns as user/assistant pairs: what the player did or said, then what
- * was told in reply. A line the player said to one character is marked with
- * who it was for, and a character's own answer with who gave it.
- *
- * At least `historyTurns` turns are replayed once there are that many. The
- * window moves in whole chunks rather than one turn at a time, so the
- * transcript prefix stays identical (and cached) for several turns in a row.
- */
-export function buildHistory(
-  messages: Message[],
-  openingMarker: string,
-  nameOf: (characterId: string) => string = (id) => id,
-  historyTurns: number = DEFAULT_TUNING.historyTurns,
-): ChatTurn[] {
+interface TurnPair {
+  turn: number;
+  player: string;
+  told: string[];
+}
+
+function collectTurnPairs(messages: Message[], nameOf: (characterId: string) => string): TurnPair[] {
   const turns = new Map<number, { player: string; told: string[] }>();
   const at = (turn: number) => {
     let entry = turns.get(turn);
@@ -62,19 +54,105 @@ export function buildHistory(
     }
   }
 
-  const pairs = [...turns.entries()]
+  return [...turns.entries()]
     .sort(([a], [b]) => a - b)
     .filter(([, turn]) => turn.told.length > 0)
-    .map(([, turn]) => turn);
+    .map(([turnNum, turn]) => ({ turn: turnNum, player: turn.player, told: turn.told }));
+}
 
+function historyWindowStart(pairCount: number, historyTurns: number): number {
   const chunk = Math.max(1, Math.floor(historyTurns / 3));
-  const excess = pairs.length - historyTurns;
-  const start = excess > 0 ? Math.floor(excess / chunk) * chunk : 0;
+  const excess = pairCount - historyTurns;
+  return excess > 0 ? Math.floor(excess / chunk) * chunk : 0;
+}
+
+/**
+ * Past turns as user/assistant pairs: what the player did or said, then what
+ * was told in reply. A line the player said to one character is marked with
+ * who it was for, and a character's own answer with who gave it.
+ *
+ * At least `historyTurns` turns are replayed once there are that many. The
+ * window moves in whole chunks rather than one turn at a time, so the
+ * transcript prefix stays identical (and cached) for several turns in a row.
+ */
+export function buildHistory(
+  messages: Message[],
+  openingMarker: string,
+  nameOf: (characterId: string) => string = (id) => id,
+  historyTurns: number = DEFAULT_TUNING.historyTurns,
+): ChatTurn[] {
+  const pairs = collectTurnPairs(messages, nameOf);
+  const start = historyWindowStart(pairs.length, historyTurns);
 
   return pairs.slice(start).flatMap((turn): ChatTurn[] => [
     { role: 'user', text: turn.player || openingMarker },
     { role: 'assistant', text: turn.told.join('\n\n') },
   ]);
+}
+
+export interface DroppedTurnsArchive {
+  upToTurn: number;
+  transcript: string;
+  fallbackDigest: string;
+}
+
+/**
+ * Finds turns that have slid out of `buildHistory`'s window and have not yet
+ * been folded into `world.storySummary`.
+ */
+export function findDroppedTranscript(
+  messages: Message[],
+  openingMarker: string,
+  nameOf: (characterId: string) => string = (id) => id,
+  historyTurns: number = DEFAULT_TUNING.historyTurns,
+  summarizedUpToTurn = 0,
+): DroppedTurnsArchive | null {
+  const pairs = collectTurnPairs(messages, nameOf);
+  const start = historyWindowStart(pairs.length, historyTurns);
+  if (start <= 0) return null;
+
+  const dropped = pairs.slice(0, start).filter((entry) => entry.turn > summarizedUpToTurn);
+  if (dropped.length === 0) return null;
+
+  const transcript = dropped
+    .map((entry) => {
+      const action = entry.player || openingMarker;
+      const outcome = entry.told.join('\n');
+      return `[Turn ${entry.turn}]\nPlayer: ${action}\nStory: ${outcome}`;
+    })
+    .join('\n\n');
+
+  const fallbackDigest = dropped
+    .map((entry) => {
+      const action = (entry.player || openingMarker).replace(/\s+/g, ' ').slice(0, 80);
+      const outcome = entry.told.join(' ').replace(/\s+/g, ' ').slice(0, 140);
+      return `[T${entry.turn}] ${action} -> ${outcome}`;
+    })
+    .join('\n');
+
+  return {
+    upToTurn: dropped[dropped.length - 1]!.turn,
+    transcript,
+    fallbackDigest,
+  };
+}
+
+export function buildSummaryInit(session: Session, droppedTranscript: string): ConversationInit {
+  const prompts = getPrompts(session.language);
+  return {
+    system: prompts.summarySystem,
+    history: [],
+    prompt: prompts.summarize(session.world.storySummary ?? '', droppedTranscript),
+    tools: [],
+    meta: {
+      locale: session.language,
+      kind: 'summary',
+      turn: session.world.turn,
+      playerText: '',
+      seed: session.seed,
+      world: structuredClone(session.world),
+    },
+  };
 }
 
 function gameMasterInit(

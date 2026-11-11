@@ -1,14 +1,19 @@
 import {
   CONNECTION_KINDS,
-  DEFAULT_IMAGE_MODEL,
+  DEFAULT_GEMINI_IMAGE_BASE_URL,
   DEFAULT_OPENAI_BASE_URL,
+  geminiImageBaseUrl,
   GENERATION_DEFAULTS,
   GENERATION_LIMITS,
+  IMAGE_MODEL_PRESETS,
+  IMAGE_PROVIDER_DEFAULTS,
   PROVIDER_EFFORTS,
   type ConnectionKind,
   type Effort,
   type GenerationSettings,
+  type ImageProviderKind,
   type ImageQuality,
+  type KeySource,
   type ModelListTarget,
   type ProviderKind,
   type PublicSettings,
@@ -36,6 +41,7 @@ export interface ConnectionForm {
 
 export interface ImageForm {
   enabled: boolean;
+  provider: ImageProviderKind;
   baseUrl: string;
   model: string;
   quality: ImageQuality;
@@ -155,6 +161,7 @@ export function formFromSettings(settings: PublicSettings): SettingsFormState {
     },
     image: {
       enabled: settings.image.enabled,
+      provider: settings.image.provider,
       baseUrl: settings.image.baseUrl,
       model: settings.image.model,
       quality: settings.image.quality,
@@ -172,6 +179,8 @@ export function formToUpdate(input: SettingsFormState): UpdateSettingsRequest {
     // Empty base URL and model are meaningful (the provider's endpoint, the default model), so they go as typed.
     connections[kind] = { baseUrl: connection.baseUrl.trim(), model: connection.model.trim(), ...keyPatch(connection.key) };
   }
+  const imageDefaults = IMAGE_PROVIDER_DEFAULTS[form.image.provider];
+  const rawImageUrl = form.image.baseUrl.trim() || imageDefaults.baseUrl;
   return {
     gameMaster: { provider: form.gameMaster.provider, model: form.gameMaster.model.trim(), effort: form.gameMaster.effort },
     actor: { provider: form.actor.provider, model: form.actor.model.trim(), effort: form.actor.effort },
@@ -179,8 +188,9 @@ export function formToUpdate(input: SettingsFormState): UpdateSettingsRequest {
     generation: generationToUpdate(form.generation),
     image: {
       enabled: form.image.enabled,
-      baseUrl: form.image.baseUrl.trim() || DEFAULT_OPENAI_BASE_URL,
-      model: form.image.model.trim() || DEFAULT_IMAGE_MODEL,
+      provider: form.image.provider,
+      baseUrl: form.image.provider === 'gemini' ? geminiImageBaseUrl(rawImageUrl) : rawImageUrl,
+      model: form.image.model.trim() || imageDefaults.model,
       quality: form.image.quality,
       ...keyPatch(form.image.key),
     },
@@ -216,6 +226,7 @@ export function applyToForm(form: SettingsFormState, update: UpdateSettingsReque
     image: {
       ...form.image,
       enabled: image?.enabled ?? form.image.enabled,
+      provider: image?.provider ?? form.image.provider,
       baseUrl: image?.baseUrl ?? form.image.baseUrl,
       model: image?.model ?? form.image.model,
       quality: image?.quality ?? form.image.quality,
@@ -223,11 +234,62 @@ export function applyToForm(form: SettingsFormState, update: UpdateSettingsReque
   });
 }
 
+const KNOWN_IMAGE_BASE_URLS = new Set([
+  '',
+  DEFAULT_OPENAI_BASE_URL.toLowerCase(),
+  DEFAULT_GEMINI_IMAGE_BASE_URL.toLowerCase(),
+  `${DEFAULT_GEMINI_IMAGE_BASE_URL.toLowerCase()}/openai`,
+]);
+
+const KNOWN_PRESET_IMAGE_MODELS = new Set<string>([
+  '',
+  ...IMAGE_MODEL_PRESETS.openai,
+  ...IMAGE_MODEL_PRESETS.gemini,
+]);
+
+/** Updates default address and model when switching between OpenAI, Gemini, and Custom in Illustrations. */
+export function switchImageProvider(current: ImageForm, next: ImageProviderKind): ImageForm {
+  if (current.provider === next) return current;
+  const defaults = IMAGE_PROVIDER_DEFAULTS[next];
+  const normalizedUrl = current.baseUrl.trim().replace(/\/+$/, '').toLowerCase();
+  const baseUrl = KNOWN_IMAGE_BASE_URLS.has(normalizedUrl) ? defaults.baseUrl : next === 'custom' ? current.baseUrl : defaults.baseUrl;
+  const trimmedModel = current.model.trim();
+  const model = KNOWN_PRESET_IMAGE_MODELS.has(trimmedModel) ? defaults.model : current.model;
+  return { ...current, provider: next, baseUrl, model };
+}
+
 // --- Questions the dialog asks of the form ---
 
 const keyTyped = (edit: KeyEdit) => edit.value.trim() !== '';
 const keyEdited = (edit: KeyEdit) => keyTyped(edit) || edit.remove;
-const imageBaseUrl = (value: string) => value.trim() || DEFAULT_OPENAI_BASE_URL;
+const normalizeUrl = (url: string) => url.trim().replace(/\/+$/, '').toLowerCase();
+const resolvedImageBaseUrl = (image: Pick<ImageForm, 'provider' | 'baseUrl'>) => {
+  const raw = image.baseUrl.trim() || IMAGE_PROVIDER_DEFAULTS[image.provider].baseUrl;
+  return image.provider === 'gemini' ? geminiImageBaseUrl(raw) : raw;
+};
+
+/** How the image key is sourced given the current form selection and saved keys. */
+export function effectiveImageKeySource(form: SettingsFormState, saved: PublicSettings): KeySource {
+  if (saved.image.apiKeySource === 'settings') return 'settings';
+  const imgUrl = resolvedImageBaseUrl(form.image);
+  if (!imgUrl) return 'none';
+  if (form.image.provider === 'gemini') {
+    const connUrl = form.connections.gemini.baseUrl.trim() || saved.connections.gemini?.baseUrl || '';
+    const connSource = saved.connections.gemini?.apiKeySource ?? 'none';
+    if (connSource !== 'none' && connUrl && normalizeUrl(geminiImageBaseUrl(imgUrl)) === normalizeUrl(geminiImageBaseUrl(connUrl))) {
+      return connSource === 'settings' ? 'shared' : 'env';
+    }
+    return 'none';
+  }
+  for (const kind of ['openai', 'custom'] as const) {
+    const connUrl = form.connections[kind].baseUrl.trim() || saved.connections[kind]?.baseUrl || '';
+    const connSource = saved.connections[kind]?.apiKeySource ?? 'none';
+    if (connSource !== 'none' && connUrl && normalizeUrl(imgUrl) === normalizeUrl(connUrl)) {
+      return connSource === 'settings' ? 'shared' : 'env';
+    }
+  }
+  return 'none';
+}
 
 /**
  * Model lists are fetched with the *saved* address and key. True when the form
@@ -235,11 +297,17 @@ const imageBaseUrl = (value: string) => value.trim() || DEFAULT_OPENAI_BASE_URL;
  */
 export function modelListNeedsSave(form: SettingsFormState, saved: PublicSettings, target: ModelListTarget): boolean {
   if (target === 'image') {
-    // The image section may borrow the OpenAI or custom connection's key ("shared").
-    const sharedKeyEdited =
-      saved.image.apiKeySource === 'shared' &&
-      (keyEdited(form.connections.openai.key) || keyEdited(form.connections.custom.key));
-    return imageBaseUrl(form.image.baseUrl) !== imageBaseUrl(saved.image.baseUrl) || keyEdited(form.image.key) || sharedKeyEdited;
+    // The image section may borrow the OpenAI, Gemini or custom connection's key ("shared").
+    const connectionKeyChanged =
+      keyEdited(form.connections.openai.key) ||
+      keyEdited(form.connections.gemini.key) ||
+      keyEdited(form.connections.custom.key);
+    return (
+      form.image.provider !== saved.image.provider ||
+      normalizeUrl(resolvedImageBaseUrl(form.image)) !== normalizeUrl(resolvedImageBaseUrl(saved.image)) ||
+      keyEdited(form.image.key) ||
+      connectionKeyChanged
+    );
   }
   const connection = form.connections[target];
   return connection.baseUrl.trim() !== (saved.connections[target]?.baseUrl ?? '') || keyEdited(connection.key);

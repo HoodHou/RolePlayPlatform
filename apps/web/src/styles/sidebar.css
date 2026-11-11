@@ -44,8 +44,55 @@
   min-height: 0;
 }
 
+.sidebar__sessions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
 .sidebar__heading {
   padding: 0 0.3rem;
+}
+
+.sidebar__import-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.45rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.sidebar__import-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.sidebar__import-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--bad);
+  border-radius: var(--radius-sm);
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.sidebar__import-dismiss {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: inherit;
 }
 
 .sidebar__note {

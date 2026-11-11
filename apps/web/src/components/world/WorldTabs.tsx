@@ -1,13 +1,15 @@
 import type { ModuleId, Session, WorldState } from '@roleplay/shared';
 import { useEffect, useId, useRef, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLocale } from '../../i18n';
 import { bondsOf } from '../../lib/bonds';
 import { calendarOf, scheduleOf } from '../../lib/calendar';
 import { visibleClocks } from '../../lib/clocks';
 import { fightOf } from '../../lib/combat';
-import { MODULE_GLYPH, relationOf } from '../../lib/modules';
+import { MODULE_GLYPH, moduleDisplayName, relationOf } from '../../lib/modules';
 import { boardOf } from '../../lib/sandbox';
 import { inventoryOf, npcsOf, splitLore } from '../../lib/world';
+import { useLibrary } from '../../store/library';
 import { MODULE_VIEWS, useUi, WORLD_TABS, type ModuleView, type WorldTab } from '../../store/ui';
 import { BondsTab } from './BondsTab';
 import { CalendarTab } from './CalendarTab';
@@ -15,6 +17,7 @@ import { CharactersTab } from './CharactersTab';
 import { ClocksTab } from './ClocksTab';
 import { CluesTab, visibleClues } from './CluesTab';
 import { CombatTab } from './CombatTab';
+import { CustomModuleTab } from './CustomModuleTab';
 import { DeckTab } from './DeckTab';
 import { InventoryTab } from './InventoryTab';
 import { LoreTab } from './LoreTab';
@@ -56,8 +59,16 @@ function hasView(view: ModuleView, world: WorldState, showSecrets: boolean): boo
   }
 }
 
+function isCustomTab(tab: WorldTab): tab is `custom:${string}` {
+  return tab.startsWith('custom:');
+}
+
 /** The small number beside a tab's name; for the calendar, what has come due and awaits the story. */
 function countFor(tab: WorldTab, world: WorldState, showSecrets: boolean): number {
+  if (isCustomTab(tab)) {
+    const customId = tab.slice(7);
+    return Object.keys(world.modules?.custom?.[customId]?.entries ?? {}).length;
+  }
   switch (tab) {
     case 'combat':
     case 'sandbox':
@@ -110,6 +121,8 @@ interface WorldTabsProps {
  */
 export function WorldTabs({ session, subscriptions, lang }: WorldTabsProps) {
   const { t } = useTranslation();
+  const locale = useLocale();
+  const entries = useLibrary((s) => s.entries);
   const picked = useUi((s) => s.worldTab);
   const select = useUi((s) => s.setWorldTab);
   const showSecrets = useUi((s) => s.showSecrets);
@@ -118,7 +131,11 @@ export function WorldTabs({ session, subscriptions, lang }: WorldTabsProps) {
 
   const { world } = session;
   const views = MODULE_VIEWS.filter((view) => hasView(view, world, showSecrets));
-  const tabs: WorldTab[] = [...views, ...WORLD_TABS];
+  const customIds = Object.keys(world.modules?.custom ?? {}).filter(
+    (id) => Object.keys(world.modules?.custom?.[id]?.entries ?? {}).length > 0,
+  );
+  const customTabs: WorldTab[] = customIds.map((id): WorldTab => `custom:${id}`);
+  const tabs: WorldTab[] = [...views, ...customTabs, ...WORLD_TABS];
   const fight = fightOf(world);
   const fighting = fight?.active === true;
   const board = boardOf(world);
@@ -179,11 +196,13 @@ export function WorldTabs({ session, subscriptions, lang }: WorldTabsProps) {
   };
 
   const selectedView = (MODULE_VIEWS as readonly WorldTab[]).includes(selected) ? (selected as ModuleView) : null;
+  const selectedCustomId = selected.startsWith('custom:') ? selected.slice(7) : null;
+  const selectedCustomState = selectedCustomId ? world.modules?.custom?.[selectedCustomId] : undefined;
 
   return (
     <div className="tabs">
       <div className="tabs__list" role="tablist" aria-label={t('world.tabsLabel')}>
-        {views.length > 0 && (
+        {(views.length > 0 || customIds.length > 0) && (
           <div className="tabs__modules" role="none">
             {views.map((view) => {
               const off = relationOf(session, view, subscriptions) !== 'on';
@@ -197,6 +216,27 @@ export function WorldTabs({ session, subscriptions, lang }: WorldTabsProps) {
                   {live && <span className="live-dot" aria-hidden="true" />}
                   {count(view)}
                   {live && <span className="sr-only">, {t('world.tabState.live')}</span>}
+                  {off && <span className="sr-only">, {t('world.tabState.off')}</span>}
+                </button>
+              );
+            })}
+            {customIds.map((customId) => {
+              const tabKey: WorldTab = `custom:${customId}`;
+              const modId = customId as ModuleId;
+              const off = relationOf(session, modId, subscriptions) !== 'on';
+              const libEntry = entries?.find((e) => e.id === modId);
+              const glyph = libEntry?.plugin?.glyph ?? '✦';
+              const label =
+                libEntry?.plugin
+                  ? moduleDisplayName(modId, entries, locale, t)
+                  : (world.modules?.custom?.[customId]?.name || customId);
+              return (
+                <button key={tabKey} {...tabProps(tabKey)} className={`tabs__module${off ? ' is-off' : ''}`}>
+                  <span className="tabs__glyph" aria-hidden="true">
+                    {glyph}
+                  </span>
+                  {label}
+                  {count(tabKey)}
                   {off && <span className="sr-only">, {t('world.tabState.off')}</span>}
                 </button>
               );
@@ -220,6 +260,13 @@ export function WorldTabs({ session, subscriptions, lang }: WorldTabsProps) {
         tabIndex={0}
       >
         {selectedView && <ModuleNote id={selectedView} relation={relationOf(session, selectedView, subscriptions)} />}
+        {selectedCustomId && (
+          <ModuleNote
+            id={selectedCustomId as ModuleId}
+            relation={relationOf(session, selectedCustomId as ModuleId, subscriptions)}
+          />
+        )}
+        {selectedCustomState && <CustomModuleTab state={selectedCustomState} lang={lang} />}
         {selected === 'combat' && fight && <CombatTab fight={fight} world={world} lang={lang} />}
         {selected === 'clocks' && <ClocksTab world={world} lang={lang} />}
         {selected === 'calendar' && calendar && <CalendarTab calendar={calendar} lang={lang} />}

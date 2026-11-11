@@ -4,7 +4,7 @@ dist/
 .vite/
 
 # Local saves, settings and API keys
-data/
+/data/
 .env
 .env.*
 !.env.example

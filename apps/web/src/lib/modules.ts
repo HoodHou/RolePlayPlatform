@@ -1,4 +1,13 @@
-import { MODULE_IDS, type ModuleId, type Session, type WorldEvent, type WorldState } from '@roleplay/shared';
+import {
+  MODULE_IDS,
+  type Locale,
+  type ModuleId,
+  type ModuleLibraryEntry,
+  type Session,
+  type WorldEvent,
+  type WorldState,
+} from '@roleplay/shared';
+import type { TFunction } from 'i18next';
 
 export type CheckEvent = Extract<WorldEvent, { type: 'check_rolled' }>;
 export type BattleEvent = Extract<WorldEvent, { type: 'sandbox_battle' }>;
@@ -105,4 +114,36 @@ export function edgeOf(event: CheckEvent): Edge | null {
 /** Whether a clock tick filled the clock: what it counted toward happens now. */
 export function fillsClock(event: ClockTickEvent): boolean {
   return event.to >= event.segments && event.to > event.from;
+}
+
+/** Localized display name for either a built-in module or an installed custom plugin. */
+export function moduleDisplayName(
+  id: ModuleId,
+  entries: readonly ModuleLibraryEntry[] | null,
+  locale: Locale,
+  t: TFunction,
+): string {
+  const plugin = entries?.find((e) => e.id === id)?.plugin;
+  if (plugin) return plugin.name[locale] || plugin.name.en || id;
+  if ((MODULE_IDS as readonly string[]).includes(id)) return t(`modules.names.${id}`);
+  return id;
+}
+
+/** Localized short description for either a built-in module or an installed custom plugin. */
+export function moduleDisplayDescription(
+  id: ModuleId,
+  entries: readonly ModuleLibraryEntry[] | null,
+  locale: Locale,
+  t: TFunction,
+): string {
+  const plugin = entries?.find((e) => e.id === id)?.plugin;
+  if (plugin) return plugin.description[locale] || plugin.tagline[locale] || plugin.description.en;
+  if ((MODULE_IDS as readonly string[]).includes(id)) return t(`modules.descriptions.${id}`);
+  return '';
+}
+
+/** Localized note when a module with saved state is switched off in a story. */
+export function moduleKeptWhileOffNote(id: ModuleId, t: TFunction): string {
+  if ((MODULE_IDS as readonly string[]).includes(id)) return t(`modules.keptWhileOff.${id}`);
+  return t('library.story.kept');
 }

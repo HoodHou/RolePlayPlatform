@@ -34,7 +34,10 @@ export function MessageLog({ session }: { session: Session }) {
   const { t } = useTranslation();
   const turn = useGame((s) => s.turn);
   const failure = useGame((s) => s.failure);
+  const historyBusy = useGame((s) => s.historyBusy);
   const beginStory = useGame((s) => s.beginStory);
+  const forkSession = useGame((s) => s.forkSession);
+  const pollCurrentSession = useGame((s) => s.pollCurrentSession);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
 
@@ -42,6 +45,23 @@ export function MessageLog({ session }: { session: Session }) {
   const running = turn !== null && turn.sessionId === session.id;
   const streaming = running ? turn.streaming : NO_IDS;
   const thinking = running && streaming.length === 0;
+  const hasPendingImages = useMemo(
+    () => session.messages.some((m) => m.kind === 'image' && m.status === 'pending'),
+    [session.messages],
+  );
+  const snapshottedTurns = useMemo(
+    () => new Set((session.snapshots ?? []).map((s) => s.turn)),
+    [session.snapshots],
+  );
+
+  // Illustrations paint in the background after the turn's text finishes; poll quietly until they settle.
+  useEffect(() => {
+    if (running || !hasPendingImages) return;
+    const timer = window.setInterval(() => {
+      void pollCurrentSession();
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [running, hasPendingImages, pollCurrentSession]);
   const notStarted = world.turn === 0 && session.messages.length === 0 && !running && !failure;
   const storyLang = languageTag(session.language);
   const playerName = world.playerId ? world.characters[world.playerId]?.name : undefined;
@@ -63,8 +83,9 @@ export function MessageLog({ session }: { session: Session }) {
     const answered =
       request.kind === 'talk' &&
       session.messages.some((m) => m.kind === 'dialogue' && m.characterId === request.characterId && m.turn > turn.startTurn);
-    // The server holds `done` until pictures settle; say so when that is all we are waiting for.
-    const painting = session.messages.some((m) => m.kind === 'image' && m.status === 'pending');
+    const painting = session.messages.some(
+      (m) => m.kind === 'image' && m.status === 'pending' && m.turn > turn.startTurn,
+    );
     if (painting) thinkingLabel = t('story.painting');
     else if (talkName && !answered) thinkingLabel = t('story.characterThinking', { name: talkName });
     else thinkingLabel = t('story.thinking');
@@ -124,6 +145,12 @@ export function MessageLog({ session }: { session: Session }) {
             const toName = message.to
               ? (world.characters[message.to]?.name ?? spokenNames.get(`${message.turn}:${message.to}`))
               : undefined;
+            const canBranchTurn =
+              !running &&
+              !historyBusy &&
+              !isLocalMessage(message) &&
+              message.turn >= 1 &&
+              (message.turn === world.turn || snapshottedTurns.has(message.turn));
             return (
               <PlayerAction
                 key={message.id}
@@ -132,6 +159,8 @@ export function MessageLog({ session }: { session: Session }) {
                 toName={toName}
                 lang={storyLang}
                 pending={isLocalMessage(message)}
+                turn={message.turn}
+                onBranch={canBranchTurn ? (turnNum) => void forkSession(turnNum) : undefined}
               />
             );
           }

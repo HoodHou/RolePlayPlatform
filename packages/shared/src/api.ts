@@ -1,5 +1,5 @@
 import type { ModuleId, ModuleLibraryEntry } from './modules';
-import type { Message } from './session';
+import type { ImageMessage, Message, Session } from './session';
 import type { Locale, WorldState } from './world';
 
 /**
@@ -13,7 +13,12 @@ import type { Locale, WorldState } from './world';
  *                                      (subscribing is a settings update: `subscribedModules`)
  *   GET    /api/sessions               -> SessionSummary[]
  *   POST   /api/sessions               CreateSessionRequest -> Session
+ *   POST   /api/sessions/import        SessionBackup -> Session
  *   GET    /api/sessions/:id           -> Session
+ *   GET    /api/sessions/:id/export    -> SessionBackup
+ *   POST   /api/sessions/:id/rollback  RollbackSessionRequest -> Session
+ *   POST   /api/sessions/:id/fork      ForkSessionRequest -> Session
+ *   POST   /api/sessions/:id/images/:messageId/retry -> RetryImageResponse
  *   PATCH  /api/sessions/:id           UpdateSessionRequest -> Session
  *   DELETE /api/sessions/:id           -> { ok: true }
  *   POST   /api/sessions/:id/turns     TurnRequest -> text/event-stream of TurnEvent
@@ -82,6 +87,34 @@ export interface UpdateSessionRequest {
   modules: ModuleId[];
 }
 
+export interface RollbackSessionRequest {
+  /** Target turn checkpoint to restore (`0` = before the opening scene). */
+  toTurn: number;
+}
+
+export interface ForkSessionRequest {
+  /** Turn checkpoint to branch from; defaults to the session's current turn. */
+  upToTurn?: number;
+}
+
+export interface RetryImageResponse {
+  message: ImageMessage;
+  world: WorldState;
+}
+
+export interface SessionBackupImage {
+  contentType: string;
+  dataBase64: string;
+}
+
+export interface SessionBackup {
+  version: 1;
+  exportedAt: string;
+  session: Session;
+  /** Map of image filename (e.g. `0123456789abcdef.png`) to encoded bytes. */
+  images: Record<string, SessionBackupImage>;
+}
+
 /**
  * `start` generates the opening scene of a new session. `action` is something
  * the player's character does, answered by the game master. `talk` is
@@ -114,9 +147,9 @@ export interface TokenUsage {
  * removes it.
  *
  * A `message` frame whose id is already in the log replaces that message. This
- * is how an illustration arrives: first as a `pending` image message, later
- * with the same id as `ready` or `failed`. A turn that paints does not send
- * `done` until its pictures have settled.
+ * is how an illustration arrives: first as a `pending` image message, and
+ * later with the same id as `ready` or `failed` (either during the stream or
+ * asynchronously in the background after `done`).
  *
  * An `action` or `talk` turn starts with a `message` frame echoing the player's
  * message (text trimmed, `turn` = previous `world.turn` + 1, `to` set for talk).

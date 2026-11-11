@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import {
   DEFAULT_ANTHROPIC_MODEL,
   DEFAULT_GEMINI_BASE_URL,
+  DEFAULT_GEMINI_IMAGE_BASE_URL,
+  DEFAULT_GEMINI_IMAGE_MODEL,
   DEFAULT_GEMINI_MODEL,
   DEFAULT_IMAGE_MODEL,
   DEFAULT_OPENAI_BASE_URL,
@@ -144,8 +146,29 @@ test('painting reuses a connection key only when both point at the same endpoint
 test('Claude can tell the story while an OpenAI key paints it', () => {
   const settings = resolveSettings({ image: { enabled: true } }, { ANTHROPIC_API_KEY: 'sk-ant', OPENAI_API_KEY: 'sk-env' });
   assert.equal(settings.gameMaster.provider, 'anthropic');
+  assert.equal(settings.image.provider, 'openai');
   assert.equal(settings.image.apiKeySource, 'env');
   assert.equal(settings.illustrationsActive, true);
+});
+
+test('Gemini paints with the Gemini connection key when configured or when it is the only image-capable key', () => {
+  const autoGemini = resolveSettings({ image: { enabled: true } }, { ANTHROPIC_API_KEY: 'sk-ant', GEMINI_API_KEY: 'g-env' });
+  assert.equal(autoGemini.gameMaster.provider, 'anthropic');
+  assert.equal(autoGemini.image.provider, 'gemini');
+  assert.equal(autoGemini.image.baseUrl, DEFAULT_GEMINI_IMAGE_BASE_URL);
+  assert.equal(autoGemini.image.model, DEFAULT_GEMINI_IMAGE_MODEL);
+  assert.equal(autoGemini.image.apiKey, 'g-env');
+  assert.equal(autoGemini.image.apiKeySource, 'env');
+  assert.equal(autoGemini.illustrationsActive, true);
+
+  const sharedGemini = resolveSettings(
+    { connections: { gemini: { apiKey: 'g-saved' } }, image: { enabled: true, provider: 'gemini' } },
+    { OPENAI_API_KEY: 'sk-env' },
+  );
+  assert.equal(sharedGemini.image.provider, 'gemini');
+  assert.equal(sharedGemini.image.apiKey, 'g-saved');
+  assert.equal(sharedGemini.image.apiKeySource, 'shared');
+  assert.equal(sharedGemini.illustrationsActive, true);
 });
 
 test('keys never appear in what is sent to the browser', () => {

@@ -134,3 +134,37 @@ test('the game master sees the memories of whoever is in play, and only a count 
   const named = gameMasterView(w, 'I ask Mara about Odo.') as typeof view;
   assert.equal(named.characters.npc_far?.memories.length, 1);
 });
+
+test('mentionedIds and recall match Chinese partial names, quests/lore, and direct memory text cues', () => {
+  const w = world();
+  upsertCharacter(w, { id: 'npc_shen', name: '沈墨轩', locationId: 'loc_road' });
+  w.quests.q_seal = { id: 'q_seal', title: '失落的虎符', description: '', progress: '', status: 'active' };
+  w.lore.l_sect = { id: 'l_sect', title: '天机阁旧事', content: '', hidden: false };
+  w.storySummary = '三日前主角初入青州城。';
+  w.summarizedUpToTurn = 6;
+
+  // Partial 2-char Chinese bigram ("沈墨", "虎符", "天机") matches 3+ char names/titles
+  const ids = mentionedIds(w, '向掌柜打听沈墨和虎符、天机的下落');
+  assert.ok(ids.includes('npc_shen'));
+  assert.ok(ids.includes('q_seal'));
+  assert.ok(ids.includes('l_sect'));
+
+  // Direct text recall surfaces an untagged old memory whose text matches the query
+  const memories = [
+    memory({ id: 'secret-letter', turn: 1, importance: 1, text: '看到黑衣人把密信藏在酒窖砖缝里。' }),
+    ...Array.from({ length: 15 }, (_, i) =>
+      memory({ id: `chat-${i}`, turn: 30, importance: 3, text: `日常闲聊 ${i}`, about: ['pc'] }),
+    ),
+  ];
+  const recalled = recall(
+    memories,
+    { cues: new Set(), around: new Set(['pc']), turn: 30, query: '酒窖里的密信在哪' },
+    4,
+  );
+  assert.equal(recalled[0]?.id, 'secret-letter');
+
+  // gameMasterView exposes storySummary when non-empty and hides internal summarizedUpToTurn
+  const view = gameMasterView(w, '四处看看') as Record<string, unknown>;
+  assert.equal(view.storySummary, '三日前主角初入青州城。');
+  assert.equal('summarizedUpToTurn' in view, false);
+});
